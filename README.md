@@ -1,6 +1,5 @@
-# torch-export
+# PyTorch ONNX Exporter
 My experimental torch ONNX exporter
-
 
 ## Design
 

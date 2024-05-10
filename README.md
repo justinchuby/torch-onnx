@@ -1,2 +1,10 @@
 # torch-export
-My experimental torch exporter
+My experimental torch ONNX exporter
+
+
+## Design
+
+- Flat graph
+- Scope as metadata
+- Drop in replacement for torch.onnx.export
+- Use ExportedProgram

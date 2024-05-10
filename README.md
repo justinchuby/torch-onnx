@@ -17,6 +17,6 @@ My experimental torch ONNX exporter
 
 ## Why is this doable?
 
-- We need to verify coverage for torch.export on Huggingface Optimum https://github.com/huggingface/optimum/tree/main/optimum/exporters/onnx
+- We need to verify torch.export coverage on Huggingface Optimum https://github.com/huggingface/optimum/tree/main/optimum/exporters/onnx
 - Path torch.onnx.export such that packages do not need to change a single line to use dynamo
 - We have all operators implemented and portable

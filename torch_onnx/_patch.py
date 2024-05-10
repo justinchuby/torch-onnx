@@ -36,8 +36,7 @@ def torch_onnx_export_adaptor(
         args = args[:-1]
     # TODO: Support dynamic shapes
     program = torch.export.export(model, args, kwargs)
-    onnx_model = torch.onnx.dynamo_export(program, *args, **kwargs).save(f)
-    print(program)
+    torch.onnx.dynamo_export(program, *args, **kwargs).save(f)
 
 
 def patch_torch():

@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "torch-onnx"
 version = "0.0.1"
-description = "Naturally author ONNX functions and models using a subset of Python"
+description = "Experimental tools for converting PyTorch models to ONNX"
 authors = [{ name = "Justin Chu", email = "justinchu@microsoft.com" }]
 readme = "README.md"
 requires-python = ">=3.8"
-license = { file = "LICENSE" }
+license = {text = "MIT License"}
+keywords = ["onnx", "pytorch", "converter", "convertion", "exporter"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -24,4 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["torch", "onnxscript", "typing_extensions"]
+dependencies = ["torch", "onnxscript", "onnx"]
+
+[project.urls]
+Repository = "https://github.com/justinchuby/torch-onnx"

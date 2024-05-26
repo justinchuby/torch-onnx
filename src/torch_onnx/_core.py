@@ -289,9 +289,9 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         persistent = spec.persistent
         value = values[value_name]
 
-        value.metadata_props[
-            "pkg.torch.export.graph_signature.InputSpec.kind"
-        ] = input_kind.name
+        value.metadata_props["pkg.torch.export.graph_signature.InputSpec.kind"] = (
+            input_kind.name
+        )
         value.metadata_props[
             "pkg.torch.export.graph_signature.InputSpec.persistent"
         ] = str(persistent)
@@ -306,9 +306,9 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         output_kind = spec.kind
         value = values[value_name]
 
-        value.metadata_props[
-            "pkg.torch.export.graph_signature.OutputSpec.kind"
-        ] = output_kind.name
+        value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
+            output_kind.name
+        )
 
         if output_kind == graph_signature.OutputKind.USER_OUTPUT:
             graph.outputs.append(value)

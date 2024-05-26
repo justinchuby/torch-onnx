@@ -222,9 +222,8 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
             "pkg.torch.export.graph_signature.InputSpec.persistent"
         ] = str(persistent)
 
-        if input_kind == graph_signature.InputKind.USER_INPUT:
-            graph.inputs.append(value)  # type: ignore
-        else:
+        graph.inputs.append(value)  # type: ignore
+        if input_kind != graph_signature.InputKind.USER_INPUT:
             graph.initializers[value_name] = value
 
     # 3. Add outputs to the graph. Keep the order of the outputs.

@@ -15,6 +15,8 @@ My experimental torch ONNX exporter
 - Build graph eagerly, in place
     - Expose shape and dtype information to the op functions; build with IR
 
+{ExportedProgram, jit} -> {ONNX IR} -> {torchlib} -> {ONNX}
+
 ## Why is this doable?
 
 - We need to verify torch.export coverage on Huggingface Optimum https://github.com/huggingface/optimum/tree/main/optimum/exporters/onnx; and they are not patching torch.onnx itself.

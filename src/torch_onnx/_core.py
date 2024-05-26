@@ -92,6 +92,63 @@ class TorchTensor(ir.Tensor):
 #     TOKEN = auto()
 
 
+def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor]):
+    if isinstance(meta_val, tuple):
+        logger.warning("Setting shape and type of tensors is not supported yet")
+    if isinstance(meta_val, torch.Tensor):
+        dims = []
+        for dim in meta_val.shape:
+            if isinstance(dim, int):
+                dims.append(dim)
+            else:
+                dims.append(str(dim.node))
+        value.dtype = _torch_dtype_to_onnx_dtype(meta_val.dtype)
+        value.shape = ir.Shape(dims)
+    elif isinstance(meta_val, (int, torch.SymInt)):
+        # aten::sym_size output is a int, not a tensor, which stands
+        # for the size of one dim. We treat it as a scalar.
+        value.dtype = ir.DataType.INT64
+        value.shape = ir.Shape([])
+    elif isinstance(meta_val, (bool, torch.SymBool)):
+        value.dtype = ir.DataType.BOOL
+        value.shape = ir.Shape([])
+    elif isinstance(meta_val, (float, torch.SymFloat)):
+        value.dtype = ir.DataType.FLOAT
+        value.shape = ir.Shape([])
+    else:
+        pass
+
+
+def _get_node_namespace(node: torch.fx.Node) -> tuple[str, str]:
+    """Get the namespace and scope of the node.
+
+    Args:
+        node: The node to get the namespace and scope of.
+
+    Returns:
+        A tuple of the namespace and the leave module name.
+    """
+    nn_module_stack = node.meta.get("nn_module_stack")
+    if nn_module_stack is None:
+        logging.warning("nn_module_stack not found for node %s", node.name)
+        return "", ""
+    scopes = []
+    module_name = ""
+    for name, nn_module in nn_module_stack.values():
+        scopes.append(name)
+        module_name = repr(nn_module)
+
+    return "/".join(scopes), module_name
+
+
+def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
+    nn_module_stack = node.meta.get("nn_module_stack")
+    node.meta["nn_module_stack"] = nn_module_stack
+    namespace, module_name = _get_node_namespace(node)
+    ir_node.metadata_props["namespace"] = namespace
+    ir_node.metadata_props["module_name"] = module_name
+
+
 def _add_nodes(
     exported_program: torch.export.ExportedProgram, graph: ir.Graph
 ) -> dict[str, ir.Value]:
@@ -124,6 +181,7 @@ def _add_nodes(
 
             output_name = node.name
             output = ir.Value(name=output_name)
+            _set_shape_type(output, node.meta["val"])
 
             values[output_name] = output
             ir_node = ir.Node(
@@ -137,9 +195,8 @@ def _add_nodes(
             ir_node.meta["node"] = node
             graph.append(ir_node)
 
-            # TODO: Set dtype and shape
-            # shape = node.kwargs["shape"]
-            # dtype = node.kwargs["dtype"]
+            # Record the nn.Module stack for the node
+            _set_namespace(node, ir_node)
     return values
 
 
@@ -175,8 +232,23 @@ def _get_inputs_and_attributes(
             else:
                 attributes[schema_arg.name] = arg
         for schema_arg in node_schema.arguments:
-            if schema_arg.name in node.kwargs:
-                attributes[schema_arg.name] = node.kwargs[schema_arg.name]
+            if schema_arg.name not in node.kwargs:
+                continue
+            if schema_arg.name in {
+                "layout",
+                "device",
+                "requires_grad",
+                "pin_memory",
+                "memory_format",
+                "implicit",
+            }:
+                attr = str(node.kwargs[schema_arg.name])
+            if schema_arg.name == "dtype":
+                attr = _torch_dtype_to_onnx_dtype(node.kwargs[schema_arg.name])
+            else:
+                attr = node.kwargs[schema_arg.name]
+
+            attributes[schema_arg.name] = attr
 
     return inputs, attributes
 
@@ -190,6 +262,8 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         opset_imports={"": 20, "pkg.torch.ops": _torch_version_integer()},
         name="main_graph",
     )
+
+    # TODO: We can call exported_program.graph.eliminate_dead_code()
 
     # 1. Add all nodes to the graph and create a dictionary of values
     values = _add_nodes(exported_program, graph)
@@ -254,8 +328,9 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         if torch_tensor is None:
             logger.warning("Tensor '%s' not found in state_dict", name)
             continue
-        tensor = TorchTensor(torch_tensor, name=name)
-        graph.initializers[name].const_value = tensor
+        ir_tensor = TorchTensor(torch_tensor, name=name)
+        graph.initializers[name].const_value = ir_tensor
+        _set_shape_type(graph.initializers[name], torch_tensor)
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 

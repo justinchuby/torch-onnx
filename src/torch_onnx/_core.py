@@ -117,12 +117,12 @@ def _add_nodes(
             for i, input_ in enumerate(fx_inputs):
                 if input_ is None:
                     inputs.append(None)
+                elif hasattr(input_, "name"):
+                    inputs.append(values[input_.name])
                 else:
-                    if hasattr(input_, "name"):
-                        inputs.append(values[input_.name])
-                    else:
-                        attributes[f"arg_{i}"] = input_
-            output_name = node.name
+                    attributes[f"arg_{i}"] = input_
+
+            output_name = f"val_{node.name}"
             output = ir.Value(name=output_name)
 
             values[output_name] = output
@@ -132,7 +132,7 @@ def _add_nodes(
                 inputs,
                 attributes=ir_convenience.convert_attributes(attributes),
                 outputs=[output],
-                name=f"{node.op}_{node.name}",
+                name=node.name,
             )
             ir_node.meta["node"] = node
             graph.append(ir_node)

@@ -8,6 +8,10 @@ import torch
 from onnxscript import ir
 from torch.export import graph_signature
 
+import logging
+
+
+logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.bfloat16: ir.DataType.BFLOAT16,
@@ -34,9 +38,9 @@ def _torch_dtype_to_onnx_dtype(dtype: torch.dtype) -> ir.DataType:
 
 
 class TorchTensor(ir.Tensor):
-    def __init__(self, tensor: torch.Tensor):
+    def __init__(self, tensor: torch.Tensor, name: str | None = None):
         # Pass the tensor as the raw data to ir.Tensor's constructor
-        super().__init__(tensor, dtype=_torch_dtype_to_onnx_dtype(tensor.dtype))
+        super().__init__(tensor, dtype=_torch_dtype_to_onnx_dtype(tensor.dtype), name=name)
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
         # numpy() calls __array__ in ir.Tensor
@@ -198,6 +202,15 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         initializer = graph.initializers.pop(name)
         initializer.name = param_name
         graph.initializers[param_name] = initializer
+
+    # 5. Add initializers to the graph
+    for name, value in graph.initializers.items():
+        torch_tensor = exported_program.state_dict.get(name)
+        if torch_tensor is None:
+            logger.warning("Tensor '%s' not found in state_dict", name)
+            continue
+        tensor = TorchTensor(torch_tensor, name=name)
+        graph.initializers[name].const_value = tensor
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 

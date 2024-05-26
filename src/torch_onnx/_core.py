@@ -113,7 +113,15 @@ def _add_nodes(
             # Add op to the graph
             op = str(node.target)
             fx_inputs, attributes = _get_inputs_and_attributes(node)
-            inputs = [values[input_.name] for input_ in fx_inputs]
+            inputs = []
+            for i, input_ in enumerate(fx_inputs):
+                if input_ is None:
+                    inputs.append(None)
+                else:
+                    if hasattr(input_, "name"):
+                        inputs.append(values[input_.name])
+                    else:
+                        attributes[f"arg_{i}"] = input_
             output_name = node.name
             output = ir.Value(name=output_name)
 
@@ -141,7 +149,7 @@ def _torch_version_integer() -> int:
 
 def _get_inputs_and_attributes(
     node: torch.fx.Node,
-) -> tuple[list[torch.fx.Node], dict[str, Any]]:
+) -> tuple[list[torch.fx.Node | None], dict[str, Any]]:
     """Find and Fill in the not provided kwargs with default values."""
 
     # TODO: aten::sym_size has overload, but fx graph is using
@@ -162,7 +170,7 @@ def _get_inputs_and_attributes(
         inputs = list(node.args)
     else:
         for arg, schema_arg in zip(node.args, node_schema.arguments):
-            if isinstance(arg, torch.fx.Node):
+            if arg is None or isinstance(arg, torch.fx.Node):
                 inputs.append(arg)
             else:
                 attributes[schema_arg.name] = arg

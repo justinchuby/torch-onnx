@@ -122,7 +122,7 @@ def _add_nodes(
                 else:
                     attributes[f"arg_{i}"] = input_
 
-            output_name = f"val_{node.name}"
+            output_name = node.name
             output = ir.Value(name=output_name)
 
             values[output_name] = output

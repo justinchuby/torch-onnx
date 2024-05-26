@@ -127,9 +127,19 @@ def _add_nodes(
     return values
 
 
-def exported_program_to_ir(exported_program: torch.export.ExportedProgram):
+def _torch_version_integer() -> int:
+    return int(torch.__version__.replace(".", ""))
+
+
+def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram):
     # TODO: Make it an Interpreter
-    graph = ir.Graph([], [], nodes=[], name="main_graph")
+    graph = ir.Graph(
+        [],
+        [],
+        nodes=[],
+        opset_imports={"": 20, "pkg.torch.ops": _torch_version_integer()},
+        name="main_graph",
+    )
 
     # 1. Add all nodes to the graph and create a dictionary of values
     values = _add_nodes(exported_program, graph)
@@ -181,5 +191,23 @@ def exported_program_to_ir(exported_program: torch.export.ExportedProgram):
             graph.outputs.append(value)
 
     # 4. Rename the initializers to match the tensor names
-    for name, value in graph.initializers.items():
-        value.name = name
+    for name, param_name in itertools.chain(
+        exported_program.graph_signature.inputs_to_parameters.items(),
+        exported_program.graph_signature.inputs_to_buffers.items(),
+    ):
+        initializer = graph.initializers.pop(name)
+        initializer.name = param_name
+        graph.initializers[param_name] = initializer
+
+    # TODO: Decide if we should keep mutated buffers as inputs/outputs
+
+    return graph
+
+
+def exported_program_to_ir(exported_program: torch.export.ExportedProgram) -> ir.Model:
+    return ir.Model(
+        exported_program_to_ir_graph(exported_program),
+        ir_version=9,
+        producer_name="torch",
+        producer_version=torch.__version__,
+    )

@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import ctypes
+import inspect
 import itertools
+import logging
 from typing import Any
 
 import numpy as np
 import torch
+import torch.fx
 from onnxscript import ir
+from onnxscript.ir import _convenience as ir_convenience
 from torch.export import graph_signature
-
-import logging
-
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -40,7 +42,9 @@ def _torch_dtype_to_onnx_dtype(dtype: torch.dtype) -> ir.DataType:
 class TorchTensor(ir.Tensor):
     def __init__(self, tensor: torch.Tensor, name: str | None = None):
         # Pass the tensor as the raw data to ir.Tensor's constructor
-        super().__init__(tensor, dtype=_torch_dtype_to_onnx_dtype(tensor.dtype), name=name)
+        super().__init__(
+            tensor, dtype=_torch_dtype_to_onnx_dtype(tensor.dtype), name=name
+        )
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
         # numpy() calls __array__ in ir.Tensor
@@ -108,22 +112,22 @@ def _add_nodes(
         elif node.op == "call_function":
             # Add op to the graph
             op = str(node.target)
-            inputs = [values[name] for name in node.args]
-            kwargs = node.kwargs
+            fx_inputs, attributes = _get_inputs_and_attributes(node)
+            inputs = [values[input_.name] for input_ in fx_inputs]
             output_name = node.name
             output = ir.Value(name=output_name)
 
             values[output_name] = output
-            node = ir.Node(
+            ir_node = ir.Node(
                 "pkg.torch.ops",
                 op,
                 inputs,
-                attributes=kwargs,
+                attributes=ir_convenience.convert_attributes(attributes),
                 outputs=[output],
                 name=f"{node.op}_{node.name}",
             )
-            node.meta["node"] = node
-            graph.append(node)
+            ir_node.meta["node"] = node
+            graph.append(ir_node)
 
             # TODO: Set dtype and shape
             # shape = node.kwargs["shape"]
@@ -133,6 +137,40 @@ def _add_nodes(
 
 def _torch_version_integer() -> int:
     return int(torch.__version__.replace(".", ""))
+
+
+def _get_inputs_and_attributes(
+    node: torch.fx.Node,
+) -> tuple[list[torch.fx.Node], dict[str, Any]]:
+    """Find and Fill in the not provided kwargs with default values."""
+
+    # TODO: aten::sym_size has overload, but fx graph is using
+    # overloadpacket for some reasons.
+    # https://github.com/pytorch/pytorch/issues/97201
+    # We manually assigned overload for aten::sym_size.
+    if hasattr(node.target, "_schema"):
+        node_schema = node.target._schema  # type: ignore[union-attr]
+    else:
+        node_schema = torch.ops.aten.sym_size.int._schema  # type: ignore[union-attr]
+
+    # This function assumes the order of arguments in FX op is the
+    # same as the order of arguments in TorchScript op.
+    inputs = []
+    attributes = {}
+
+    if inspect.isbuiltin(node.target):
+        inputs = list(node.args)
+    else:
+        for arg, schema_arg in zip(node.args, node_schema.arguments):
+            if isinstance(arg, torch.fx.Node):
+                inputs.append(arg)
+            else:
+                attributes[schema_arg.name] = arg
+        for schema_arg in node_schema.arguments:
+            if schema_arg.name in node.kwargs:
+                attributes[schema_arg.name] = node.kwargs[schema_arg.name]
+
+    return inputs, attributes
 
 
 def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram):

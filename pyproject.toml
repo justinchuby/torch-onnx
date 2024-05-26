@@ -25,6 +25,3 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
 ]
 dependencies = ["torch", "onnxscript", "typing_extensions"]
-
-[tool.setuptools.packages.find]
-include = ["torch_onnx*"]

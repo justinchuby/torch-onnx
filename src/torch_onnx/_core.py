@@ -149,7 +149,7 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
         (namespace, class_hierarchy, name_scope)
     """
     nn_module_stack = node.meta.get("nn_module_stack")
-    print(nn_module_stack)
+    logger.debug("%s", nn_module_stack)
     if nn_module_stack is None:
         logging.warning("nn_module_stack not found for node %s", node.name)
         return "", [], []
@@ -179,7 +179,7 @@ def _add_nodes(
 ) -> dict[str, ir.Value]:
     values: dict[str, ir.Value] = {}
     for node in exported_program.graph.nodes:
-        print(node.name, node.args, node.target, node.op, node.type, node.kwargs)
+        logger.debug("%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs))
         if node.op == "placeholder":
             # Placeholder nodes are user inputs
             # We need to create a new tensor for each user input

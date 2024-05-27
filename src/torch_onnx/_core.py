@@ -158,7 +158,7 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     nn_module_stack = node.meta.get("nn_module_stack")
     logger.debug("%s", nn_module_stack)
     if nn_module_stack is None:
-        logging.warning("nn_module_stack not found for node %s", node.name)
+        logger.warning("nn_module_stack not found for node %s", node.name)
         return "", [], []
     namespaces = []
     class_hierarchy = []
@@ -304,6 +304,11 @@ def _get_inputs_and_attributes(
             if arg is None or isinstance(arg, torch.fx.Node):
                 inputs.append(arg)
                 input_names.append(schema_arg.name)
+            elif isinstance(arg, Sequence) and all(
+                elem is None or isinstance(elem, torch.fx.Node) for elem in arg
+            ):
+                inputs.extend(arg)
+                input_names.extend([schema_arg.name] * len(arg))
             else:
                 attributes[schema_arg.name] = arg
         for schema_arg in node_schema.arguments:
@@ -360,6 +365,9 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
 
     for spec in itertools.chain(user_inputs, non_user_inputs):
         # Put the user inputs first and then the parameters/buffers
+        if isinstance(spec.arg, graph_signature.ConstantArgument):
+            logger.debug("Skipping constant argument %s", spec.arg)
+            continue
         value_name = spec.arg.name
         input_kind = spec.kind
         persistent = spec.persistent

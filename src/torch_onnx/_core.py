@@ -172,6 +172,7 @@ def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
     ir_node.metadata_props["namespace"] = namespace
     ir_node.metadata_props["class_hierarchy"] = repr(class_hierarchy)
     ir_node.metadata_props["name_scopes"] = repr(name_scopes)
+    ir_node.metadata_props["fx_node"] = str(node.format_node())
 
 
 def _add_nodes(

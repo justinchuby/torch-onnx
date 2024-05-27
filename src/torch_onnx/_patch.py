@@ -1,11 +1,18 @@
 """Patch torch.onnx.export to use the exported program"""
 
-import torch
+from __future__ import annotations
 
-from typing import Union, Any, Optional, Sequence, Mapping, Collection, Type
 import io
-import torch.export
 import logging
+from typing import Any, Mapping, Sequence, Union
+
+import onnx
+import torch
+import torch.export
+from onnxscript import ir
+
+import torch_onnx
+from torch_onnx import _passes
 
 logger = logging.Logger(__name__)
 
@@ -14,30 +21,39 @@ def torch_onnx_export_adaptor(
     model: torch.nn.Module,
     args: tuple[Any, ...],
     f: Union[str, io.BytesIO],
+    *,
+    kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
-    verbose: bool = False,
-    training: torch.onnx.TrainingMode = torch.onnx.TrainingMode.EVAL,
-    input_names: Optional[Sequence[str]] = None,
-    output_names: Optional[Sequence[str]] = None,
-    operator_export_type: torch.onnx.OperatorExportTypes = torch.onnx.OperatorExportTypes.ONNX,
-    opset_version: Optional[int] = None,
-    do_constant_folding: bool = True,
-    dynamic_axes: Optional[
-        Union[Mapping[str, Mapping[int, str]], Mapping[str, Sequence[int]]]
-    ] = None,
-    keep_initializers_as_inputs: Optional[bool] = None,
-    custom_opsets: Optional[Mapping[str, int]] = None,
-    export_modules_as_functions: Union[bool, Collection[Type[torch.nn.Module]]] = False,
-    autograd_inlining: Optional[bool] = True,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
+    opset_version: int | None = None,
+    dynamic_axes: Mapping[str, Mapping[int, str]]
+    | Mapping[str, Sequence[int]]
+    | None = None,
     **_,
 ) -> None:
     # Test: create an exported program first
-    if args and isinstance(args[-1], dict):
+    if not kwargs and args and isinstance(args[-1], dict):
         kwargs = args[-1]
         args = args[:-1]
     # TODO: Support dynamic shapes
     program = torch.export.export(model, args, kwargs)
-    torch.onnx.dynamo_export(program, *args, **kwargs).save(f)
+    ir_model = torch_onnx.exported_program_to_ir(program)
+
+    if input_names:
+        _passes.rename_inputs(ir_model, input_names)
+    if output_names:
+        _passes.rename_outputs(ir_model, output_names)
+
+    proto = ir.serde.serialize_model(ir_model)
+    if proto.ByteSize() >= 1 << 31:
+        logger.warning(
+            "The serialized ONNX model is larger than 2GB. "
+            "Saving the weights in a separate file"
+        )
+        onnx.save_model(proto, f, save_as_external_data=True)
+    else:
+        onnx.save_model(proto, f)
 
 
 def patch_torch():

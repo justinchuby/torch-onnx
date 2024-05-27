@@ -93,7 +93,7 @@ class OpRecorder(evaluator.Evaluator):
             node := ir.Node(
                 schema.domain,
                 schema.name,
-                inputs,
+                onnx_inputs,
                 attributes=ir_convenience.convert_attributes(attributes),
                 num_outputs=len(schema.outputs),
             )

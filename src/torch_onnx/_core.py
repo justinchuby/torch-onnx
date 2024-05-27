@@ -270,6 +270,7 @@ def _fill_in_default_kwargs(
         complete_args = list(node.args)
     else:
         for i, expected_arg in enumerate(node_schema.arguments):
+            # TODO: Fix this bugggg
             if i < len(node.args):
                 complete_args.append(node.args[i])
             elif expected_arg.name in node.kwargs:

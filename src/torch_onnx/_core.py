@@ -390,8 +390,21 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         if input_kind != graph_signature.InputKind.USER_INPUT:
             graph.initializers[value_name] = value
 
-    # 3. Add outputs to the graph. Keep the order of the outputs.
-    for spec in exported_program.graph_signature.output_specs:
+    # 3. Add outputs to the graph. Put the user outputs first.
+    user_outputs = [
+        spec
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind == graph_signature.OutputKind.USER_OUTPUT
+    ]
+    non_user_outputs = [
+        spec
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind != graph_signature.OutputKind.USER_OUTPUT
+    ]
+    for spec in itertools.chain(user_outputs, non_user_outputs):
+        if isinstance(spec.arg, graph_signature.ConstantArgument):
+            logger.debug("Skipping constant argument %s", spec.arg)
+            continue
         value_name = spec.arg.name
         output_kind = spec.kind
         value = values[value_name]

@@ -31,7 +31,7 @@ def torch_onnx_export_adaptor(
     | Mapping[str, Sequence[int]]
     | None = None,
     **_,
-) -> None:
+) -> ir.Model:
     # Test: create an exported program first
     if not kwargs and args and isinstance(args[-1], dict):
         kwargs = args[-1]
@@ -54,6 +54,8 @@ def torch_onnx_export_adaptor(
         onnx.save_model(proto, f, save_as_external_data=True)
     else:
         onnx.save_model(proto, f)
+
+    return ir_model
 
 
 def patch_torch():

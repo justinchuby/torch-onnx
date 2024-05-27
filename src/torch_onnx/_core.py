@@ -119,34 +119,59 @@ def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor
         pass
 
 
-def _get_node_namespace(node: torch.fx.Node) -> tuple[str, str]:
+def _get_qualified_module_name(cls: Any) -> str:
+    module = cls.__module__
+    if module is None or module == str.__class__.__module__:
+        return cls.__name__
+    return module + "." + cls.__name__
+
+
+def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]:
     """Get the namespace and scope of the node.
+
+    Example::
+
+        {
+            'L__self__': ('', <class 'torchvision.models.resnet.ResNet'>),
+            'L__self___avgpool': ('avgpool', <class 'torch.nn.modules.pooling.AdaptiveAvgPool2d'>)
+        }
+
+    Will yield
+
+    namespace: ": torchvision.models.resnet.ResNet/avgpool: torch.nn.modules.pooling.AdaptiveAvgPool2d"
+    class_hierarchy: ["torchvision.models.resnet.ResNet", "torch.nn.modules.pooling.AdaptiveAvgPool2d"]
+    name_scopes: ["", "avgpool"]
 
     Args:
         node: The node to get the namespace and scope of.
 
     Returns:
-        A tuple of the namespace and the leave module name.
+        (namespace, class_hierarchy, name_scope)
     """
     nn_module_stack = node.meta.get("nn_module_stack")
+    print(nn_module_stack)
     if nn_module_stack is None:
         logging.warning("nn_module_stack not found for node %s", node.name)
-        return "", ""
-    scopes = []
-    module_name = ""
+        return "", [], []
+    namespaces = []
+    class_hierarchy = []
+    name_scopes = []
     for name, nn_module in nn_module_stack.values():
-        scopes.append(name)
-        module_name = repr(nn_module)
+        name_scopes.append(name)
+        nn_module_name = _get_qualified_module_name(nn_module)
+        class_hierarchy.append(nn_module_name)
+        namespaces.append(f"{name}: {_get_qualified_module_name(nn_module)}")
 
-    return "/".join(scopes), module_name
+    return "/".join(namespaces), class_hierarchy, name_scopes
 
 
 def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
     nn_module_stack = node.meta.get("nn_module_stack")
     node.meta["nn_module_stack"] = nn_module_stack
-    namespace, module_name = _get_node_namespace(node)
+    namespace, class_hierarchy, name_scopes = _get_node_namespace(node)
     ir_node.metadata_props["namespace"] = namespace
-    ir_node.metadata_props["module_name"] = module_name
+    ir_node.metadata_props["class_hierarchy"] = repr(class_hierarchy)
+    ir_node.metadata_props["name_scopes"] = repr(name_scopes)
 
 
 def _add_nodes(

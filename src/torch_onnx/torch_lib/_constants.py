@@ -1,3 +1,3 @@
 """Shared constants for the library."""
 
-DOMAIN = "pkg.onnxscript.torch_lib"
+DOMAIN = "pkg.torch_onnx.torch_lib"

@@ -392,7 +392,7 @@ def _get_inputs_and_attributes(
         return inputs, {}, [], [node.name]
 
     # The target should be an ATen operator now
-    node_schema = node.target._schema
+    node_schema: torch.FunctionSchema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.

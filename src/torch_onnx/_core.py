@@ -172,7 +172,6 @@ def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
     ir_node.metadata_props["namespace"] = namespace
     ir_node.metadata_props["class_hierarchy"] = repr(class_hierarchy)
     ir_node.metadata_props["name_scopes"] = repr(name_scopes)
-    ir_node.metadata_props["fx_node"] = str(node.format_node())
 
 
 def _add_nodes(
@@ -195,7 +194,7 @@ def _add_nodes(
         elif node.op == "call_function":
             # Add op to the graph
             op = str(node.target)
-            fx_inputs, attributes = _get_inputs_and_attributes(node)
+            fx_inputs, attributes, input_names = _get_inputs_and_attributes(node)
             inputs = []
             for i, input_ in enumerate(fx_inputs):
                 if input_ is None:
@@ -219,10 +218,12 @@ def _add_nodes(
                 name=node.name,
             )
             ir_node.meta["node"] = node
-            graph.append(ir_node)
-
+            ir_node.metadata_props["fx_node"] = str(node.format_node())
+            ir_node.metadata_props["input_names"] = repr(input_names)
             # Record the nn.Module stack for the node
             _set_namespace(node, ir_node)
+
+            graph.append(ir_node)
     return values
 
 
@@ -232,8 +233,12 @@ def _torch_version_integer() -> int:
 
 def _get_inputs_and_attributes(
     node: torch.fx.Node,
-) -> tuple[list[torch.fx.Node | None], dict[str, Any]]:
-    """Find and Fill in the not provided kwargs with default values."""
+) -> tuple[list[torch.fx.Node | None], dict[str, Any], list[str]]:
+    """Find and Fill in the not provided kwargs with default values.
+
+    Returns:
+        (inputs, attributes, input_names)
+    """
 
     # TODO: aten::sym_size has overload, but fx graph is using
     # overloadpacket for some reasons.
@@ -247,6 +252,7 @@ def _get_inputs_and_attributes(
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.
     inputs = []
+    input_names = []
     attributes = {}
 
     if inspect.isbuiltin(node.target):
@@ -255,6 +261,7 @@ def _get_inputs_and_attributes(
         for arg, schema_arg in zip(node.args, node_schema.arguments):
             if arg is None or isinstance(arg, torch.fx.Node):
                 inputs.append(arg)
+                input_names.append(schema_arg.name)
             else:
                 attributes[schema_arg.name] = arg
         for schema_arg in node_schema.arguments:
@@ -264,7 +271,6 @@ def _get_inputs_and_attributes(
                 "layout",
                 "device",
                 "requires_grad",
-                "pin_memory",
                 "memory_format",
                 "implicit",
             }:
@@ -276,7 +282,7 @@ def _get_inputs_and_attributes(
 
             attributes[schema_arg.name] = attr
 
-    return inputs, attributes
+    return inputs, attributes, input_names
 
 
 def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram):

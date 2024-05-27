@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import builtins
 import ctypes
 import inspect
 import itertools
 import logging
-from typing import Any
+import operator
+import typing
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -92,6 +95,11 @@ class TorchTensor(ir.Tensor):
 #     TOKEN = auto()
 
 
+def _set_shape_types(values: Sequence[ir.Value], meta_vals: Sequence[torch.Tensor]):
+    for value, meta_val in zip(values, meta_vals):
+        _set_shape_type(value, meta_val)
+
+
 def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor]):
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
@@ -174,12 +182,35 @@ def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
     ir_node.metadata_props["name_scopes"] = repr(name_scopes)
 
 
+def _handle_getitem_node(
+    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
+) -> ir.Value:
+    """Handle a getitem node.
+
+    Add the input value it is getting to the mapping, then return the value.
+    """
+    assert len(node.all_input_nodes) == 1
+    source = node.all_input_nodes[0]
+    source_outputs = node_name_to_values[source.name]
+    assert isinstance(
+        source_outputs, Sequence
+    ), f"Expected {source.name} to output sequence, got {node_name_to_values[source.name]}"
+    index = typing.cast(int, node.args[1])
+    value = source_outputs[index]
+    # Save the getitem value to the values mapping to in case
+    # it is one of the graph outputs
+    node_name_to_values[node.name] = value
+    return value
+
+
 def _add_nodes(
     exported_program: torch.export.ExportedProgram, graph: ir.Graph
 ) -> dict[str, ir.Value]:
-    values: dict[str, ir.Value] = {}
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     for node in exported_program.graph.nodes:
-        logger.debug("%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs))
+        logger.debug(
+            "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
+        )
         if node.op == "placeholder":
             # Placeholder nodes are user inputs
             # We need to create a new tensor for each user input
@@ -189,32 +220,47 @@ def _add_nodes(
             # dtype = node.kwargs["dtype"]
             input_ = ir.Input(name)
             input_.meta["node"] = node
-            values[name] = input_
+            node_name_to_values[name] = input_
             # The inputs will be added to the graph later
         elif node.op == "call_function":
+            if node.target == operator.getitem:
+                _handle_getitem_node(node, node_name_to_values)
+                continue
             # Add op to the graph
             op = str(node.target)
-            fx_inputs, attributes, input_names = _get_inputs_and_attributes(node)
+            fx_inputs, attributes, input_names, output_names = (
+                _get_inputs_and_attributes(node)
+            )
             inputs = []
             for i, input_ in enumerate(fx_inputs):
                 if input_ is None:
                     inputs.append(None)
                 elif hasattr(input_, "name"):
-                    inputs.append(values[input_.name])
+                    if (
+                        isinstance(input_, torch.fx.Node)
+                        and input_.target == operator.getitem
+                    ):
+                        actual_input = _handle_getitem_node(input_, node_name_to_values)
+                        inputs.append(actual_input)
+                    else:
+                        inputs.append(node_name_to_values[input_.name])
                 else:
                     attributes[f"arg_{i}"] = input_
 
-            output_name = node.name
-            output = ir.Value(name=output_name)
-            _set_shape_type(output, node.meta["val"])
+            outputs = [ir.Value(name=name) for name in output_names]
+            if len(outputs) > 1:
+                _set_shape_types(outputs, node.meta["val"])
+                node_name_to_values[node.name] = outputs
+            else:
+                _set_shape_type(outputs[0], node.meta["val"])
+                node_name_to_values[node.name] = outputs[0]
 
-            values[output_name] = output
             ir_node = ir.Node(
                 "pkg.torch.ops",
                 op,
                 inputs,
                 attributes=ir_convenience.convert_attributes(attributes),
-                outputs=[output],
+                outputs=outputs,
                 name=node.name,
             )
             ir_node.meta["node"] = node
@@ -224,7 +270,7 @@ def _add_nodes(
             _set_namespace(node, ir_node)
 
             graph.append(ir_node)
-    return values
+    return node_name_to_values
 
 
 def _torch_version_integer() -> int:
@@ -233,21 +279,18 @@ def _torch_version_integer() -> int:
 
 def _get_inputs_and_attributes(
     node: torch.fx.Node,
-) -> tuple[list[torch.fx.Node | None], dict[str, Any], list[str]]:
+) -> tuple[list[torch.fx.Node | None], dict[str, Any], list[str], list[str]]:
     """Find and Fill in the not provided kwargs with default values.
 
     Returns:
-        (inputs, attributes, input_names)
+        (inputs, attributes, input_names, output_names)
     """
+    if inspect.isbuiltin(node.target) or isinstance(node.target, str):
+        inputs = list(node.args)
+        return inputs, {}, [], [node.name]
 
-    # TODO: aten::sym_size has overload, but fx graph is using
-    # overloadpacket for some reasons.
-    # https://github.com/pytorch/pytorch/issues/97201
-    # We manually assigned overload for aten::sym_size.
-    if hasattr(node.target, "_schema"):
-        node_schema = node.target._schema  # type: ignore[union-attr]
-    else:
-        node_schema = torch.ops.aten.sym_size.int._schema  # type: ignore[union-attr]
+    # The target should be an ATen operator now
+    node_schema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.
@@ -282,7 +325,9 @@ def _get_inputs_and_attributes(
 
             attributes[schema_arg.name] = attr
 
-    return inputs, attributes, input_names
+    output_names = [f"{node.name}_{output.name}" for output in node_schema.returns]
+
+    return inputs, attributes, input_names, output_names
 
 
 def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram):

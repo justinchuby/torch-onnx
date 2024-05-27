@@ -1,20 +1,24 @@
-from typing import Sequence
+from typing import Any, Sequence
 from onnxscript._internal import param_manipulation
 from onnxscript import evaluator
 from onnxscript import ir
 from onnxscript.ir import _convenience as ir_convenience
 import onnxscript
 import onnx
+import torch
+from torch_onnx import _core
 
 
 class OpRecorder(evaluator.Evaluator):
     """An onnxscript Evaluator that captures the graph into torchscript."""
 
-    def __init__(self):
+    def __init__(self, constant_farm: dict[Any, ir.Value]):
         self.nodes = []
         self.functions: dict[ir.OperatorIdentifier, onnxscript.OnnxFunction] = {}
+        self.constant_farm = constant_farm
 
     def eval(self, schema, inputs, attributes):
+        attributes = {k: v for k, v in attributes.items() if v is not None}
         if schema.name == "CastLike":
             assert len(inputs) == 2
             # Skip CastLike if the input and output types are the same
@@ -43,6 +47,48 @@ class OpRecorder(evaluator.Evaluator):
                         )
                     )
                     return node.outputs[0]
+
+        onnx_inputs = []
+        for input in inputs:
+            if isinstance(input, ir.Value):
+                onnx_inputs.append(input)
+                continue
+            elif input in self.constant_farm:
+                onnx_inputs.append(self.constant_farm[input])
+                continue
+
+            if isinstance(input, (bool, float)):
+                # Be sure to put bool before int, because bool is a subclass of int
+                constant_tensor = ir.tensor(input)
+            elif isinstance(input, int):
+                constant_tensor = ir.tensor(input, dtype=ir.DataType.INT64)
+            elif isinstance(input, (tuple, list)) and all(
+                isinstance(val, int) for val in input
+            ):
+                constant_tensor = ir.tensor(input, dtype=ir.DataType.INT64)
+            elif isinstance(input, (tuple, list)) and all(
+                isinstance(val, float) for val in input
+            ):
+                constant_tensor = ir.tensor(input)
+            elif isinstance(input, complex):
+                # NOTE: ONNX doesn't support tensor of complex64/complex128, so we
+                # convert them to float32/float64 with real representation.
+                constant_tensor = _core.TorchTensor(torch.view_as_real(torch.tensor(input).resolve_conj()))
+            else:
+                raise TypeError(
+                    f"Constant input '{input}' of type '{type(input)}' is not supported"
+                )
+            self.nodes.append(
+                node := ir.Node(
+                    "",
+                    "Constant",
+                    (),
+                    attributes=ir_convenience.convert_attributes(
+                        {"value": constant_tensor}
+                    ),
+                )
+            )
+            self.constant_farm[input] = node.outputs[0]
         self.nodes.append(
             node := ir.Node(
                 schema.domain,

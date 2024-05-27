@@ -126,6 +126,8 @@ class OnnxRegistry:
 
         self._opset_version = 18  # Hard coded
 
+        from torch_onnx.torch_lib import ops  # noqa: F401
+
         # Initialize registry from torchlib
         self._initiate_registry_from_torchlib(torchlib_registration.default_registry)
 
@@ -929,4 +931,4 @@ def _find_onnx_data_type(
         # seq(tensor) also goes to here, as it is not supported in torchscript, and it would be None in this case.
         return set()
 
-    raise RuntimeError(f"Unknown input type from input: {torch_input}")
+    raise RuntimeError(f"Unknown input type from input: {torch_input}. type: {type(torch_input)}")

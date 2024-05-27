@@ -285,6 +285,7 @@ def _handle_call_function_node_with_lowering(
     model: ir.Model,
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    constant_farm: dict[Any, ir.Value],
 ):
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
@@ -294,16 +295,40 @@ def _handle_call_function_node_with_lowering(
     # torch_args and torch_kwargs are for op-level validation
     fx_args, fx_kwargs = _fill_in_default_kwargs(node)
 
+    inputs = []
+    for i, input_ in enumerate(fx_args):
+        if input_ is None:
+            inputs.append(None)
+        elif hasattr(input_, "name"):
+            if isinstance(input_, torch.fx.Node) and input_.target == operator.getitem:
+                actual_input = _handle_getitem_node(input_, node_name_to_values)
+                inputs.append(actual_input)
+            else:
+                inputs.append(node_name_to_values[input_.name])
+
     # Dispatch to ONNX op through OpShema. The input argument dtypes are compared to
     # function signature in OpSchema, and find the best matched overload.
     symbolic_fn = _onnx_dispatcher.dispatch(
         node=node,
-        onnx_args=fx_args,
+        onnx_args=inputs,
         onnx_kwargs=fx_kwargs,
     )
 
-    with onnxscript.evaluator.default_as(tracer := _tracer.OpRecorder()):
-        symbolic_fn(*fx_args, **fx_kwargs)
+    with onnxscript.evaluator.default_as(tracer := _tracer.OpRecorder(constant_farm)):
+        outputs = symbolic_fn(*inputs, **{key: value for key, value in fx_kwargs.items() if value is not None})
+
+    if isinstance(outputs, Sequence):
+        _set_shape_types(outputs, node.meta["val"])
+        node_name_to_values[node.name] = outputs
+    else:
+        _set_shape_type(outputs, node.meta["val"])
+        node_name_to_values[node.name] = outputs
+
+    for ir_node in tracer.nodes:
+        ir_node.meta["node"] = node
+        ir_node.metadata_props["fx_node"] = str(node.format_node())
+        # Record the nn.Module stack for the node
+        _set_namespace(node, ir_node)
 
     # Add the traced nodes to the graph
     model.graph.extend(tracer.nodes)
@@ -321,6 +346,7 @@ def _add_nodes(
     lower: Literal["fx", "ir", "none"],
 ) -> dict[str, ir.Value]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
+    constant_farm = {}
     for node in exported_program.graph.nodes:
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
@@ -339,7 +365,7 @@ def _add_nodes(
         elif node.op == "call_function":
             if lower == "fx":
                 _handle_call_function_node_with_lowering(
-                    model, node, node_name_to_values
+                    model, node, node_name_to_values, constant_farm
                 )
             else:
                 # No lowering

@@ -158,7 +158,7 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     nn_module_stack = node.meta.get("nn_module_stack")
     logger.debug("%s", nn_module_stack)
     if nn_module_stack is None:
-        logging.warning("nn_module_stack not found for node %s", node.name)
+        logger.warning("nn_module_stack not found for node %s", node.name)
         return "", [], []
     namespaces = []
     class_hierarchy = []
@@ -253,7 +253,6 @@ def _add_nodes(
             else:
                 _set_shape_type(outputs[0], node.meta["val"])
                 node_name_to_values[node.name] = outputs[0]
-
             ir_node = ir.Node(
                 "pkg.torch.ops",
                 op,
@@ -304,11 +303,21 @@ def _get_inputs_and_attributes(
             if arg is None or isinstance(arg, torch.fx.Node):
                 inputs.append(arg)
                 input_names.append(schema_arg.name)
+            elif isinstance(arg, Sequence) and all(
+                elem is None or isinstance(elem, torch.fx.Node) for elem in arg
+            ):
+                inputs.extend(arg)
+                input_names.extend([schema_arg.name] * len(arg))
+            elif isinstance(arg, torch.device):
+                attributes[schema_arg.name] = str(arg)
+            elif isinstance(arg, torch.dtype):
+                attributes[schema_arg.name] = _torch_dtype_to_onnx_dtype(arg)
             else:
                 attributes[schema_arg.name] = arg
         for schema_arg in node_schema.arguments:
             if schema_arg.name not in node.kwargs:
                 continue
+            kwarg = node.kwargs[schema_arg.name]
             if schema_arg.name in {
                 "layout",
                 "device",
@@ -316,11 +325,13 @@ def _get_inputs_and_attributes(
                 "memory_format",
                 "implicit",
             }:
-                attr = str(node.kwargs[schema_arg.name])
-            if schema_arg.name == "dtype":
-                attr = _torch_dtype_to_onnx_dtype(node.kwargs[schema_arg.name])
+                attr = str(kwarg)
+            elif isinstance(kwarg, torch.device):
+                attr = str(kwarg)
+            elif isinstance(kwarg, torch.dtype):
+                attr = _torch_dtype_to_onnx_dtype(kwarg)
             else:
-                attr = node.kwargs[schema_arg.name]
+                attr = kwarg
 
             attributes[schema_arg.name] = attr
 
@@ -360,6 +371,9 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
 
     for spec in itertools.chain(user_inputs, non_user_inputs):
         # Put the user inputs first and then the parameters/buffers
+        if isinstance(spec.arg, graph_signature.ConstantArgument):
+            logger.debug("Skipping constant argument %s", spec.arg)
+            continue
         value_name = spec.arg.name
         input_kind = spec.kind
         persistent = spec.persistent

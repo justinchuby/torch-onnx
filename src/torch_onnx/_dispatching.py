@@ -28,8 +28,10 @@ _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
     torch.uint8: ir.DataType.UINT8,
 }
 
+
 def _torch_dtype_to_onnx_compatible_dtype(dtype: torch.dtype) -> ir.DataType:
     return _TORCH_DTYPE_TO_ONNX_COMPATIBLE[dtype]
+
 
 # A special value to indicate that the default value is not specified
 _EmptyDefault = object()
@@ -40,19 +42,24 @@ class TypeConstraintParam:
     """Type constraint for a parameter.
 
     Attributes:
-        name: Name of the parameter. E.g. "TFloat
+        name: Name of the parameter. E.g. "TFloat"
         allowed_types: Allowed types for the parameter.
     """
+
     name: str
     allowed_types: set[ir.TypeProtocol]
 
 
 @dataclasses.dataclass(frozen=True)
 class Parameter:
+    """A formal parameter of an operator."""
+
     name: str
     type_constraint: TypeConstraintParam
     required: bool
     default: Any = _EmptyDefault
+    # TODO: Add other properties too
+
 
 @dataclasses.dataclass(frozen=True)
 class AttributeParameter:
@@ -60,6 +67,7 @@ class AttributeParameter:
     type: ir.AttributeType
     required: bool
     default: ir.Attr | None = None
+
 
 @dataclasses.dataclass
 class OpSchema:
@@ -72,6 +80,7 @@ class OpSchema:
         params: Input parameters.
         outputs: Output parameters.
     """
+
     domain: str
     name: str
     overloads: str
@@ -91,7 +100,10 @@ class OpSchema:
         return iter(self.params)
 
 
-def _attribute_type_compatible_with_arg(attr: AttributeParameter, value: ir.Value|int|float|bool|Sequence[int]|Sequence[float]) -> bool:
+def _attribute_type_compatible_with_arg(
+    attr: AttributeParameter,
+    value: ir.Value | int | float | bool | Sequence[int] | Sequence[float],
+) -> bool:
     """Check if the attribute type is compatible with the argument."""
     if isinstance(value, bool):
         return attr.type is ir.AttributeType.INT
@@ -111,19 +123,48 @@ def _attribute_type_compatible_with_arg(attr: AttributeParameter, value: ir.Valu
     return False
 
 
-def _param_type_compatible_with_arg(param: Parameter, value: ir.TypeProtocol|str|int|float|complex|Sequence[int]|Sequence[float], assigned_types: dict[TypeConstraintParam, ir.TypeProtocol]) -> bool:
+def _param_type_compatible_with_arg(
+    param: Parameter,
+    value: ir.TypeProtocol
+    | str
+    | int
+    | float
+    | complex
+    | Sequence[int]
+    | Sequence[float],
+    assigned_types: dict[TypeConstraintParam, ir.TypeProtocol],
+) -> bool:
     # Handle Python types first
     if isinstance(value, bool):
         if param.type_constraint.allowed_types & {ir.DataType.BOOL}:
             return True
     if isinstance(value, int):
-        if param.type_constraint.allowed_types & {ir.DataType.INT4, ir.DataType.INT8, ir.DataType.INT16, ir.DataType.INT32, ir.DataType.INT64}:
+        if param.type_constraint.allowed_types & {
+            ir.DataType.INT4,
+            ir.DataType.INT8,
+            ir.DataType.INT16,
+            ir.DataType.INT32,
+            ir.DataType.INT64,
+        }:
             return True
     if isinstance(value, float):
-        if param.type_constraint.allowed_types & {ir.DataType.FLOAT8E4M3FN, ir.DataType.FLOAT8E4M3FNUZ, ir.DataType.FLOAT8E5M2, ir.DataType.FLOAT8E5M2FNUZ, ir.DataType.FLOAT16, ir.DataType.FLOAT, ir.DataType.DOUBLE}:
+        if param.type_constraint.allowed_types & {
+            ir.DataType.FLOAT8E4M3FN,
+            ir.DataType.FLOAT8E4M3FNUZ,
+            ir.DataType.FLOAT8E5M2,
+            ir.DataType.FLOAT8E5M2FNUZ,
+            ir.DataType.FLOAT16,
+            ir.DataType.FLOAT,
+            ir.DataType.DOUBLE,
+        }:
             return True
     if isinstance(value, complex):
-        if param.type_constraint.allowed_types & {ir.DataType.FLOAT, ir.DataType.DOUBLE, ir.DataType.COMPLEX64, ir.DataType.COMPLEX128}:
+        if param.type_constraint.allowed_types & {
+            ir.DataType.FLOAT,
+            ir.DataType.DOUBLE,
+            ir.DataType.COMPLEX64,
+            ir.DataType.COMPLEX128,
+        }:
             return True
     if isinstance(value, str):
         if param.type_constraint.allowed_types & {ir.DataType.STRING}:
@@ -132,7 +173,10 @@ def _param_type_compatible_with_arg(param: Parameter, value: ir.TypeProtocol|str
         if param.type_constraint.allowed_types & {ir.DataType.INT32, ir.DataType.INT64}:
             if all(isinstance(i, int) for i in value):
                 return True
-        if param.type_constraint.allowed_types & {ir.DataType.FLOAT, ir.DataType.DOUBLE}:
+        if param.type_constraint.allowed_types & {
+            ir.DataType.FLOAT,
+            ir.DataType.DOUBLE,
+        }:
             if all(isinstance(i, float) for i in value):
                 return True
 
@@ -152,15 +196,18 @@ def _param_type_compatible_with_arg(param: Parameter, value: ir.TypeProtocol|str
     return False
 
 
-def _get_type_from_tensor(tensor: torch.Tensor | Sequence[torch.Tensor]) -> ir.TypeProtocol:
+def _get_type_from_tensor(
+    tensor: torch.Tensor | Sequence[torch.Tensor],
+) -> ir.TypeProtocol:
     if isinstance(tensor, torch.Tensor):
         return ir.TensorType(_torch_dtype_to_onnx_compatible_dtype(tensor.dtype))
-    first_tensor = next(
-            (item for item in tensor if item is not None), None
-        )
+    first_tensor = next((item for item in tensor if item is not None), None)
     if first_tensor is None:
         return ir.SequenceType(ir.TensorType(ir.DataType.UNDEFINED))
-    return ir.SequenceType(ir.TensorType(_torch_dtype_to_onnx_compatible_dtype(first_tensor.dtype)))
+    return ir.SequenceType(
+        ir.TensorType(_torch_dtype_to_onnx_compatible_dtype(first_tensor.dtype))
+    )
+
 
 def get_matching_overload(
     node: torch.fx.Node,
@@ -181,7 +228,10 @@ def get_matching_overload(
                 arg = args_map[param.name]
                 if isinstance(param, Parameter):
                     # TODO: Get type from node args
+                    # TODO: Handle None attributes
                     _get_type_from_tensor()
-                    if not _param_type_compatible_with_arg_type(param, arg.type, assigned_types):
+                    if not _param_type_compatible_with_arg_type(
+                        param, arg.type, assigned_types
+                    ):
                         matched = False
                         break

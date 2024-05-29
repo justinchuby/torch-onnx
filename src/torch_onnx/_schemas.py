@@ -143,7 +143,7 @@ class OpSchema:
                 name=constraint.type_param_str,
                 allowed_types={
                     _get_type_from_str(type_str)
-                    for type_str in constraint.allowed_type_strs  # type: ignore
+                    for type_str in constraint.allowed_type_strs
                 },
                 description=constraint.description,
             )

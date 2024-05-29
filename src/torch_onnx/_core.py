@@ -204,6 +204,8 @@ def _handle_getitem_node(
     # Save the getitem value to the values mapping to in case
     # it is one of the graph outputs
     node_name_to_values[node.name] = value
+    # Rename the name of value with the getitem name.
+    value.name = node.name
     return value
 
 

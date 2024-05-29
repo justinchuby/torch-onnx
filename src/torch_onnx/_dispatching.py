@@ -7,6 +7,7 @@ import onnxscript
 import torch.fx
 import onnx
 from onnxscript import ir
+from torch_onnx import _schemas
 
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
@@ -33,75 +34,8 @@ def _torch_dtype_to_onnx_compatible_dtype(dtype: torch.dtype) -> ir.DataType:
     return _TORCH_DTYPE_TO_ONNX_COMPATIBLE[dtype]
 
 
-# A special value to indicate that the default value is not specified
-_EmptyDefault = object()
-
-
-@dataclasses.dataclass(frozen=True)
-class TypeConstraintParam:
-    """Type constraint for a parameter.
-
-    Attributes:
-        name: Name of the parameter. E.g. "TFloat"
-        allowed_types: Allowed types for the parameter.
-    """
-
-    name: str
-    allowed_types: set[ir.TypeProtocol]
-
-
-@dataclasses.dataclass(frozen=True)
-class Parameter:
-    """A formal parameter of an operator."""
-
-    name: str
-    type_constraint: TypeConstraintParam
-    required: bool
-    default: Any = _EmptyDefault
-    # TODO: Add other properties too
-
-
-@dataclasses.dataclass(frozen=True)
-class AttributeParameter:
-    name: str
-    type: ir.AttributeType
-    required: bool
-    default: ir.Attr | None = None
-
-
-@dataclasses.dataclass
-class OpSchema:
-    """Schema for an operator.
-
-    Attributes:
-        domain: Domain of the operator. E.g. "".
-        name: Name of the operator. E.g. "Add".
-        overloads: Overload name of the operator.
-        params: Input parameters.
-        outputs: Output parameters.
-    """
-
-    domain: str
-    name: str
-    overloads: str
-    params: Sequence[Parameter | AttributeParameter]
-    outputs: Sequence[Parameter]
-
-    def __post_init__(self):
-        self._params_map = {param.name: param for param in self.params}
-
-    def get(self, name: str) -> Parameter | AttributeParameter:
-        return self._params_map[name]
-
-    def __contains__(self, name: str) -> bool:
-        return name in self._params_map
-
-    def __iter__(self) -> Iterator[Parameter | AttributeParameter]:
-        return iter(self.params)
-
-
 def _attribute_type_compatible_with_arg(
-    attr: AttributeParameter,
+    attr: _schemas.AttributeParameter,
     value: ir.Value | int | float | bool | Sequence[int] | Sequence[float],
 ) -> bool:
     """Check if the attribute type is compatible with the argument."""
@@ -124,7 +58,7 @@ def _attribute_type_compatible_with_arg(
 
 
 def _param_type_compatible_with_arg(
-    param: Parameter,
+    param: _schemas.Parameter,
     value: ir.TypeProtocol
     | str
     | int
@@ -132,7 +66,7 @@ def _param_type_compatible_with_arg(
     | complex
     | Sequence[int]
     | Sequence[float],
-    assigned_types: dict[TypeConstraintParam, ir.TypeProtocol],
+    assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol],
 ) -> bool:
     # Handle Python types first
     if isinstance(value, bool):
@@ -211,7 +145,7 @@ def _get_type_from_tensor(
 
 def get_matching_overload(
     node: torch.fx.Node,
-    overloads_schemas: Sequence[OpSchema],
+    overloads_schemas: Sequence[_schemas.OpSchema],
 ):
     # TODO: Create a param schema that uses IR types
     torch_schema: torch.FunctionSchema = node.target._schema
@@ -226,7 +160,7 @@ def get_matching_overload(
                 break
             if param.name in args_map:
                 arg = args_map[param.name]
-                if isinstance(param, Parameter):
+                if isinstance(param, _schemas.Parameter):
                     # TODO: Get type from node args
                     # TODO: Handle None attributes
                     _get_type_from_tensor()

@@ -28,7 +28,7 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #   b. Depending on param.is_input, Record named_inputs[param.name] = arg or named_attrs[param.name] = arg
 #   c. Handle kwargs as well
 #   d. Fill in None if the input is not provided
-# 2. Determine which parameter takes which dtype
+# 2. Determine which parameter takes which dtype (Handle non-tensor input corner cases)
 #   check: If there are required inputs or attributes that are not provided, raise an error.
 #   a. Create a to_resolve_type: set[ArgName]; create type_binding: dict[Constraint, ir.DataType]
 #   b. Iterate over all named_inputs
@@ -41,17 +41,14 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #    construct sequences
 #   a. Iterate over all parameters in the signature the second time
 #   b. If the parameter is in to_resolve_type:
-#       - If param.constraint in type_binding, set named_args[param.name] = Constant(value, dtype=type_binding[param.constraint])
-#       - Otherwise, set named_args[param.name] = Constant(value)
+#       - If param.constraint in type_binding,
+#         Get the constant from constant_farm (deduplicated);
+#            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
+#       - Otherwise, set named_inputs[param.name] = Constant(value)
 # 4. Construct the node with the inputs and attributes
 #    a. Iterate over all parameters in the signature the third time
-#    b. If the parameter is an input, set inputs.append(named_args[param.name])
-#    c. If the parameter is an attribute, set attributes[param.name] = named_args[param.name]
-
-
-def _convert_to_input(value: AllowedArgType, param: _schemas.Parameter) -> ir.Value:
-    if isinstance(value, ir.Value):
-        return value
+#    b. If the parameter is an input, set inputs.append(named_inputs[param.name])
+#    c. If the parameter is an attribute, set named_attrs[param.name] = named_args[param.name]
 
 
 class OpRecorder(evaluator.Evaluator):

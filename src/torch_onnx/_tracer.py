@@ -28,6 +28,22 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #   b. Depending on param.is_input, Record named_inputs[param.name] = arg or named_attrs[param.name] = arg
 #   c. Handle kwargs as well
 #   d. Fill in None if the input is not provided
+def construct_named_inputs_and_attrs(signature, args, kwargs):
+    named_inputs = {}
+    named_attrs = {}
+    for param in signature.params:
+        if param.is_input:
+            if args:
+                named_inputs[param.name] = args.pop(0)
+            elif param.name in kwargs:
+                named_inputs[param.name] = kwargs.pop(param.name)
+            else:
+                named_inputs[param.name] = None
+        else:
+            if param.name in kwargs:
+                named_attrs[param.name] = kwargs.pop(param.name)
+    return named_inputs, named_attrs
+
 # 2. Determine which parameter takes which dtype (Handle non-tensor input corner cases)
 #   check: If there are required inputs or attributes that are not provided, raise an error.
 #   a. Create a to_resolve_type: set[ArgName]; create type_binding: dict[Constraint, ir.DataType]
@@ -37,6 +53,20 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #       is an input, _and_ it's type constraint is not bound yet, add it to to_resolve_type.
 #   b2. If the argument is a ir.Value, the corresponding parameter must be an input.
 #       Bind {constraint: arg.dtype}.
+def determine_parameter_dtypes(signature, named_inputs):
+    to_resolve_type = set()
+    type_binding = {}
+    for name, arg in named_inputs.items():
+        param = next((p for p in signature.params if p.name == name), None)
+        if param:
+            if isinstance(arg, (int, float, bool, str)):
+                if param.is_input and param.constraint not in type_binding:
+                    to_resolve_type.add(param.name)
+            elif isinstance(arg, ir.Value):
+                if param.is_input:
+                    type_binding[param.constraint] = arg.dtype
+    return to_resolve_type, type_binding
+
 # 3. Convert Python constants to Constant nodes based on the dtype information;
 #    construct sequences
 #   a. Iterate over all parameters in the signature the second time
@@ -45,10 +75,37 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #         Get the constant from constant_farm (deduplicated);
 #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
 #       - Otherwise, set named_inputs[param.name] = Constant(value)
+def convert_python_constants(signature, named_inputs, to_resolve_type, type_binding, constant_farm):
+    for param in signature.params:
+        if param.name in to_resolve_type:
+            if param.constraint in type_binding:
+                constant_tensor = constant_farm.get((param.constraint, named_inputs[param.name]))
+                if constant_tensor is None:
+                    constant_tensor = ir.tensor(named_inputs[param.name], dtype=type_binding[param.constraint])
+                    constant_farm[(param.constraint, named_inputs[param.name])] = constant_tensor
+                named_inputs[param.name] = constant_tensor
+            else:
+                named_inputs[param.name] = ir.tensor(named_inputs[param.name])
+
 # 4. Construct the node with the inputs and attributes
 #    a. Iterate over all parameters in the signature the third time
 #    b. If the parameter is an input, set inputs.append(named_inputs[param.name])
 #    c. If the parameter is an attribute, set named_attrs[param.name] = named_args[param.name]
+def construct_node(signature, named_inputs, named_attrs):
+    inputs = []
+    attributes = {}
+    for param in signature.params:
+        if param.is_input:
+            inputs.append(named_inputs[param.name])
+        else:
+            attributes[param.name] = named_attrs[param.name]
+    return inputs, attributes
+
+# Usage:
+named_inputs, named_attrs = construct_named_inputs_and_attrs(signature, args, kwargs)
+to_resolve_type, type_binding = determine_parameter_dtypes(signature, named_inputs)
+convert_python_constants(signature, named_inputs, to_resolve_type, type_binding, constant_farm)
+inputs, attributes = construct_node(signature, named_inputs, named_attrs)
 
 
 class OpRecorder(evaluator.Evaluator):

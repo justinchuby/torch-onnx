@@ -75,6 +75,8 @@ def determine_parameter_dtypes(signature, named_inputs):
 #         Get the constant from constant_farm (deduplicated);
 #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
 #       - Otherwise, set named_inputs[param.name] = Constant(value)
+# NOTE: We can do optional type promotion here
+# TODO: Remove to_resolve_type
 def convert_python_constants(signature, named_inputs, to_resolve_type, type_binding, constant_farm):
     for param in signature.params:
         if param.name in to_resolve_type:

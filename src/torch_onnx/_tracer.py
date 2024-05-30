@@ -22,6 +22,26 @@ from torch_onnx import _core, _schemas
 AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | bool | str | Sequence[int] | Sequence[float]
 
 
+# Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
+# 1. Construct the names_args mapping based on (args, kwargs) and the signature.
+# 2. If there are required inputs or attributes that are not provided, raise an error.
+# 3. Decide which parameter gets which argument  # Should we do this in the dispatcher?
+# 4. Determine which parameter takes which dtype
+#   a. Create a to_resolve_type: set[ArgName]; create type_binding: dict[Constraint, ir.DataType]
+#   b. Iterate over all parameters in the signature
+#   b1. If the argument is a Python constant and the corresponding parameter
+#       is an input, _and_ it's type constraint is not bound yet, add it to to_resolve_type.
+#   b2. If the argument is a ir.Value, the corresponding parameter must be an input.
+#       Bind {constraint: arg.dtype}.
+# 5. Convert Python constants to Constant nodes based on the dtype information;
+#    construct sequences; fill in None inputs if needed
+#   a. Iterate over all parameters in the signature the second time
+#   b. If the parameter is in to_resolve_type:
+#       - If param.constraint in type_binding, bind
+
+
+# 6. Construct the node with the inputs and attributes
+
 
 def _convert_to_input(value: AllowedArgType, param: _schemas.Parameter) -> ir.Value:
     if isinstance(value, ir.Value):

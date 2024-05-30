@@ -16,8 +16,8 @@ import torch.fx
 from onnxscript import ir
 from onnxscript.ir import _convenience as ir_convenience
 from torch.export import graph_signature
-from torch_onnx import _dispatcher
-from torch_onnx.torch_lib import _tracer
+from torch_onnx import _fx_passes
+from torch_onnx import _tracer
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -476,6 +476,9 @@ def exported_program_to_ir(
     # TODO: We can call exported_program.graph.eliminate_dead_code()
 
     # 1. Add all nodes to the graph and create a dictionary of values
+    if lower == "fx":
+        # Include explicit type promotion nodes
+        _fx_passes.insert_type_promotion_nodes(exported_program)
     values = _add_nodes(exported_program, model, lower=lower)
 
     # 2. Add user inputs and all parameters/buffers to the graph.

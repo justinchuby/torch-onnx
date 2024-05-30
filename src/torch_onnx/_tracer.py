@@ -1,4 +1,14 @@
-from typing import Any, Sequence
+"""NOTES:
+
+We need a typing module that will handling Python to ONNX type promotion for use.
+For example, if we have torch.ops.aten.add(Tensor, 1.0), we need to promote 1.0
+to the same type as Tensor. The same thing needs to work for
+torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
+"""
+
+from __future__ import annotations
+
+from typing import Any, Mapping, Sequence
 from onnxscript._internal import param_manipulation
 from onnxscript import evaluator
 from onnxscript import ir
@@ -6,7 +16,16 @@ from onnxscript.ir import _convenience as ir_convenience
 import onnxscript
 import onnx
 import torch
-from torch_onnx import _core
+from torch_onnx import _core, _schemas
+
+
+AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | bool | str | Sequence[int] | Sequence[float]
+
+
+
+def _convert_to_input(value: AllowedArgType, param: _schemas.Parameter) -> ir.Value:
+    if isinstance(value, ir.Value):
+        return value
 
 
 class OpRecorder(evaluator.Evaluator):
@@ -16,6 +35,58 @@ class OpRecorder(evaluator.Evaluator):
         self.nodes = []
         self.functions: dict[ir.OperatorIdentifier, onnxscript.OnnxFunction] = {}
         self.constant_farm = constant_farm
+
+    def _call_op(self, opschema: _schemas.OpSchema, name_args: Mapping[str, AllowedArgType]):
+        """Add a node to the graph for the given opschema and arguments.
+
+        Args:
+            opschema: The OpSchema containing the node signature.
+            name_args: A mapping of argument names to their values.
+                Valid values are ir.Value representing dynamic inputs, or
+                Python constants representing constant inputs or attributes.
+        """
+        inputs = []
+        attributes = {}
+        for parameter in opschema.params:
+            pass
+
+        for name, value in name_args.items():
+            if isinstance(value, ir.Value):
+                inputs.append(value)
+            else:
+                # Convert Python constants to Constant nodes
+                if isinstance(value, (bool, float)):
+                    # Be sure to put bool before int, because bool is a subclass of int
+                    constant_tensor = ir.tensor(value)
+                elif isinstance(value, int):
+                    constant_tensor = ir.tensor(value, dtype=ir.DataType.INT64)
+                elif isinstance(value, (tuple, list)) and all(isinstance(val, int) for val in value):
+                    constant_tensor = ir.tensor(value, dtype=ir.DataType.INT64)
+                elif isinstance(value, (tuple, list)) and all(isinstance(val, float) for val in value):
+                    constant_tensor = ir.tensor(value)
+                elif isinstance(value, str):
+                    constant_tensor = ir.tensor(value, dtype=ir.DataType.STRING)
+                else:
+                    raise TypeError(f"Constant input '{value}' of type '{type(value)}' is not supported")
+                self.nodes.append(
+                    node := ir.Node(
+                        "",
+                        "Constant",
+                        (),
+                        attributes=ir_convenience.convert_attributes({"value": constant_tensor}),
+                    )
+                )
+                inputs.append(node.outputs[0])
+        self.nodes.append(
+            node := ir.Node(
+                opschema.domain,
+                opschema.name,
+                inputs,
+                attributes=ir_convenience.convert_attributes(attributes),
+                num_outputs=len(opschema.outputs),
+            )
+        )
+        return node.outputs
 
     def eval(self, schema, inputs, attributes):
         attributes = {k: v for k, v in attributes.items() if v is not None}

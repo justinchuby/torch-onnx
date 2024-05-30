@@ -27,16 +27,18 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #   a. Loop over all parameters in the signature and args together
 #   b. Depending on param.is_input, Record named_inputs[param.name] = arg or named_attrs[param.name] = arg
 #   c. Handle kwargs as well
+#   d. Fill in None if the input is not provided
 # 2. Determine which parameter takes which dtype
 #   check: If there are required inputs or attributes that are not provided, raise an error.
 #   a. Create a to_resolve_type: set[ArgName]; create type_binding: dict[Constraint, ir.DataType]
-#   b. Iterate over all parameters in the signature
+#   b. Iterate over all named_inputs
+#   b0. Find the corresponding parameter in the signature
 #   b1. If the argument is a Python constant and the corresponding parameter
 #       is an input, _and_ it's type constraint is not bound yet, add it to to_resolve_type.
 #   b2. If the argument is a ir.Value, the corresponding parameter must be an input.
 #       Bind {constraint: arg.dtype}.
 # 3. Convert Python constants to Constant nodes based on the dtype information;
-#    construct sequences; fill in None inputs if needed
+#    construct sequences
 #   a. Iterate over all parameters in the signature the second time
 #   b. If the parameter is in to_resolve_type:
 #       - If param.constraint in type_binding, set named_args[param.name] = Constant(value, dtype=type_binding[param.constraint])

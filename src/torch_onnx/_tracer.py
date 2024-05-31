@@ -148,14 +148,6 @@ def resolve_parameter_dtypes(
     return type_binding
 
 
-# 3. Convert Python constants to Constant nodes based on the dtype information;
-#    construct sequences
-#   a. Iterate over all parameters in the signature the second time
-#   b. If the parameter is in to_resolve_type:
-#       - If param.constraint in type_binding,
-#         Get the constant from constant_farm (deduplicated);
-#            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
-#       - Otherwise, set named_inputs[param.name] = Constant(value)
 def convert_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
@@ -183,6 +175,14 @@ def convert_python_constants(
     Returns:
         None
     """
+    # 3. Convert Python constants to Constant nodes based on the dtype information;
+    #    construct sequences
+    #   a. Iterate over all parameters in the signature the second time
+    #   b. If the parameter is in to_resolve_type:
+    #       - If param.constraint in type_binding,
+    #         Get the constant from constant_farm (deduplicated);
+    #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
+    #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
@@ -267,15 +267,6 @@ def construct_node(
     )
 
 
-# Usage:
-named_inputs, named_attrs = construct_named_inputs_and_attrs(signature, args, kwargs)
-to_resolve_type, type_binding = determine_parameter_dtypes(signature, named_inputs)
-convert_python_constants(
-    signature, named_inputs, to_resolve_type, type_binding, constant_farm
-)
-inputs, attributes = construct_node(signature, named_inputs, named_attrs)
-
-
 class OpRecorder(evaluator.Evaluator):
     """An onnxscript Evaluator that captures the graph into torchscript."""
 
@@ -295,59 +286,11 @@ class OpRecorder(evaluator.Evaluator):
                 Valid values are ir.Value representing dynamic inputs, or
                 Python constants representing constant inputs or attributes.
         """
-        inputs = []
-        attributes = {}
-        for parameter in opschema.params:
-            pass
 
-        for name, value in name_args.items():
-            if isinstance(value, ir.Value):
-                inputs.append(value)
-            else:
-                # Convert Python constants to Constant nodes
-                if isinstance(value, (bool, float)):
-                    # Be sure to put bool before int, because bool is a subclass of int
-                    constant_tensor = ir.tensor(value)
-                elif isinstance(value, int):
-                    constant_tensor = ir.tensor(value, dtype=ir.DataType.INT64)
-                elif isinstance(value, (tuple, list)) and all(
-                    isinstance(val, int) for val in value
-                ):
-                    constant_tensor = ir.tensor(value, dtype=ir.DataType.INT64)
-                elif isinstance(value, (tuple, list)) and all(
-                    isinstance(val, float) for val in value
-                ):
-                    constant_tensor = ir.tensor(value)
-                elif isinstance(value, str):
-                    constant_tensor = ir.tensor(value, dtype=ir.DataType.STRING)
-                else:
-                    raise TypeError(
-                        f"Constant input '{value}' of type '{type(value)}' is not supported"
-                    )
-                self.nodes.append(
-                    node := ir.Node(
-                        "",
-                        "Constant",
-                        (),
-                        attributes=ir_convenience.convert_attributes(
-                            {"value": constant_tensor}
-                        ),
-                    )
-                )
-                inputs.append(node.outputs[0])
-        self.nodes.append(
-            node := ir.Node(
-                opschema.domain,
-                opschema.name,
-                inputs,
-                attributes=ir_convenience.convert_attributes(attributes),
-                num_outputs=len(opschema.outputs),
-            )
-        )
-        return node.outputs
 
-    def eval(self, schema, inputs, attributes):
-        attributes = {k: v for k, v in attributes.items() if v is not None}
+    def eval(self, schema: onnx.defs.OpSchema, args: Sequence[AllowedArgType], kwargs: Mapping[str, AllowedArgType]) -> _tensors.SymbolicTensor | tuple[_tensors.SymbolicTensor, ...]:
+        op_signature = _schemas.OpSignature.from_opschema(schema)
+        # TODO(justinchuby): Pick it up from here
         if schema.name == "CastLike":
             assert len(inputs) == 2
             # Skip CastLike if the input and output types are the same
@@ -377,58 +320,6 @@ class OpRecorder(evaluator.Evaluator):
                     )
                     return node.outputs[0]
 
-        onnx_inputs = []
-        for input in inputs:
-            if isinstance(input, ir.Value):
-                onnx_inputs.append(input)
-                continue
-            elif input in self.constant_farm:
-                onnx_inputs.append(self.constant_farm[input])
-                continue
-
-            if isinstance(input, (bool, float)):
-                # Be sure to put bool before int, because bool is a subclass of int
-                constant_tensor = ir.tensor(input)
-            elif isinstance(input, int):
-                constant_tensor = ir.tensor(input, dtype=ir.DataType.INT64)
-            elif isinstance(input, (tuple, list)) and all(
-                isinstance(val, int) for val in input
-            ):
-                constant_tensor = ir.tensor(input, dtype=ir.DataType.INT64)
-            elif isinstance(input, (tuple, list)) and all(
-                isinstance(val, float) for val in input
-            ):
-                constant_tensor = ir.tensor(input)
-            elif isinstance(input, complex):
-                # NOTE: ONNX doesn't support tensor of complex64/complex128, so we
-                # convert them to float32/float64 with real representation.
-                constant_tensor = _core.TorchTensor(
-                    torch.view_as_real(torch.tensor(input).resolve_conj())
-                )
-            else:
-                raise TypeError(
-                    f"Constant input '{input}' of type '{type(input)}' is not supported"
-                )
-            self.nodes.append(
-                node := ir.Node(
-                    "",
-                    "Constant",
-                    (),
-                    attributes=ir_convenience.convert_attributes(
-                        {"value": constant_tensor}
-                    ),
-                )
-            )
-            self.constant_farm[input] = node.outputs[0]
-        self.nodes.append(
-            node := ir.Node(
-                schema.domain,
-                schema.name,
-                onnx_inputs,
-                attributes=ir_convenience.convert_attributes(attributes),
-                num_outputs=len(schema.outputs),
-            )
-        )
         if len(schema.outputs) == 1:
             return node.outputs[0]
         return node.outputs

@@ -30,11 +30,11 @@ AllowedArgType = ir.Value | ValidAttributeType
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
-def construct_named_inputs_and_attrs(
+def _construct_named_inputs_and_attrs(
     signature: _schemas.OpSignature,
     args: Sequence[AllowedArgType],
     kwargs: Mapping[str, AllowedArgType],
-) -> tuple[dict[str, AllowedArgType], dict[str, AllowedArgType]]:
+) -> tuple[dict[str, AllowedArgType], dict[str, ValidAttributeType]]:
     """Construct two mappings: name to inputs and named to attributes based on the signature and args/kwargs.
 
     This function uses the OpSignature to determine which argument in args and kwargs corresponds to
@@ -108,7 +108,7 @@ def construct_named_inputs_and_attrs(
     return named_inputs, named_attrs
 
 
-def resolve_parameter_dtypes(
+def _resolve_parameter_dtypes(
     signature: _schemas.OpSignature, named_inputs: Mapping[str, AllowedArgType]
 ) -> Mapping[_schemas.TypeConstraintParam, ir.DataType]:
     """Determine which parameter takes which dtype.
@@ -148,7 +148,7 @@ def resolve_parameter_dtypes(
     return type_binding
 
 
-def convert_python_constants(
+def _convert_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.DataType],
@@ -160,7 +160,7 @@ def convert_python_constants(
         ir.Value,
     ],
     opset: onnxscript.values.Opset,
-) -> None:
+) -> dict[str, ir.Value | None]:
     """Convert Python constants to Constant nodes based on the dtype information.
 
     The added constants will be replacing values in named_inputs in place.
@@ -242,9 +242,10 @@ def convert_python_constants(
             constant_value is not None
         ), f"constant_value should not be None here. Arg: {arg}"
         named_inputs[param.name] = constant_value
+        return named_inputs  # type: ignore[return-type]
 
 
-def construct_node(
+def _construct_node(
     signature: _schemas.OpSignature,
     named_inputs: Mapping[str, ir.Value | None],
     named_attrs: Mapping[str, ValidAttributeType],
@@ -270,32 +271,54 @@ def construct_node(
 class OpRecorder(evaluator.Evaluator):
     """An onnxscript Evaluator that captures the graph into torchscript."""
 
-    def __init__(self, constant_farm: dict[Any, ir.Value]):
+    def __init__(
+        self, opset: onnxscript.values.Opset, constant_farm: dict[Any, ir.Value]
+    ):
         self.nodes = []
+        self.opset = opset
         self.functions: dict[ir.OperatorIdentifier, onnxscript.OnnxFunction] = {}
         self.constant_farm = constant_farm
 
     def _call_op(
-        self, opschema: _schemas.OpSignature, name_args: Mapping[str, AllowedArgType]
-    ):
-        """Add a node to the graph for the given opschema and arguments.
+        self,
+        op_signature: _schemas.OpSignature,
+        named_inputs: dict[str, AllowedArgType],
+        named_attrs: dict[str, ValidAttributeType],
+    ) -> Sequence[ir.Value]:
+        """Record nodes for the given opschema and arguments.
 
         Args:
-            opschema: The OpSchema containing the node signature.
-            name_args: A mapping of argument names to their values.
-                Valid values are ir.Value representing dynamic inputs, or
-                Python constants representing constant inputs or attributes.
+            op_signature: The OpSchema containing the node signature.
+            named_inputs: The mapping of parameter names to their arguments.
+            named_attrs: The mapping of attribute names to their values.
         """
+        type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
+        converted_named_inputs = _convert_python_constants(
+            op_signature, named_inputs, type_binding, self.constant_farm, self.opset
+        )
+        self.nodes.append(
+            node := _construct_node(
+                op_signature, converted_named_inputs, named_attrs, self.opset
+            )
+        )
+        return node.outputs
 
-
-    def eval(self, schema: onnx.defs.OpSchema, args: Sequence[AllowedArgType], kwargs: Mapping[str, AllowedArgType]) -> _tensors.SymbolicTensor | tuple[_tensors.SymbolicTensor, ...]:
+    def eval(
+        self,
+        schema: onnx.defs.OpSchema,
+        args: Sequence[AllowedArgType],
+        kwargs: Mapping[str, AllowedArgType],
+    ) -> _tensors.SymbolicTensor | tuple[_tensors.SymbolicTensor, ...]:
         op_signature = _schemas.OpSignature.from_opschema(schema)
-        # TODO(justinchuby): Pick it up from here
+        named_inputs, named_attrs = _construct_named_inputs_and_attrs(
+            op_signature, args, kwargs
+        )
+        # TODO(justinchuby): Handle cast
         if schema.name == "CastLike":
-            assert len(inputs) == 2
+            assert len(named_inputs) == 2
             # Skip CastLike if the input and output types are the same
-            src_input = inputs[0]
-            target_input = inputs[1]
+            src_input = named_inputs["input"]
+            target_input = named_inputs["target_input"]
             dtypes_available = (
                 isinstance(src_input, ir.Value)
                 and isinstance(target_input, ir.Value)
@@ -308,21 +331,12 @@ class OpRecorder(evaluator.Evaluator):
                     return src_input
                 else:
                     # Create a Cast node
-                    self.nodes.append(
-                        node := ir.Node(
-                            "",
-                            "Cast",
-                            (src_input,),
-                            attributes=ir_convenience.convert_attributes(
-                                {"to": target_input.dtype}
-                            ),
-                        )
-                    )
-                    return node.outputs[0]
+                    return self.opset.Cast(src_input, to=target_input.dtype)
 
-        if len(schema.outputs) == 1:
-            return node.outputs[0]
-        return node.outputs
+        outputs = self._call_op(op_signature, named_inputs, named_attrs)
+        if len(outputs) == 1:
+            return outputs[0]
+        return outputs
 
     def eval_function(  # type: ignore[override]
         self,
@@ -330,6 +344,7 @@ class OpRecorder(evaluator.Evaluator):
         args,
         kwargs,
     ):
+        # TODO(justinchuby): Pick up from here
         # Special cases for handling IsScalar and Rank
         if function.name == "IsScalar":
             if len(args) != 1:

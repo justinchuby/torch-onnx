@@ -105,7 +105,7 @@ def _convert_formal_parameter(
 
 
 @dataclasses.dataclass
-class OpSchema:
+class OpSignature:
     """Schema for an operator.
 
     Attributes:
@@ -137,7 +137,7 @@ class OpSchema:
         return iter(self.params)
 
     @classmethod
-    def from_opschema(cls, opschema: onnx.defs.OpSchema) -> OpSchema:
+    def from_opschema(cls, opschema: onnx.defs.OpSchema) -> OpSignature:
         type_constraints = {
             constraint.type_param_str: TypeConstraintParam(
                 name=constraint.type_param_str,

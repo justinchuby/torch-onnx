@@ -145,7 +145,7 @@ def _get_type_from_tensor(
 
 def get_matching_overload(
     node: torch.fx.Node,
-    overloads_schemas: Sequence[_schemas.OpSchema],
+    overloads_schemas: Sequence[_schemas.OpSignature],
 ):
     # TODO: Create a param schema that uses IR types
     torch_schema: torch.FunctionSchema = node.target._schema

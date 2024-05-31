@@ -28,7 +28,7 @@ AllowedArgType = ir.Value | ir.TensorProtocol | torch.Tensor | int | float | boo
 #   b. Depending on param.is_input, Record named_inputs[param.name] = arg or named_attrs[param.name] = arg
 #   c. Handle kwargs as well
 #   d. Fill in None if the input is not provided
-def construct_named_inputs_and_attrs(signature, args, kwargs):
+def construct_named_inputs_and_attrs(signature: _schemas.OpSignature, args, kwargs):
     named_inputs = {}
     named_attrs = {}
     for param in signature.params:
@@ -118,7 +118,7 @@ class OpRecorder(evaluator.Evaluator):
         self.functions: dict[ir.OperatorIdentifier, onnxscript.OnnxFunction] = {}
         self.constant_farm = constant_farm
 
-    def _call_op(self, opschema: _schemas.OpSchema, name_args: Mapping[str, AllowedArgType]):
+    def _call_op(self, opschema: _schemas.OpSignature, name_args: Mapping[str, AllowedArgType]):
         """Add a node to the graph for the given opschema and arguments.
 
         Args:

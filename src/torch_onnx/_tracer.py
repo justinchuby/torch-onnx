@@ -16,26 +16,17 @@ from onnxscript.ir import _convenience as ir_convenience
 import onnxscript
 import onnx
 import torch
-from torch_onnx import _core, _schemas
+from torch_onnx import _core, _schemas, _tensors
 import logging
 
 logger = logging.getLogger(__name__)
 
+# TODO(justinchuby): Update ValidAttributeType to ir_convenience.SupportedAttrTypes
 ValidAttributeType = (
-    ir.TensorProtocol
-    | torch.Tensor
-    | int
-    | float
-    | bool
-    | str
-    | Sequence[int]
-    | Sequence[float]
+    ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float]
 )
 
-AllowedArgType = (
-    ir.Value
-    | ValidAttributeType
-)
+AllowedArgType = ir.Value | ValidAttributeType
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -43,7 +34,7 @@ def construct_named_inputs_and_attrs(
     signature: _schemas.OpSignature,
     args: Sequence[AllowedArgType],
     kwargs: Mapping[str, AllowedArgType],
-) -> tuple[Mapping[str, AllowedArgType], Mapping[str, AllowedArgType]]:
+) -> tuple[dict[str, AllowedArgType], dict[str, AllowedArgType]]:
     """Construct two mappings: name to inputs and named to attributes based on the signature and args/kwargs.
 
     This function uses the OpSignature to determine which argument in args and kwargs corresponds to
@@ -82,7 +73,11 @@ def construct_named_inputs_and_attrs(
                     f"Signature: {signature}. Args: {args}. Kwargs: {kwargs}."
                 )
             else:
-                logger.debug("Optional parameter '%s' is not provided. Added as None. Signature: %s", param.name, signature)
+                logger.debug(
+                    "Optional parameter '%s' is not provided. Added as None. Signature: %s",
+                    param.name,
+                    signature,
+                )
                 named_inputs[param.name] = None
         else:
             # AttributeParameter
@@ -103,17 +98,26 @@ def construct_named_inputs_and_attrs(
                 )
 
             if attribute is None:
-                logger.debug("Optional attribute '%s' is None. Dropped. Signature: %s", param.name, signature)
+                logger.debug(
+                    "Optional attribute '%s' is None. Dropped. Signature: %s",
+                    param.name,
+                    signature,
+                )
                 continue
             named_attrs[param.name] = attribute
     return named_inputs, named_attrs
 
 
-
-def resolve_parameter_dtypes(signature: _schemas.OpSignature, named_inputs: Mapping[str, AllowedArgType]) -> Mapping[str, ir.DataType]:
+def resolve_parameter_dtypes(
+    signature: _schemas.OpSignature, named_inputs: Mapping[str, AllowedArgType]
+) -> Mapping[_schemas.TypeConstraintParam, ir.DataType]:
     """Determine which parameter takes which dtype.
 
     Handle non-tensor input corner cases and type promotion.
+
+    Requires:
+        All ir.Value in name_inputs should have dtype set. Their dtype should be
+        compatible with the type_constraint of the corresponding parameter in the signature.
 
     Args:
         signature: The OpSignature for the node.
@@ -122,25 +126,26 @@ def resolve_parameter_dtypes(signature: _schemas.OpSignature, named_inputs: Mapp
     Returns:
         A mapping of Constraint names to ir.DataType.
     """
-    #   a. Create a to_resolve_type: set[ArgName]; create type_binding: dict[Constraint, ir.DataType]
+    #   a. Create type_binding: dict[str, ir.DataType]
     #   b. Iterate over all named_inputs
     #   b0. Find the corresponding parameter in the signature
-    #   b1. If the argument is a Python constant and the corresponding parameter
-    #       is an input, _and_ it's type constraint is not bound yet, add it to to_resolve_type.
-    #   b2. If the argument is a ir.Value, the corresponding parameter must be an input.
-    #       Bind {constraint: arg.dtype}.
-    to_resolve_type = set()
+    #   b1. If the argument is a Python constant, skip.
+    #   b2. If the argument is a ir.Value, Bind {constraint: arg.dtype}.
     type_binding = {}
     for name, arg in named_inputs.items():
-        param = next((p for p in signature.params if p.name == name), None)
-        if param:
-            if isinstance(arg, (int, float, bool, str)):
-                if param.is_input and param.constraint not in type_binding:
-                    to_resolve_type.add(param.name)
-            elif isinstance(arg, ir.Value):
-                if param.is_input:
-                    type_binding[param.constraint] = arg.dtype
-    return to_resolve_type, type_binding
+        param = signature.params_map[name]
+        assert isinstance(
+            param, _schemas.Parameter
+        ), f"Expected Parameter, got {type(param)}"
+        if isinstance(arg, (int, float, bool, str, Sequence, torch.Tensor)):
+            # Skip the Python constants because we do not know what dtype they should take yet
+            continue
+        elif isinstance(arg, ir.Value):
+            # NOTE: We assume arg.dtype is compatible with the type_constraint
+            assert arg.dtype is not None, f"Expected dtype to be set for {arg}"
+            # TODO(justinchuby): Implement type promotion logic here.
+            type_binding[param.type_constraint] = arg.dtype
+    return type_binding
 
 
 # 3. Convert Python constants to Constant nodes based on the dtype information;
@@ -151,42 +156,115 @@ def resolve_parameter_dtypes(signature: _schemas.OpSignature, named_inputs: Mapp
 #         Get the constant from constant_farm (deduplicated);
 #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
 #       - Otherwise, set named_inputs[param.name] = Constant(value)
-# NOTE: We can do optional type promotion here
-# TODO: Remove to_resolve_type
 def convert_python_constants(
-    signature, named_inputs, to_resolve_type, type_binding, constant_farm
-):
-    for param in signature.params:
-        if param.name in to_resolve_type:
-            if param.constraint in type_binding:
-                constant_tensor = constant_farm.get(
-                    (param.constraint, named_inputs[param.name])
-                )
-                if constant_tensor is None:
-                    constant_tensor = ir.tensor(
-                        named_inputs[param.name], dtype=type_binding[param.constraint]
-                    )
-                    constant_farm[(param.constraint, named_inputs[param.name])] = (
-                        constant_tensor
-                    )
-                named_inputs[param.name] = constant_tensor
-            else:
-                named_inputs[param.name] = ir.tensor(named_inputs[param.name])
+    signature: _schemas.OpSignature,
+    named_inputs: dict[str, AllowedArgType],
+    type_binding: Mapping[_schemas.TypeConstraintParam, ir.DataType],
+    constant_farm: dict[
+        tuple[
+            bool | int | float | str | ir.TensorProtocol | tuple[int] | tuple[float],
+            ir.DataType,
+        ],
+        ir.Value,
+    ],
+    opset: onnxscript.values.Opset,
+) -> None:
+    """Convert Python constants to Constant nodes based on the dtype information.
 
+    The added constants will be replacing values in named_inputs in place.
 
-# 4. Construct the node with the inputs and attributes
-#    a. Iterate over all parameters in the signature the third time
-#    b. If the parameter is an input, set inputs.append(named_inputs[param.name])
-#    c. If the parameter is an attribute, set named_attrs[param.name] = named_args[param.name]
-def construct_node(signature, named_inputs, named_attrs):
-    inputs = []
-    attributes = {}
-    for param in signature.params:
-        if param.is_input:
-            inputs.append(named_inputs[param.name])
+    Args:
+        signature: The OpSignature for the node.
+        named_inputs: The mapping of parameter names to their arguments.
+        type_binding: A mapping of Constraint names to ir.DataType.
+        constant_farm: A dictionary of {(py_value, ir.DataType): ir.Value} to store the deduplicated constants.
+        opset: The Opset to use for creating Constant nodes.
+
+    Returns:
+        None
+    """
+    for name, arg in named_inputs.items():
+        if isinstance(arg, ir.Value):
+            # TODO(justinchuby): Cast the ir.Value here if needed
+            continue
+
+        param = signature.params_map[name]
+        assert isinstance(
+            param, _schemas.Parameter
+        ), f"Expected Parameter, got {type(param)}"
+
+        if param.type_constraint in type_binding:
+            # A known dtype is available
+            dtype = type_binding[param.type_constraint]
+        elif len(param.type_constraint.allowed_types) == 1:
+            # Only one type is allowed
+            dtype = next(iter(param.type_constraint.allowed_types)).dtype
         else:
-            attributes[param.name] = named_attrs[param.name]
-    return inputs, attributes
+            # No dtype information available. Infer from the Python constant
+            if isinstance(arg, bool):
+                dtype = ir.DataType.BOOL
+            elif isinstance(arg, float):
+                dtype = ir.DataType.FLOAT
+            elif isinstance(arg, int):
+                dtype = ir.DataType.INT64
+            elif isinstance(arg, str):
+                dtype = ir.DataType.STRING
+            elif isinstance(arg, (tuple, list)) and all(
+                isinstance(val, int) for val in arg
+            ):
+                dtype = ir.DataType.INT64
+                # Make the arg hashable
+                arg = tuple(arg)
+            elif isinstance(arg, (tuple, list)) and all(
+                isinstance(val, float) for val in arg
+            ):
+                dtype = ir.DataType.FLOAT
+                # Make the arg hashable
+                arg = tuple(arg)
+            elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
+                dtype = arg.dtype
+            else:
+                raise TypeError(
+                    f"Constant input '{arg}' of type '{type(arg)}' is not supported"
+                )
+
+        if not isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
+            # Deduplicate the constants
+            constant_value = constant_farm.get((arg, dtype))
+            if constant_value is None:
+                constant_tensor = ir.tensor(value=arg, dtype=dtype)
+                constant_value = opset.Constant(value=constant_tensor)
+                constant_farm[(arg, dtype)] = constant_value
+        else:
+            constant_value = opset.Constant(value=arg)
+
+        assert (
+            constant_value is not None
+        ), f"constant_value should not be None here. Arg: {arg}"
+        named_inputs[param.name] = constant_value
+
+
+def construct_node(
+    signature: _schemas.OpSignature,
+    named_inputs: Mapping[str, ir.Value | None],
+    named_attrs: Mapping[str, ValidAttributeType],
+    opset: onnxscript.values.Opset,
+) -> ir.Node:
+    """Construct the node with the inputs and attributes.
+
+    Args:
+        signature: The OpSignature for the node.
+        named_inputs: The mapping of parameter names to their arguments.
+        named_attrs: The mapping of attribute names to their values.
+    """
+    outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
+    return ir.Node(
+        signature.domain,
+        signature.name,
+        inputs=tuple(named_inputs.values()),
+        attributes=ir_convenience.convert_attributes(named_attrs),
+        outputs=outputs,
+    )
 
 
 # Usage:

@@ -123,15 +123,18 @@ class OpSignature:
     overload: str
     params: Sequence[Parameter | AttributeParameter]
     outputs: Sequence[Parameter]
+    params_map: Mapping[str, Parameter | AttributeParameter] = dataclasses.field(
+        init=False, repr=False
+    )
 
     def __post_init__(self):
-        self._params_map = {param.name: param for param in self.params}
+        self.params_map = {param.name: param for param in self.params}
 
     def get(self, name: str) -> Parameter | AttributeParameter:
-        return self._params_map[name]
+        return self.params_map[name]
 
     def __contains__(self, name: str) -> bool:
-        return name in self._params_map
+        return name in self.params_map
 
     def __iter__(self) -> Iterator[Parameter | AttributeParameter]:
         return iter(self.params)

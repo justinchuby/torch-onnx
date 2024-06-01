@@ -27,6 +27,12 @@ class SymbolicTensor(ir.Value):
         )
         self._opset = opset
 
+    @property
+    def rank(self) -> int | None:
+        if self.shape is None:
+            return None
+        return len(self.shape)
+
     def __mod__(self, other):
         if self.dtype in {
             ir.DataType.FLOAT,

@@ -8,16 +8,16 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
-from onnxscript._internal import param_manipulation
-from onnxscript import evaluator
-from onnxscript import ir
-from onnxscript.ir import _convenience as ir_convenience
-import onnxscript
-import onnx
-import torch
-from torch_onnx import _core, _schemas, _tensors
 import logging
+from typing import Any, Mapping, Sequence
+
+import onnx
+import onnxscript
+import torch
+from onnxscript import evaluator, ir
+from onnxscript.ir import _convenience as ir_convenience
+
+from torch_onnx import _schemas, _tensors
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,7 @@ def _convert_python_constants(
             constant_value is not None
         ), f"constant_value should not be None here. Arg: {arg}"
         named_inputs[param.name] = constant_value
-        return named_inputs  # type: ignore[return-type]
+    return named_inputs  # type: ignore[return-type]
 
 
 def _construct_node(
@@ -284,7 +284,7 @@ class OpRecorder(evaluator.Evaluator):
         op_signature: _schemas.OpSignature,
         named_inputs: dict[str, AllowedArgType],
         named_attrs: dict[str, ValidAttributeType],
-    ) -> Sequence[ir.Value]:
+    ) -> Sequence[_tensors.SymbolicTensor]:
         """Record nodes for the given opschema and arguments.
 
         Args:
@@ -301,14 +301,14 @@ class OpRecorder(evaluator.Evaluator):
                 op_signature, converted_named_inputs, named_attrs, self.opset
             )
         )
-        return node.outputs
+        return node.outputs  # type: ignore
 
     def eval(
         self,
         schema: onnx.defs.OpSchema,
         args: Sequence[AllowedArgType],
         kwargs: Mapping[str, AllowedArgType],
-    ) -> _tensors.SymbolicTensor | tuple[_tensors.SymbolicTensor, ...]:
+    ) -> _tensors.SymbolicTensor | Sequence[_tensors.SymbolicTensor]:
         op_signature = _schemas.OpSignature.from_opschema(schema)
         named_inputs, named_attrs = _construct_named_inputs_and_attrs(
             op_signature, args, kwargs
@@ -341,9 +341,9 @@ class OpRecorder(evaluator.Evaluator):
     def eval_function(  # type: ignore[override]
         self,
         function: onnxscript.OnnxFunction,
-        args,
-        kwargs,
-    ):
+        args: Sequence[AllowedArgType],
+        kwargs: Mapping[str, AllowedArgType],
+    ) -> _tensors.SymbolicTensor | Sequence[_tensors.SymbolicTensor] | bool | int:
         # TODO(justinchuby): Pick up from here
         # Special cases for handling IsScalar and Rank
         if function.name == "IsScalar":
@@ -351,9 +351,9 @@ class OpRecorder(evaluator.Evaluator):
                 raise TypeError(
                     f"Expected 1 positional argument for function '{function}', got {len(args)}."
                 )
-            if isinstance(args[0], ir.Value):
-                if args[0].shape is not None:
-                    return args[0].rank() == 0
+            if isinstance(args[0], _tensors.SymbolicTensor):
+                if args[0].rank is not None:
+                    return args[0].rank == 0
                 else:
                     # Fall to call add_function_call
                     pass
@@ -367,9 +367,9 @@ class OpRecorder(evaluator.Evaluator):
                 raise TypeError(
                     f"Expected 1 positional argument for function '{function}', got {len(args)}."
                 )
-            if isinstance(args[0], ir.Value):
-                if args[0].shape is not None:
-                    return args[0].rank()
+            if isinstance(args[0], _tensors.SymbolicTensor):
+                if args[0].rank is not None:
+                    return args[0].rank
                 else:
                     # Fall to call add_function_call
                     pass
@@ -386,52 +386,13 @@ class OpRecorder(evaluator.Evaluator):
             # Trace the function call instead of adding the function as a node
             return function.function(*args, **kwargs)
 
-        # args/kwargs are ir.Value/python built-in based
-        param_schemas = function.param_schemas()
-        (
-            inputs,
-            attributes,
-        ) = param_manipulation.separate_input_attributes_from_arguments(
-            param_schemas, args, kwargs, fill_defaults=True, allow_extra_kwargs=True
+        op_signature = _schemas.OpSignature.from_callable(function.function)
+        named_inputs, named_attrs = _construct_named_inputs_and_attrs(
+            op_signature, args, kwargs
         )
+        outputs = self._call_op(op_signature, named_inputs, named_attrs)
 
-        # Cast attributes to the correct type based on function signature
-        op_schema = function.op_schema
-        assert op_schema is not None
-        for name, value in attributes.items():
-            attribute = op_schema.attributes[name]
-            if attribute.type == onnx.defs.OpSchema.AttrType.FLOAT:
-                # Cast int to float if the attribute is FLOAT
-                attributes[name] = float(value)
-
-            # In PyTorch, an attribute annotated as `int[1]?` accepts an integer
-            # or a sequence. When the attribute is an integer, it is treated as
-            # a single element sequence. ONNX requires an attribute to either be
-            # an integer or a sequence. So we promote the value to a sequence here.
-            if attribute.type == onnx.defs.OpSchema.AttrType.INTS and isinstance(
-                value, int
-            ):
-                attributes[name] = (value,)
-            if attribute.type == onnx.defs.OpSchema.AttrType.FLOATS and isinstance(
-                value, float
-            ):
-                attributes[name] = (value,)
-        self.functions[
-            (
-                function.function_ir.domain,
-                function.name,
-                "",
-            )
-        ] = function
-        self.nodes.append(
-            node := ir.Node(
-                function.function_ir.domain,
-                function.name,
-                inputs,
-                attributes=ir_convenience.convert_attributes(attributes),
-                num_outputs=len(function.function_ir.outputs),
-            )
-        )
-        if len(function.function_ir.outputs) == 1:
-            return node.outputs[0]
-        return node.outputs
+        self.functions[(function.function_ir.domain, function.name, "")] = function
+        if len(outputs) == 1:
+            return outputs[0]
+        return outputs

@@ -274,7 +274,7 @@ def _add_nodes(
 
 
 def _torch_version_integer() -> int:
-    return int(torch.__version__.replace(".", ""))
+    return int(torch.__version__.replace(".", "").split("dev")[0])
 
 
 def _get_inputs_and_attributes(

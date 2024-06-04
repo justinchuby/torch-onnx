@@ -344,6 +344,7 @@ def _handle_call_function_node_with_lowering(
     for identifier, onnxscript_function in tracer.functions.items():
         if identifier in model.functions:
             continue
+        # TODO: Get IR function directly when onnxscript is updated
         proto = onnxscript_function.to_function_proto()
         ir_function = ir.serde.deserialize_function(proto)
         model.functions[identifier] = ir_function

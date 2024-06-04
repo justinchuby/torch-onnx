@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-
-import collections.abc
 import inspect
 import dataclasses
 import types

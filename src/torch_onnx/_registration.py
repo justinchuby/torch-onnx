@@ -10,6 +10,7 @@ import types
 
 import torch._ops
 import onnxscript
+from torch_onnx import _schemas
 
 
 @dataclasses.dataclass(frozen=True, eq=True)
@@ -24,6 +25,7 @@ class ONNXFunction:
     """
 
     onnx_function: onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction
+    signature: _schemas.OpSignature
     op_full_name: str
     is_custom: bool = False
     is_complex: bool = False

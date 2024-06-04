@@ -12,6 +12,7 @@ import torch._ops
 import onnxscript
 from torch_onnx import _schemas
 
+# TODO: Create an registry here
 
 @dataclasses.dataclass(frozen=True, eq=True)
 class ONNXFunction:
@@ -78,7 +79,7 @@ class OpName:
         """
         op = builtin_function.__name__  # add, sub, etc.
         module = builtin_function.__module__  # _operators or math
-        return cls.from_qualified_name(module + "::" + op)
+        return cls.from_name_parts(module, op)
 
     def qualified_name(self) -> str:
         return f"{self.namespace}::{self.op_name}.{self.overload}"

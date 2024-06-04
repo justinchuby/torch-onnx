@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 
+import inspect
 import dataclasses
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence, Type
 
 from onnxscript import ir
+from onnxscript.ir import convenience as ir_convenience
 import onnx
+import logging
+import typing
+
+logger = logging.getLogger(__name__)
 
 # A special value to indicate that the default value is not specified
 _EMPTY_DEFAULT = object()
@@ -104,6 +110,36 @@ def _convert_formal_parameter(
     )
 
 
+def _get_attr_type(type_: Type) -> ir.AttributeType:
+    """Obtain the type of the attribute from a Python class."""
+    try:
+        if type_ is int:
+            return ir.AttributeType.INT
+        if type_ is float:
+            return ir.AttributeType.FLOAT
+        if type_ is str:
+            return ir.AttributeType.STRING
+        if type_ is bool:
+            return ir.AttributeType.INT
+        if type_ is ir.TensorProtocol:
+            return ir.AttributeType.TENSOR
+        if issubclass(type_, ir.Tensor):
+            return ir.AttributeType.TENSOR
+        if issubclass(type_, Sequence):
+            if typing.get_args(type_) == (int,):
+                return ir.AttributeType.INTS
+            if typing.get_args(type_) == (float,):
+                return ir.AttributeType.FLOATS
+            if typing.get_args(type_) == (str,):
+                return ir.AttributeType.STRINGS
+            if typing.get_args(type_) == (bool,):
+                return ir.AttributeType.INTS
+            if typing.get_args(type_) == (ir.Tensor,) or typing.get_args(type_) == (ir.TensorProtocol,):
+                return ir.AttributeType.TENSORS
+    except TypeError:
+        logger.warning("TypeError when checking %s.", type_, exc_info=True)
+    return ir.AttributeType.UNDEFINED
+
 @dataclasses.dataclass
 class OpSignature:
     """Schema for an operator.
@@ -141,6 +177,7 @@ class OpSignature:
 
     @classmethod
     def from_opschema(cls, opschema: onnx.defs.OpSchema) -> OpSignature:
+        """Produce an OpSignature from an ONNX Opschema."""
         type_constraints = {
             constraint.type_param_str: TypeConstraintParam(
                 name=constraint.type_param_str,
@@ -182,3 +219,34 @@ class OpSignature:
             params=params,
             outputs=outputs,
         )
+
+    @classmethod
+    def from_function(cls, func) -> OpSignature:
+        """Produce an OpSignature from a function using type annotation."""
+
+        signature = inspect.signature(func)
+        # Not using inspect.get_annotations because typing.get_type_hints seems to handle more cases
+        # https://github.com/python/cpython/issues/102405
+        type_hints = typing.get_type_hints(func)
+
+        params = []
+        type_constraints = {}
+
+        for param in signature.parameters.values():
+            if param.name not in type_hints:
+                logger.warning(f"Missing annotation for parameter '{param.name}'. Treating as an Input.")
+            else:
+                type_ = type_hints[param.name]
+                if (attr_type := _get_attr_type(type_)) != ir.AttributeType.UNDEFINED:
+                    params.append(
+                        AttributeParameter(
+                            name=param.name,
+                            type=attr_type,
+                            required=param.default is inspect.Parameter.empty,
+                            default=param.default,
+                        )
+                    )
+                else:
+                    # Obtain the type constraint from the type annotation
+                    # Handle Sequence[Tensor] and Optional[Tensor] as well
+                    # TODO(justinchuby): Pick up from here

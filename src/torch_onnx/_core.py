@@ -14,7 +14,7 @@ import onnxscript.evaluator
 import torch
 import torch.fx
 from onnxscript import ir
-from onnxscript.ir import _convenience as ir_convenience
+from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 from torch_onnx import _fx_passes
 from torch_onnx import _tracer

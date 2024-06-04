@@ -15,7 +15,7 @@ import onnx
 import onnxscript
 import torch
 from onnxscript import evaluator, ir
-from onnxscript.ir import _convenience as ir_convenience
+from onnxscript.ir import convenience as ir_convenience
 
 from torch_onnx import _schemas, _tensors
 

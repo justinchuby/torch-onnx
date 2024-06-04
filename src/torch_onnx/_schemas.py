@@ -84,6 +84,10 @@ class TypeConstraintParam:
     def any_tensor(cls, name: str) -> TypeConstraintParam:
         return cls(name, set(ir.TensorType(dtype) for dtype in ir.DataType))
 
+    @classmethod
+    def any_value(cls, name: str) -> TypeConstraintParam:
+        return cls(name, _ALL_VALUE_TYPES)  # type: ignore
+
 
 @dataclasses.dataclass(frozen=True)
 class Parameter:
@@ -376,7 +380,7 @@ class OpSignature:
                 logger.warning(
                     f"Missing annotation for parameter '{param.name}'. Treating as an Input."
                 )
-                type_constraints[param.name] = TypeConstraintParam.any_tensor(
+                type_constraints[param.name] = TypeConstraintParam.any_value(
                     f"T{param.name}"
                 )
             else:

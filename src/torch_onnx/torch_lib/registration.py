@@ -44,11 +44,17 @@ class Registry:
         """Register a function."""
 
         if private:
-            self._registry.setdefault(name, OverloadedFunction(name)).privates.append(func)
+            self._registry.setdefault(name, OverloadedFunction(name)).privates.append(
+                func
+            )
         elif complex:
-            self._registry.setdefault(name, OverloadedFunction(name)).complex.append(func)
+            self._registry.setdefault(name, OverloadedFunction(name)).complex.append(
+                func
+            )
         else:
-            self._registry.setdefault(name, OverloadedFunction(name)).overloads.append(func)
+            self._registry.setdefault(name, OverloadedFunction(name)).overloads.append(
+                func
+            )
 
     def __getitem__(self, name):
         return self._registry[name]
@@ -83,7 +89,9 @@ def _check_and_normalize_names(name: str | tuple[str, ...]) -> tuple[str, ...]:
     if not isinstance(names, tuple):
         raise TypeError(f"Name must be a string or a tuple of strings, got {name}")
     for name_ in names:
-        if name_.endswith(".default") or not _QUALIFIED_OPERATOR_NAME_REGEX.fullmatch(name_):
+        if name_.endswith(".default") or not _QUALIFIED_OPERATOR_NAME_REGEX.fullmatch(
+            name_
+        ):
             raise ValueError(
                 f"Invalid name '{name_}'. Must be in the form 'namespace::name' for default overloads "
                 "or 'namespace::name.overload' for other overloads."
@@ -100,7 +108,9 @@ def torch_op(
     private: bool = False,
     complex: bool = False,
     traceable: bool = False,
-) -> Callable[[FunctionType], onnxscript.OnnxFunction | onnxscript.values.TracedOnnxFunction]:
+) -> Callable[
+    [FunctionType], onnxscript.OnnxFunction | onnxscript.values.TracedOnnxFunction
+]:
     """Register a torch op.
 
     Args:

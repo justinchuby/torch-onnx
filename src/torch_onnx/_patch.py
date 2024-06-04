@@ -12,7 +12,7 @@ import torch.export
 from onnxscript import ir
 
 import torch_onnx
-from torch_onnx import _passes
+from torch_onnx import _ir_passes
 
 logger = logging.Logger(__name__)
 
@@ -41,9 +41,9 @@ def torch_onnx_export_adaptor(
     ir_model = torch_onnx.exported_program_to_ir(program)
 
     if input_names:
-        _passes.rename_inputs(ir_model, input_names)
+        _ir_passes.rename_inputs(ir_model, input_names)
     if output_names:
-        _passes.rename_outputs(ir_model, output_names)
+        _ir_passes.rename_outputs(ir_model, output_names)
 
     proto = ir.serde.serialize_model(ir_model)
     if proto.ByteSize() >= 1 << 31:

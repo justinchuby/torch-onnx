@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 
+import collections.abc
 import inspect
 import dataclasses
-from typing import Any, Callable, Iterator, Mapping, Sequence, Type
+import types
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
@@ -15,6 +27,46 @@ logger = logging.getLogger(__name__)
 
 # A special value to indicate that the default value is not specified
 _EMPTY_DEFAULT = object()
+
+_LIST_CONSTRUCTORS = frozenset(
+    [list, typing.List, typing.Sequence, collections.abc.Sequence]
+)
+
+# Map from python type to corresponding ONNX AttributeProto type
+_PY_TYPE_TO_ATTR_TYPE = {
+    float: ir.AttributeType.FLOAT,
+    int: ir.AttributeType.INT,
+    str: ir.AttributeType.STRING,
+    bool: ir.AttributeType.INT,
+    ir.Tensor: ir.AttributeType.TENSOR,
+    ir.TensorProtocol: ir.AttributeType.TENSOR,
+    ir.Graph: ir.AttributeType.GRAPH,
+    ir.GraphProtocol: ir.AttributeType.GRAPH,
+}
+
+# Map from python type to corresponding ONNX AttributeProto type,
+# for repeated (i.e., list of) values
+_LIST_TYPE_TO_ATTR_TYPE = {
+    float: ir.AttributeType.FLOATS,
+    int: ir.AttributeType.INTS,
+    str: ir.AttributeType.STRINGS,
+    bool: ir.AttributeType.INTS,
+    ir.Tensor: ir.AttributeType.TENSORS,
+    ir.TensorProtocol: ir.AttributeType.TENSORS,
+    ir.Graph: ir.AttributeType.GRAPHS,
+    ir.GraphProtocol: ir.AttributeType.GRAPHS,
+}
+
+# TypeAnnotationValue represents the (value of) valid type-annotations recognized
+# by ONNX Script. Currently, it supports
+# - float, int, str (primitive attribute types)
+# - Sequence[float], Sequence[int], Sequence[str] (attribute types)
+# - Tensor types
+# - Sequence[Tensor] types
+# - Union of above 2
+# - TypeVars with above bounds
+# - Above types with annotation attached
+TypeAnnotationValue = Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -29,6 +81,10 @@ class TypeConstraintParam:
     name: str
     allowed_types: set[ir.TypeProtocol]
     description: str = ""
+
+    @classmethod
+    def any_tensor(cls, name: str) -> TypeConstraintParam:
+        return cls(name, set(ir.TensorType(dtype) for dtype in ir.DataType))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -110,35 +166,64 @@ def _convert_formal_parameter(
     )
 
 
+def _is_optional(type_: Type) -> bool:
+    """Returns whether a type_ is an Optional."""
+    origin_type = typing.get_origin(type_)
+    if origin_type is Union and type(None) in typing.get_args(type_):
+        # Python < 3.10
+        return True
+    if origin_type is Optional:
+        # Python >= 3.10
+        return True
+    if (
+        hasattr(types, "UnionType")
+        and origin_type is types.UnionType
+        and type(None) in typing.get_args(type_)
+    ):
+        # Python >= 3.10
+        return True
+    return False
+
+
 def _get_attr_type(type_: Type) -> ir.AttributeType:
     """Obtain the type of the attribute from a Python class."""
     try:
-        if type_ is int:
-            return ir.AttributeType.INT
-        if type_ is float:
-            return ir.AttributeType.FLOAT
-        if type_ is str:
-            return ir.AttributeType.STRING
-        if type_ is bool:
-            return ir.AttributeType.INT
-        if type_ is ir.TensorProtocol:
-            return ir.AttributeType.TENSOR
-        if issubclass(type_, ir.Tensor):
-            return ir.AttributeType.TENSOR
+        if type_ in _PY_TYPE_TO_ATTR_TYPE:
+            return _PY_TYPE_TO_ATTR_TYPE[type_]
         if issubclass(type_, Sequence):
-            if typing.get_args(type_) == (int,):
-                return ir.AttributeType.INTS
-            if typing.get_args(type_) == (float,):
-                return ir.AttributeType.FLOATS
-            if typing.get_args(type_) == (str,):
-                return ir.AttributeType.STRINGS
-            if typing.get_args(type_) == (bool,):
-                return ir.AttributeType.INTS
-            if typing.get_args(type_) == (ir.Tensor,) or typing.get_args(type_) == (ir.TensorProtocol,):
-                return ir.AttributeType.TENSORS
+            inner_type = typing.get_args(type_)[0]
+            if inner_type in _LIST_TYPE_TO_ATTR_TYPE:
+                return _LIST_TYPE_TO_ATTR_TYPE[inner_type]
     except TypeError:
         logger.warning("TypeError when checking %s.", type_, exc_info=True)
     return ir.AttributeType.UNDEFINED
+
+
+def _get_type_constraint_name(type_: TypeAnnotationValue) -> str | None:
+    """Returns the name of the type constraint for a given type annotation.
+
+    Args:
+        type_: A Python type.
+
+    Returns:
+        The name of the type constraint if it is a TypeVar.
+        - Prefixes the name with "Sequence_" if the type annotation is a Sequence[].
+    """
+    if isinstance(type_, TypeVar):
+        return type_.__name__
+    if _is_optional(type_):
+        subtypes = typing.get_args(type_)
+        for subtype in subtypes:
+            if subtype is type(None):
+                continue
+            type_param_name = _get_type_constraint_name(subtype)
+            return type_param_name if type_param_name else None
+    if typing.get_origin(type_) in _LIST_CONSTRUCTORS:
+        subtypes = typing.get_args(type_)
+        type_param_name = _get_type_constraint_name(subtypes[0])
+        return f"Sequence_{type_param_name}" if type_param_name else None
+    return None
+
 
 @dataclasses.dataclass
 class OpSignature:
@@ -221,7 +306,9 @@ class OpSignature:
         )
 
     @classmethod
-    def from_function(cls, func) -> OpSignature:
+    def from_function(
+        cls, func, domain: str, name: str | None = None, overload: str = ""
+    ) -> OpSignature:
         """Produce an OpSignature from a function using type annotation."""
 
         signature = inspect.signature(func)
@@ -230,11 +317,17 @@ class OpSignature:
         type_hints = typing.get_type_hints(func)
 
         params = []
-        type_constraints = {}
+        # Create a mapping from type to a unique name
+        type_constraints: dict[str, TypeConstraintParam] = {}
 
         for param in signature.parameters.values():
             if param.name not in type_hints:
-                logger.warning(f"Missing annotation for parameter '{param.name}'. Treating as an Input.")
+                logger.warning(
+                    f"Missing annotation for parameter '{param.name}'. Treating as an Input."
+                )
+                type_constraints[param.name] = TypeConstraintParam.any_tensor(
+                    f"T{param.name}"
+                )
             else:
                 type_ = type_hints[param.name]
                 if (attr_type := _get_attr_type(type_)) != ir.AttributeType.UNDEFINED:
@@ -248,5 +341,42 @@ class OpSignature:
                     )
                 else:
                     # Obtain the type constraint from the type annotation
-                    # Handle Sequence[Tensor] and Optional[Tensor] as well
-                    # TODO(justinchuby): Pick up from here
+
+                    # 1. Get a type constraint name from the type annotation
+                    # If the type annotation is a TypeVar or Optional[TypeVar], get its name
+                    # Otherwise, name it T{param.name}
+                    type_constraint_name = _get_type_constraint_name(type_)
+                    if type_constraint_name is None:
+                        type_constraint_name = f"T{param.name}"
+
+                    # 2. If the type constraint param is already initialized, use it
+                    if type_constraint_name in type_constraints:
+                        type_constraint = type_constraints[type_constraint_name]
+                    else:
+                        # 3. Otherwise, create a new TypeConstraintParam
+                        # TODO: Implement _create_type_constraint
+                        type_constraint = _create_type_constraint(
+                            type_constraint_name, type_
+                        )
+                        type_constraints[type_constraint_name] = type_constraint
+                    # 4. Create Parameter
+                    params.append(
+                        Parameter(
+                            name=param.name,
+                            type_constraint=type_constraint,
+                            required=param.default is inspect.Parameter.empty,
+                            default=param.default,
+                            # TODO: Handle variadic
+                            variadic=False,
+                        )
+                    )
+        # TODO(justinchuby): Pick up from here
+        # TODO: Handle outputs
+        outputs = []
+        return OpSignature(
+            domain="",
+            name=name or func.__name__,
+            overload=overload,
+            params=params,
+            outputs=outputs,
+        )

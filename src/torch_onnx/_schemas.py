@@ -19,6 +19,8 @@ import onnx
 import logging
 import typing
 
+import onnxscript
+
 logger = logging.getLogger(__name__)
 
 # A special value to indicate that the default value is not specified
@@ -82,7 +84,9 @@ class TypeConstraintParam:
 
     @classmethod
     def any_tensor(cls, name: str, description: str = "") -> TypeConstraintParam:
-        return cls(name, set(ir.TensorType(dtype) for dtype in ir.DataType), description)
+        return cls(
+            name, set(ir.TensorType(dtype) for dtype in ir.DataType), description
+        )
 
     @classmethod
     def any_value(cls, name: str, description: str = "") -> TypeConstraintParam:
@@ -220,7 +224,8 @@ def _get_type_constraint_name(type_: TypeAnnotationValue) -> str | None:
                 continue
             type_param_name = _get_type_constraint_name(subtype)
             return type_param_name if type_param_name else None
-    if issubclass(typing.get_origin(type_), Sequence):
+    origin_type = typing.get_origin(type_)
+    if isinstance(origin_type, type) and issubclass(origin_type, Sequence):
         subtypes = typing.get_args(type_)
         type_param_name = _get_type_constraint_name(subtypes[0])
         return f"Sequence_{type_param_name}" if type_param_name else None
@@ -231,8 +236,12 @@ def _get_allowed_types_from_type_annotation(
     type_: TypeAnnotationValue,
 ) -> set[ir.TypeProtocol]:
     """Obtain the allowed types from a type annotation."""
-    allowed_types: set[ir.TypeProtocol] = set()
+    if type_ is onnxscript.onnx_types.TensorType:
+        # Any tensor type
+        return {ir.TensorType(dtype) for dtype in ir.DataType}
+
     if isinstance(type_, TypeVar):
+        allowed_types: set[ir.TypeProtocol] = set()
         if constraints := type_.__constraints__:
             for constraint in constraints:
                 allowed_types.update(
@@ -243,41 +252,41 @@ def _get_allowed_types_from_type_annotation(
             if bound is None:
                 allowed_types = _ALL_VALUE_TYPES  # type: ignore
             else:
-                for b in bound:
-                    allowed_types.update(_get_allowed_types_from_type_annotation(b))
-    elif hasattr(type_, "dtype"):
+                allowed_types.update(_get_allowed_types_from_type_annotation(bound))
+        return allowed_types
+    if hasattr(type_, "dtype"):
         # A single tensor type like INT64, FLOAT, etc.
-        allowed_types = {ir.TensorType(ir.DataType(type_.dtype))}
-    elif _is_optional(type_):
+        return {ir.TensorType(ir.DataType(type_.dtype))}
+    if _is_optional(type_):
+        allowed_types: set[ir.TypeProtocol] = set()
         subtypes = typing.get_args(type_)
         for subtype in subtypes:
             if subtype is type(None):
                 continue
             allowed_types.update(_get_allowed_types_from_type_annotation(subtype))
-        allowed_types.update(
-            {
-                ir.OptionalType(t)
-                for t in allowed_types
-                if not isinstance(t, ir.OptionalType)
-            }
-        )
-    elif typing.get_origin(type_) is Union:
+        # NOTE: We do not consider dynamic optional types like optional(float) because they are not very useful.
+        return allowed_types
+
+    origin_type = typing.get_origin(type_)
+    if origin_type is Union:
+        allowed_types: set[ir.TypeProtocol] = set()
         subtypes = typing.get_args(type_)
         for subtype in subtypes:
             assert (
                 subtype is not type(None)
             ), "Union should not contain None type because it is handled by _is_optional."
             allowed_types.update(_get_allowed_types_from_type_annotation(subtype))
-    elif issubclass(typing.get_origin(type_), Sequence):
+        return allowed_types
+
+    if isinstance(origin_type, type) and issubclass(origin_type, Sequence):
         subtypes = typing.get_args(type_)
-        allowed_types = {
+        return {
             ir.SequenceType(t)
             for t in _get_allowed_types_from_type_annotation(subtypes[0])
         }
-    else:
-        # Allow everything by default
-        allowed_types = _ALL_VALUE_TYPES  # type: ignore
-    return allowed_types
+
+    # Allow everything by default
+    return _ALL_VALUE_TYPES  # type: ignore
 
 
 @dataclasses.dataclass

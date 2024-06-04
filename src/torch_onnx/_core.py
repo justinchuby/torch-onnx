@@ -39,7 +39,6 @@ _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.int8: ir.DataType.INT8,
     torch.uint8: ir.DataType.UINT8,
 }
-_onnx_dispatcher = _dispatcher.OnnxFunctionDispatcher(_dispatcher.OnnxRegistry())
 
 
 def _torch_dtype_to_onnx_dtype(dtype: torch.dtype) -> ir.DataType:
@@ -320,7 +319,10 @@ def _handle_call_function_node_with_lowering(
     )
 
     with onnxscript.evaluator.default_as(tracer := _tracer.OpRecorder(constant_farm)):
-        outputs = symbolic_fn(*inputs, **{key: value for key, value in fx_kwargs.items() if value is not None})
+        outputs = symbolic_fn(
+            *inputs,
+            **{key: value for key, value in fx_kwargs.items() if value is not None},
+        )
 
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])

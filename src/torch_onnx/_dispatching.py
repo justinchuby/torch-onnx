@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import dataclasses
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Sequence
 import torch
-import onnxscript
 import torch.fx
-import onnx
 from onnxscript import ir
 from torch_onnx import _schemas
 

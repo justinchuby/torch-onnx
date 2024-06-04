@@ -7,7 +7,6 @@ import dataclasses
 import types
 from typing import (
     Any,
-    Callable,
     Iterator,
     Mapping,
     Optional,
@@ -27,10 +26,6 @@ logger = logging.getLogger(__name__)
 
 # A special value to indicate that the default value is not specified
 _EMPTY_DEFAULT = object()
-
-_LIST_CONSTRUCTORS = frozenset(
-    [list, typing.List, typing.Sequence, collections.abc.Sequence]
-)
 
 # Map from python type to corresponding ONNX AttributeProto type
 _PY_TYPE_TO_ATTR_TYPE = {
@@ -56,6 +51,12 @@ _LIST_TYPE_TO_ATTR_TYPE = {
     ir.Graph: ir.AttributeType.GRAPHS,
     ir.GraphProtocol: ir.AttributeType.GRAPHS,
 }
+
+_ALL_VALUE_TYPES = (
+    {ir.TensorType(dtype) for dtype in ir.DataType}
+    | {ir.SequenceType(ir.TensorType(dtype)) for dtype in ir.DataType}
+    | {ir.OptionalType(ir.TensorType(dtype)) for dtype in ir.DataType}
+)
 
 # TypeAnnotationValue represents the (value of) valid type-annotations recognized
 # by ONNX Script. Currently, it supports
@@ -218,11 +219,64 @@ def _get_type_constraint_name(type_: TypeAnnotationValue) -> str | None:
                 continue
             type_param_name = _get_type_constraint_name(subtype)
             return type_param_name if type_param_name else None
-    if typing.get_origin(type_) in _LIST_CONSTRUCTORS:
+    if issubclass(typing.get_origin(type_), Sequence):
         subtypes = typing.get_args(type_)
         type_param_name = _get_type_constraint_name(subtypes[0])
         return f"Sequence_{type_param_name}" if type_param_name else None
     return None
+
+
+def _get_allowed_types_from_type_annotation(
+    type_: TypeAnnotationValue,
+) -> set[ir.TypeProtocol]:
+    """Obtain the allowed types from a type annotation."""
+    allowed_types: set[ir.TypeProtocol] = set()
+    if isinstance(type_, TypeVar):
+        if constraints := type_.__constraints__:
+            for constraint in constraints:
+                allowed_types.update(
+                    _get_allowed_types_from_type_annotation(constraint)
+                )
+        else:
+            bound = type_.__bound__
+            if bound is None:
+                allowed_types = _ALL_VALUE_TYPES  # type: ignore
+            else:
+                for b in bound:
+                    allowed_types.update(_get_allowed_types_from_type_annotation(b))
+    elif hasattr(type_, "dtype"):
+        # A single tensor type like INT64, FLOAT, etc.
+        allowed_types = {ir.TensorType(ir.DataType(type_.dtype))}
+    elif _is_optional(type_):
+        subtypes = typing.get_args(type_)
+        for subtype in subtypes:
+            if subtype is type(None):
+                continue
+            allowed_types.update(_get_allowed_types_from_type_annotation(subtype))
+        allowed_types.update(
+            {
+                ir.OptionalType(t)
+                for t in allowed_types
+                if not isinstance(t, ir.OptionalType)
+            }
+        )
+    elif typing.get_origin(type_) is Union:
+        subtypes = typing.get_args(type_)
+        for subtype in subtypes:
+            assert (
+                subtype is not type(None)
+            ), "Union should not contain None type because it is handled by _is_optional."
+            allowed_types.update(_get_allowed_types_from_type_annotation(subtype))
+    elif issubclass(typing.get_origin(type_), Sequence):
+        subtypes = typing.get_args(type_)
+        allowed_types = {
+            ir.SequenceType(t)
+            for t in _get_allowed_types_from_type_annotation(subtypes[0])
+        }
+    else:
+        # Allow everything by default
+        allowed_types = _ALL_VALUE_TYPES  # type: ignore
+    return allowed_types
 
 
 @dataclasses.dataclass
@@ -336,7 +390,9 @@ class OpSignature:
                             name=param.name,
                             type=attr_type,
                             required=param.default is inspect.Parameter.empty,
-                            default=param.default,
+                            default=param.default
+                            if param.default is not inspect.Parameter.empty
+                            else None,
                         )
                     )
                 else:
@@ -354,9 +410,11 @@ class OpSignature:
                         type_constraint = type_constraints[type_constraint_name]
                     else:
                         # 3. Otherwise, create a new TypeConstraintParam
-                        # TODO: Implement _create_type_constraint
-                        type_constraint = _create_type_constraint(
-                            type_constraint_name, type_
+                        type_constraint = TypeConstraintParam(
+                            name=type_constraint_name,
+                            allowed_types=_get_allowed_types_from_type_annotation(
+                                type_
+                            ),
                         )
                         type_constraints[type_constraint_name] = type_constraint
                     # 4. Create Parameter
@@ -365,16 +423,53 @@ class OpSignature:
                             name=param.name,
                             type_constraint=type_constraint,
                             required=param.default is inspect.Parameter.empty,
-                            default=param.default,
                             # TODO: Handle variadic
                             variadic=False,
+                            default=param.default
+                            if param.default is not inspect.Parameter.empty
+                            else _EMPTY_DEFAULT,
                         )
                     )
-        # TODO(justinchuby): Pick up from here
-        # TODO: Handle outputs
+
+        return_type = type_hints.get("return")
+
         outputs = []
+        if return_type is None:
+            # No returns
+            pass
+        else:
+            if typing.get_origin(return_type) is tuple:
+                # Multiple returns
+                return_types = typing.get_args(return_type)
+            else:
+                return_types = [return_type]
+
+            for i, return_type_i in enumerate(return_types):
+                if (
+                    return_param_name := _get_type_constraint_name(return_type_i)
+                ) in type_constraints:
+                    type_constraint = type_constraints[return_param_name]
+                else:
+                    return_param_name = f"TReturn{i}"
+                    type_constraint = TypeConstraintParam(
+                        name=return_param_name,
+                        allowed_types=_get_allowed_types_from_type_annotation(
+                            return_type_i
+                        ),
+                    )
+                    type_constraints[return_param_name] = type_constraint
+                outputs.append(
+                    Parameter(
+                        name=return_param_name,
+                        type_constraint=type_constraint,
+                        required=True,
+                        variadic=False,
+                        default=_EMPTY_DEFAULT,
+                    )
+                )
+
         return OpSignature(
-            domain="",
+            domain=domain,
             name=name or func.__name__,
             overload=overload,
             params=params,

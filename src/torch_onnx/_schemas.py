@@ -81,12 +81,12 @@ class TypeConstraintParam:
     description: str = ""
 
     @classmethod
-    def any_tensor(cls, name: str) -> TypeConstraintParam:
-        return cls(name, set(ir.TensorType(dtype) for dtype in ir.DataType))
+    def any_tensor(cls, name: str, description: str = "") -> TypeConstraintParam:
+        return cls(name, set(ir.TensorType(dtype) for dtype in ir.DataType), description)
 
     @classmethod
-    def any_value(cls, name: str) -> TypeConstraintParam:
-        return cls(name, _ALL_VALUE_TYPES)  # type: ignore
+    def any_value(cls, name: str, description: str = "") -> TypeConstraintParam:
+        return cls(name, _ALL_VALUE_TYPES, description)  # type: ignore
 
 
 @dataclasses.dataclass(frozen=True)

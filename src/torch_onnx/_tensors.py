@@ -33,6 +33,8 @@ class SymbolicTensor(ir.Value):
             return None
         return len(self.shape)
 
+    # TODO: Implement indexing
+
     def __mod__(self, other):
         if self.dtype in {
             ir.DataType.FLOAT,

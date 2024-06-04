@@ -465,7 +465,7 @@ class OpSignature:
                     )
                 )
 
-        return OpSignature(
+        return cls(
             domain=domain,
             name=name or func.__name__,
             overload=overload,

@@ -17,7 +17,7 @@ from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 from torch_onnx import _fx_passes
-from torch_onnx import _tracer
+from torch_onnx import _building
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -318,7 +318,9 @@ def _handle_call_function_node_with_lowering(
         onnx_kwargs=fx_kwargs,
     )
 
-    with onnxscript.evaluator.default_as(tracer := _tracer.OpRecorder(constant_farm)):
+    with onnxscript.evaluator.default_as(
+        tracer := _building.OpRecorder(onnxscript.opset19, constant_farm)
+    ):
         outputs = symbolic_fn(
             *inputs,
             **{key: value for key, value in fx_kwargs.items() if value is not None},

@@ -155,11 +155,11 @@ def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argu
 
 def get_matching_overload(
     node: torch.fx.Node,
-    overload_and_schemas: tuple[onnxscript.values.Op, Sequence[_schemas.OpSignature]],
+    overload_and_signatures: Sequence[tuple[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction, _schemas.OpSignature]],
 ):
     named_args = _get_named_fx_node_args(node)
     schema_args = {arg.name: arg for arg in node.target._schema.arguments}
-    for overload, schema in overload_and_schemas:
+    for overload, schema in overload_and_signatures:
         assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
         matched = True
         for param in schema:
@@ -204,3 +204,7 @@ def get_matching_overload(
         if matched:
             return overload, schema
     return None, None
+
+
+def dispatch(node: torch.fx.Node, registry: _registration.OnnxRegistry) -> Any:
+    pass

@@ -378,7 +378,7 @@ class OpSignature:
     ) -> OpSignature:
         """Produce an OpSignature from a function using type annotation."""
 
-        signature = inspect.signature(func)
+        py_signature = inspect.signature(func)
         # Not using inspect.get_annotations because typing.get_type_hints seems to handle more cases
         # https://github.com/python/cpython/issues/102405
         type_hints = typing.get_type_hints(func)
@@ -387,7 +387,7 @@ class OpSignature:
         # Create a mapping from type to a unique name
         type_constraints: dict[str, TypeConstraintParam] = {}
 
-        for param in signature.parameters.values():
+        for param in py_signature.parameters.values():
             if param.name not in type_hints:
                 logger.warning(
                     f"Missing annotation for parameter '{param.name}'. Treating as an Input."

@@ -28,7 +28,7 @@ from torch_onnx import _schemas
 _DEFAULT_OPSET_VERSION = 18
 
 
-TorchOp: TypeAlias = Union[torch._ops.OpOverload, types.BuiltinFunctionType]
+TorchOp: TypeAlias = Union[torch._ops.OpOverload, types.BuiltinFunctionType, Callable]
 
 @dataclasses.dataclass(frozen=True)
 class OnnxDecompMeta:
@@ -36,7 +36,6 @@ class OnnxDecompMeta:
 
     onnx_function: The onnx-script function from torchlib.
     signature: The signature of the function.
-    op_id: The identifier of the PyTorch operator.
     is_custom: Whether the function is a custom function.
     is_complex: Whether the function is a function that handles complex valued inputs.
 
@@ -46,6 +45,7 @@ class OnnxDecompMeta:
     op: TorchOp
     is_custom: bool = False
     is_complex: bool = False
+    device: str | None = None
 
 
 def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
@@ -58,6 +58,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
         return getattr(torchvision.ops, op_name)
     # TODO: Builtin functions
     return getattr(getattr(getattr(torch.ops, namespace), op_name), overload)
+
 
 class OnnxRegistry:
     """Registry for ONNX functions.
@@ -74,9 +75,9 @@ class OnnxRegistry:
         # TODO: Design multi-opset version support
         self._opset_version = _DEFAULT_OPSET_VERSION
 
-        self._functions: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
-        self._complex: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
-        self._customs: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
+        self._functions: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        self._complex: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        self._customs: dict[TorchOp, list[OnnxDecompMeta]] = {}
 
     @property
     def opset_version(self) -> int:
@@ -152,7 +153,7 @@ class OnnxRegistry:
         """Registers a custom operator: torch.ops.<namespace>.<op_name>.<overload>.
 
         Args:
-            function: The onnx-sctip function to register.
+            function: The onnx-script function to register.
             namespace: The namespace of the operator to register.
             op_name: The name of the operator to register.
             overload: The overload of the operator to register. If it's default overload,

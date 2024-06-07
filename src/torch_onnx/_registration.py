@@ -89,3 +89,8 @@ class OpName:
 class Registry:
     def __init__(self, opset_version: int):
         self.opset_version = opset_version
+
+    # This should do a few things
+    # For all functions, create a signature
+    # Account for opset version
+    # TODO: Not sure if we should reuse the registry or create a new one every time?

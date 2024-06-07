@@ -14,10 +14,11 @@ from __future__ import annotations
 import dataclasses
 import types
 from collections import defaultdict
-from typing import List, Mapping, Optional, Union
+from typing import Callable, List, Mapping, Optional, TypeAlias, Union
 
 import onnxscript
 import torch._ops
+import torch
 from onnxscript.function_libs.torch_lib import (
     registration as torchlib_registration,
 )
@@ -26,6 +27,8 @@ from torch_onnx import _schemas
 
 _DEFAULT_OPSET_VERSION = 18
 
+
+TorchOp: TypeAlias = Union[torch._ops.OpOverload, types.BuiltinFunctionType]
 
 @dataclasses.dataclass(frozen=True)
 class OnnxDecompMeta:
@@ -40,69 +43,21 @@ class OnnxDecompMeta:
     """
 
     onnx_function: onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction
-    op_id: TorchOpIdentifier
+    op: TorchOp
     is_custom: bool = False
     is_complex: bool = False
 
 
-@dataclasses.dataclass(frozen=True, eq=True)
-class TorchOpIdentifier:
-    """A class representing an operator in the ONNX converter.
-
-    Note that this is not the same thing as the ONNX op identifier. A Torch op
-    ``aten.add.Tensor`` have namespace=aten, op_name=add, and overload=Tensor, but
-    it may correspond to an ONNX function that has domain="pkg.onnxscript.torchlib`,
-    name="aten_add_Tensor", for example.
-    """
-
-    namespace: str
-    op_name: str
-    overload: str
-
-    @classmethod
-    def from_name_parts(
-        cls, namespace: str, op_name: str, overload: str | None = None
-    ) -> TorchOpIdentifier:
-        # NOTE: in PyTorch, the overload could be unprovided to indicate the
-        # default overload
-        if overload is None or overload == "":
-            overload = "default"
-        return cls(namespace, op_name, overload)
-
-    @classmethod
-    def from_qualified_name(cls, qualified_name: str) -> TorchOpIdentifier:
-        """Create TorchOpIdentifier from <namespace>::<op_name>[.<overload>]"""
-        namespace, opname_overload = qualified_name.split("::")
-        op_name, *overload = opname_overload.split(".", 1)
-        overload = overload[0] if overload else "default"
-        return cls(namespace, op_name, overload)
-
-    @classmethod
-    def from_op_overload(cls, op_overload: torch._ops.OpOverload) -> TorchOpIdentifier:
-        return cls.from_qualified_name(op_overload.name())
-
-    @classmethod
-    def from_builtin_function(
-        cls, builtin_function: types.BuiltinFunctionType
-    ) -> TorchOpIdentifier:
-        """From a builtin function, e.g. operator.add, math.ceil, etc, get the OpName.
-
-        FX graph uses built-in functions to caculate sympy expression. This function
-        is used to get the OpName from a builtin function.
-
-        Args:
-            builtin_function (types.BuiltinFunctionType): operator.add, math.ceil, etc.
-
-        Returns:
-            OpName: _description_
-        """
-        op = builtin_function.__name__  # add, sub, etc.
-        module = builtin_function.__module__  # _operators or math
-        return cls.from_name_parts(module, op)
-
-    def qualified_name(self) -> str:
-        return f"{self.namespace}::{self.op_name}.{self.overload}"
-
+def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
+    """Obtain the torch op from <namespace>::<op_name>[.<overload>]"""
+    namespace, opname_overload = qualified_name.split("::")
+    op_name, *overload = opname_overload.split(".", 1)
+    overload = overload[0] if overload else "default"
+    if namespace == "torchvision":
+        import torchvision.ops
+        return getattr(torchvision.ops, op_name)
+    # TODO: Builtin functions
+    return getattr(getattr(getattr(torch.ops, namespace), op_name), overload)
 
 class OnnxRegistry:
     """Registry for ONNX functions.
@@ -116,12 +71,12 @@ class OnnxRegistry:
     def __init__(self) -> None:
         """Initializes the registry"""
 
+        # TODO: Design multi-opset version support
+        self._opset_version = _DEFAULT_OPSET_VERSION
+
         self._functions: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
         self._complex: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
         self._customs: dict[TorchOpIdentifier, list[OnnxDecompMeta]] = {}
-
-        # TODO: Design multi-opset version support
-        self._opset_version = _DEFAULT_OPSET_VERSION
 
     @property
     def opset_version(self) -> int:
@@ -133,14 +88,16 @@ class OnnxRegistry:
 
         return self._opset_version
 
+    @classmethod
     def from_torchlib(
-        self, torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
+        cls, torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
     ):
         """Populates the registry with ATen functions from torchlib.
 
         Args:
             torchlib_registry: The torchlib registry to use for populating the registry.
         """
+        registry = cls()
         for aten_name, aten_overloads_func in torchlib_registry.items():
             op_id = TorchOpIdentifier.from_qualified_name(aten_name)
             for overload_func in aten_overloads_func.overloads:
@@ -153,7 +110,7 @@ class OnnxRegistry:
                     is_custom=False,
                     is_complex=False,
                 )
-                self._register(op_id, onnx_decomposition)
+                registry._register(op_id, onnx_decomposition)
 
             for complex_func in aten_overloads_func.complex:
                 overload_func.signature = _schemas.OpSignature.from_function(
@@ -165,27 +122,31 @@ class OnnxRegistry:
                     is_custom=False,
                     is_complex=True,
                 )
-                self._register(op_id, onnx_decomposition)
+                registry._register(op_id, onnx_decomposition)
+        return registry
 
     def _register(
         self,
-        internal_qualified_name: TorchOpIdentifier,
+        target: TorchOpIdentifier,
         onnx_decomposition: OnnxDecompMeta,
     ) -> None:
-        """Registers a ONNXFunction to an operator.
+        """Registers a OnnxDecompMeta to an operator.
 
         Args:
-            internal_qualified_name: The qualified name of the operator to register: OpName.
-            onnx_decomposition: The ONNXFunction to register.
+            op_identifier: The qualified name of the operator to register: OpName.
+            onnx_decomposition: The OnnxDecompMeta to register.
         """
-        self._registry[internal_qualified_name].append(onnx_decomposition)
+        if onnx_decomposition.is_complex:
+            self._complex[op_identifier].append(onnx_decomposition)
+        elif onnx_decomposition.is_custom:
+            self._customs[op_identifier].append(onnx_decomposition)
+        else:
+            self._functions[op_identifier].append(onnx_decomposition)
 
     def register_op(
         self,
         function: Union["onnxscript.OnnxFunction", "onnxscript.TracedOnnxFunction"],
-        namespace: str,
-        op_name: str,
-        overload: Optional[str] = None,
+        target: Callable,
         is_complex: bool = False,
     ) -> None:
         """Registers a custom operator: torch.ops.<namespace>.<op_name>.<overload>.
@@ -201,21 +162,18 @@ class OnnxRegistry:
         Raises:
             ValueError: If the name is not in the form of 'namespace::op'.
         """
-        op_id = TorchOpIdentifier.from_name_parts(
-            namespace=namespace, op_name=op_name, overload=overload
-        )
         onnx_decomposition = OnnxDecompMeta(
             onnx_function=function,
-            op_full_name=op_id.qualified_name(),
+            target=target,
             is_custom=True,
             is_complex=is_complex,
         )
-        self._register(op_id, onnx_decomposition)
+        self._register(target, onnx_decomposition)
 
     def get_op_functions(
         self, namespace: str, op_name: str, overload: Optional[str] = None
     ) -> Optional[List[OnnxDecompMeta]]:
-        """Returns a list of ONNXFunctions for the given op: torch.ops.<namespace>.<op_name>.<overload>.
+        """Returns a list of OnnxDecompMeta for the given op: torch.ops.<namespace>.<op_name>.<overload>.
 
         The list is ordered by the time of registration. The custom operators should be
         in the second half of the list.
@@ -226,7 +184,7 @@ class OnnxRegistry:
             overload: The overload of the operator to get. If it's default overload,
                 leave it to None.
         Returns:
-            A list of ONNXFunctions corresponding to the given name, or None if
+            A list of OnnxDecompMeta corresponding to the given name, or None if
             the name is not in the registry.
         """
         op_id = TorchOpIdentifier.from_name_parts(
@@ -252,9 +210,3 @@ class OnnxRegistry:
             namespace=namespace, op_name=op_name, overload=overload
         )
         return functions is not None
-
-    def _all_registered_ops(self) -> set[str]:
-        """Returns the set of all registered function names."""
-        return {
-            op_name_class.qualified_name() for op_name_class in self._registry.keys()
-        }

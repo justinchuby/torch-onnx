@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Sequence
+
 import onnxscript
 import torch
 import torch.fx
 from onnxscript import ir
+
 from torch_onnx import _schemas
 
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -30,9 +32,6 @@ _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
 
 def _torch_dtype_to_onnx_compatible_dtype(dtype: torch.dtype) -> ir.DataType:
     return _TORCH_DTYPE_TO_ONNX_COMPATIBLE[dtype]
-
-
-
 
 
 def _attribute_type_compatible_with_arg(
@@ -153,9 +152,10 @@ def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argu
         node_args[name] = arg
     return node_args
 
+
 def get_matching_overload(
     node: torch.fx.Node,
-    overload_and_schemas: tuple[overload: onnxscript.values.Op, Sequence[_schemas.OpSignature]],
+    overload_and_schemas: tuple[onnxscript.values.Op, Sequence[_schemas.OpSignature]],
 ):
     named_args = _get_named_fx_node_args(node)
     schema_args = {arg.name: arg for arg in node.target._schema.arguments}
@@ -173,7 +173,10 @@ def get_matching_overload(
             if param.name in named_args:
                 # Provided in Node args
                 arg = named_args[param.name]
-            elif param.name in schema_args and schema_args[param.name].default is not None:
+            elif (
+                param.name in schema_args
+                and schema_args[param.name].default is not None
+            ):
                 # Provided in schema args
                 arg = schema_args[param.name].default
             elif param.has_default():
@@ -184,7 +187,10 @@ def get_matching_overload(
                 break
 
             if isinstance(param, _schemas.Parameter):
-                if isinstance(arg, torch.Tensor) or (isinstance(arg, Sequence) and any(isinstance(t, torch.Tensor) for t in arg)):
+                if isinstance(arg, torch.Tensor) or (
+                    isinstance(arg, Sequence)
+                    and any(isinstance(t, torch.Tensor) for t in arg)
+                ):
                     arg = _get_type_from_tensor(arg)
                 # TODO: Handle None attributes
                 # Handle tensors and Python values

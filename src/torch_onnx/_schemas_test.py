@@ -173,9 +173,7 @@ class TypeConversionFunctionsTest(unittest.TestCase):
             ("optional_union_type", Optional[Union[INT64, FLOAT]], None),
         ]
     )
-    def test_get_type_constraint_name(
-        self, _: str, pytype: Any, expected: str | None
-    ):
+    def test_get_type_constraint_name(self, _: str, pytype: Any, expected: str | None):
         self.assertEqual(_schemas._get_type_constraint_name(pytype), expected)
 
 

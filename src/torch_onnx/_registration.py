@@ -14,6 +14,7 @@ from torch_onnx import _schemas
 
 # TODO: Create an registry here
 
+
 @dataclasses.dataclass(frozen=True, eq=True)
 class ONNXFunction:
     """A wrapper of onnx-script function.
@@ -83,3 +84,8 @@ class OpName:
 
     def qualified_name(self) -> str:
         return f"{self.namespace}::{self.op_name}.{self.overload}"
+
+
+class Registry:
+    def __init__(self, opset_version: int):
+        self.opset_version = opset_version

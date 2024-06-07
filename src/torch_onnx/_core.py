@@ -16,8 +16,8 @@ import torch.fx
 from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
-from torch_onnx import _fx_passes
-from torch_onnx import _building, _dispatching
+
+from torch_onnx import _building, _dispatching, _fx_passes, _registration
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -310,11 +310,16 @@ def _fx_arg_to_onnx_arg(
     return arg
 
 
+def _get_onnxscript_opset(opset_version: int) -> onnxscript.Opset:
+    return onnxscript.values.Opset("", opset_version)
+
+
 def _handle_call_function_node_with_lowering(
     model: ir.Model,
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
+    registry: _registration.Registry,
 ):
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
@@ -323,6 +328,7 @@ def _handle_call_function_node_with_lowering(
     # Find the matching ONNX overload for the node
     # TODO: Pass in the registry or the dispatcher here.
     # TODO: Mark - pick up from here
+    # NOTE: Create different registries for different ONNX opset versions
     onnx_function = _dispatching.dispatch(registry, node)
 
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
@@ -339,7 +345,9 @@ def _handle_call_function_node_with_lowering(
         onnx_kwargs[key] = _fx_arg_to_onnx_arg(value, node_name_to_values)
 
     with onnxscript.evaluator.default_as(
-        tracer := _building.OpRecorder(onnxscript.opset19, constant_farm)
+        tracer := _building.OpRecorder(
+            _get_onnxscript_opset(registry.opset_version), constant_farm
+        )
     ):
         outputs = onnx_function(*onnx_args, **onnx_kwargs)
 
@@ -371,7 +379,8 @@ def _handle_call_function_node_with_lowering(
 def _add_nodes(
     exported_program: torch.export.ExportedProgram,
     model: ir.Model,
-    lower: Literal["fx", "ir", "none"],
+    lower: Literal["at_conversion", "post_conversion", "none"],
+    registry: _registration.Registry,
 ) -> dict[str, ir.Value]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
@@ -391,9 +400,9 @@ def _add_nodes(
             node_name_to_values[name] = input_
             # The inputs will be added to the graph later
         elif node.op == "call_function":
-            if lower == "fx":
+            if lower == "at_conversion":
                 _handle_call_function_node_with_lowering(
-                    model, node, node_name_to_values, constant_farm
+                    model, node, node_name_to_values, constant_farm, registry=registry
                 )
             else:
                 # No lowering
@@ -473,24 +482,29 @@ def _get_inputs_and_attributes(
 
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
-    lower: Literal["fx", "ir", "none"] = "fx",
+    *,
+    registry: _registration.Registry,
+    lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> ir.Model:
     """Convert an exported program to an ONNX IR model.
 
     Args:
         exported_program: The exported program to convert.
         lower: Whether to lower the graph to core ONNX operators.
-            fx: Lower whe translating the FX graph to ONNX IR.
-            ir: Use an IR pass to lower the graph.
+            at_conversion: Lower whe translating the FX graph to ONNX IR.
+            post_conversion: Use an IR pass to lower the graph.
             none: Do not lower the graph.
+        registry: The registry of all ONNX Script decomposition.
     """
-
     model = ir.Model(
         graph=ir.Graph(
             [],
             [],
             nodes=[],
-            opset_imports={"": 20, "pkg.torch.ops": _torch_version_integer()},
+            opset_imports={
+                "": registry.opset_version,
+                "pkg.torch.ops": _torch_version_integer(),
+            },
             name="main_graph",
         ),
         ir_version=9,
@@ -501,10 +515,10 @@ def exported_program_to_ir(
     # TODO: We can call exported_program.graph.eliminate_dead_code()
 
     # 1. Add all nodes to the graph and create a dictionary of values
-    if lower == "fx":
+    if lower == "at_conversion":
         # Include explicit type promotion nodes
         _fx_passes.insert_type_promotion_nodes(exported_program)
-    values = _add_nodes(exported_program, model, lower=lower)
+    values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
     # Since the node names and the tensor names are different, we need to rename

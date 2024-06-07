@@ -388,7 +388,9 @@ class OpRecorder(evaluator.Evaluator):
             # Trace the function call instead of adding the function as a node
             return function.function(*args, **kwargs)
 
-        op_signature = _schemas.OpSignature.from_function(function.function, function.function_ir.domain, function.name)
+        op_signature = _schemas.OpSignature.from_function(
+            function.function, function.function_ir.domain, function.name
+        )
         named_inputs, named_attrs = _construct_named_inputs_and_attrs(
             op_signature, args, kwargs
         )

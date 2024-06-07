@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Sequence
+import onnxscript
 import torch
 import torch.fx
 from onnxscript import ir
@@ -29,6 +30,9 @@ _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
 
 def _torch_dtype_to_onnx_compatible_dtype(dtype: torch.dtype) -> ir.DataType:
     return _TORCH_DTYPE_TO_ONNX_COMPATIBLE[dtype]
+
+
+
 
 
 def _attribute_type_compatible_with_arg(
@@ -151,12 +155,12 @@ def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argu
 
 def get_matching_overload(
     node: torch.fx.Node,
-    overloads_schemas: Sequence[_schemas.OpSignature],
+    overload_and_schemas: tuple[overload: onnxscript.values.Op, Sequence[_schemas.OpSignature]],
 ):
     named_args = _get_named_fx_node_args(node)
     schema_args = {arg.name: arg for arg in node.target._schema.arguments}
-    assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
-    for schema in overloads_schemas:
+    for overload, schema in overload_and_schemas:
+        assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
         matched = True
         for param in schema:
             if param.name not in schema_args and param.required:
@@ -164,24 +168,33 @@ def get_matching_overload(
                 # A required parameter is not supplied.
                 matched = False
                 break
+
+            # Get the argument
             if param.name in named_args:
                 # Provided in Node args
                 arg = named_args[param.name]
-                if isinstance(param, _schemas.Parameter):
-                    # TODO: Get type from node args
-                    # TODO: Handle None attributes
-                    # Handle tensors and Python values
-                    _get_type_from_tensor()
-                    if not _param_type_compatible_with_arg_type(
-                        param, arg.type, assigned_types
-                    ):
-                        matched = False
-                        break
-            elif param.name in schema_args:
-                # Todo make sure type is right
-                pass
+            elif param.name in schema_args and schema_args[param.name].default is not None:
+                # Provided in schema args
+                arg = schema_args[param.name].default
             elif param.has_default():
-                pass
+                # Provided in the ONNX op definition
+                arg = param.default
             else:
                 matched = False
                 break
+
+            if isinstance(param, _schemas.Parameter):
+                if isinstance(arg, torch.Tensor) or (isinstance(arg, Sequence) and any(isinstance(t, torch.Tensor) for t in arg)):
+                    arg = _get_type_from_tensor(arg)
+                # TODO: Handle None attributes
+                # Handle tensors and Python values
+                if not _param_type_compatible_with_arg(param, arg, assigned_types):
+                    matched = False
+                    break
+            elif isinstance(param, _schemas.AttributeParameter):
+                if not _attribute_type_compatible_with_arg(param, arg):
+                    matched = False
+                    break
+        if matched:
+            return overload, schema
+    return None, None

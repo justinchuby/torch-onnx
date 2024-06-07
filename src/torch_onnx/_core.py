@@ -17,7 +17,7 @@ from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 from torch_onnx import _fx_passes
-from torch_onnx import _building
+from torch_onnx import _building, _dispatching
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -285,6 +285,31 @@ def _fill_in_default_kwargs(
     return complete_args, complete_kwargs
 
 
+def _fx_arg_to_onnx_arg(
+    arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
+):
+    if arg is None:
+        # None arguments are not modified because when the arg is an ONNX input
+        # we need to preserve the None value; when the arg is an ONNX attribute,
+        # we want to drop the value.
+        # The actual dropping of a None attribute value is done by OpRecorder
+        return None
+    if hasattr(arg, "name"):
+        if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
+            # If the node is getting an input from another node, get the actual value the node is retrieving
+            return _handle_getitem_node(arg, node_name_to_values)
+        # If the input is a node, get the value from the mapping
+        return node_name_to_values[arg.name]
+    if isinstance(arg, Sequence):
+        return [_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
+    if isinstance(arg, torch.device):
+        return str(arg)
+    if isinstance(arg, torch.dtype):
+        return _torch_dtype_to_onnx_dtype(arg)
+    # Maybe a Python value
+    return arg
+
+
 def _handle_call_function_node_with_lowering(
     model: ir.Model,
     node: torch.fx.Node,
@@ -295,36 +320,27 @@ def _handle_call_function_node_with_lowering(
         _handle_getitem_node(node, node_name_to_values)
         return
 
+    # Find the matching ONNX overload for the node
+    # TODO: Pass in the registry or the dispatcher here.
+    onnx_function = _dispatching.dispatch(registry, node)
+
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
     # torch_args and torch_kwargs are for op-level validation
     fx_args, fx_kwargs = _fill_in_default_kwargs(node)
 
-    inputs = []
+    # Replace the input FX nodes with ONNX values
+    onnx_args = []
     for i, input_ in enumerate(fx_args):
-        if input_ is None:
-            inputs.append(None)
-        elif hasattr(input_, "name"):
-            if isinstance(input_, torch.fx.Node) and input_.target == operator.getitem:
-                actual_input = _handle_getitem_node(input_, node_name_to_values)
-                inputs.append(actual_input)
-            else:
-                inputs.append(node_name_to_values[input_.name])
+        onnx_args.append(_fx_arg_to_onnx_arg(input_, node_name_to_values))
 
-    # Dispatch to ONNX op through OpShema. The input argument dtypes are compared to
-    # function signature in OpSchema, and find the best matched overload.
-    symbolic_fn = _onnx_dispatcher.dispatch(
-        node=node,
-        onnx_args=inputs,
-        onnx_kwargs=fx_kwargs,
-    )
+    onnx_kwargs = {}
+    for key, value in fx_kwargs.items():
+        onnx_kwargs[key] = _fx_arg_to_onnx_arg(value, node_name_to_values)
 
     with onnxscript.evaluator.default_as(
         tracer := _building.OpRecorder(onnxscript.opset19, constant_farm)
     ):
-        outputs = symbolic_fn(
-            *inputs,
-            **{key: value for key, value in fx_kwargs.items() if value is not None},
-        )
+        outputs = onnx_function(*onnx_args, **onnx_kwargs)
 
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])
@@ -341,6 +357,7 @@ def _handle_call_function_node_with_lowering(
 
     # Add the traced nodes to the graph
     model.graph.extend(tracer.nodes)
+    # Add the defined functions to the model
     for identifier, onnxscript_function in tracer.functions.items():
         if identifier in model.functions:
             continue

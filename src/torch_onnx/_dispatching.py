@@ -140,29 +140,48 @@ def _get_type_from_tensor(
     )
 
 
+def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
+    torch_schema: torch.FunctionSchema = node.target._schema
+    node_args = {}
+    for arg, schema_arg in zip(node.args, torch_schema.arguments):
+        node_args[schema_arg.name] = arg
+    for name, arg in node.kwargs.items():
+        node_args[name] = arg
+    return node_args
+
 def get_matching_overload(
     node: torch.fx.Node,
     overloads_schemas: Sequence[_schemas.OpSignature],
 ):
-    # TODO: Create a param schema that uses IR types
-    torch_schema: torch.FunctionSchema = node.target._schema
-    args_map = {arg.name: arg for arg in torch_schema.arguments}
+    named_args = _get_named_fx_node_args(node)
+    schema_args = {arg.name: arg for arg in node.target._schema.arguments}
+    assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
     for schema in overloads_schemas:
         matched = True
         for param in schema:
-            if param.name not in args_map and param.required:
+            if param.name not in schema_args and param.required:
                 # We don't need to handle variadic inputs as there is none.
                 # A required parameter is not supplied.
                 matched = False
                 break
-            if param.name in args_map:
-                arg = args_map[param.name]
+            if param.name in named_args:
+                # Provided in Node args
+                arg = named_args[param.name]
                 if isinstance(param, _schemas.Parameter):
                     # TODO: Get type from node args
                     # TODO: Handle None attributes
+                    # Handle tensors and Python values
                     _get_type_from_tensor()
                     if not _param_type_compatible_with_arg_type(
                         param, arg.type, assigned_types
                     ):
                         matched = False
                         break
+            elif param.name in schema_args:
+                # Todo make sure type is right
+                pass
+            elif param.has_default():
+                pass
+            else:
+                matched = False
+                break

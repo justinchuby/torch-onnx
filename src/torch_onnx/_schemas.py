@@ -115,6 +115,9 @@ class AttributeParameter:
     required: bool
     default: ir.Attr | None = None
 
+    def has_default(self) -> bool:
+        return self.default is not None
+
 
 def _get_type_from_str(
     type_str: str,

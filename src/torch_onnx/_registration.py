@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import dataclasses
 import types
-from collections import defaultdict
-from typing import Callable, List, Mapping, Optional, TypeAlias, Union
+from typing import Callable, Mapping, TypeAlias, Union
 
 import onnxscript
-import torch._ops
 import torch
+import torch._ops
 from onnxscript.function_libs.torch_lib import (
     registration as torchlib_registration,
 )
@@ -29,6 +28,7 @@ _DEFAULT_OPSET_VERSION = 18
 
 
 TorchOp: TypeAlias = Union[torch._ops.OpOverload, types.BuiltinFunctionType, Callable]
+
 
 @dataclasses.dataclass(frozen=True)
 class OnnxDecompMeta:
@@ -42,7 +42,7 @@ class OnnxDecompMeta:
     """
 
     onnx_function: onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction
-    op: TorchOp
+    fx_target: TorchOp
     is_custom: bool = False
     is_complex: bool = False
     device: str | None = None
@@ -55,6 +55,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
     overload = overload[0] if overload else "default"
     if namespace == "torchvision":
         import torchvision.ops
+
         return getattr(torchvision.ops, op_name)
     # TODO: Builtin functions
     return getattr(getattr(getattr(torch.ops, namespace), op_name), overload)
@@ -99,19 +100,19 @@ class OnnxRegistry:
             torchlib_registry: The torchlib registry to use for populating the registry.
         """
         registry = cls()
-        for aten_name, aten_overloads_func in torchlib_registry.items():
-            op_id = TorchOpIdentifier.from_qualified_name(aten_name)
+        for qualified_name, aten_overloads_func in torchlib_registry.items():
+            target = _get_overload(qualified_name)
             for overload_func in aten_overloads_func.overloads:
                 overload_func.signature = _schemas.OpSignature.from_function(
                     overload_func, overload_func.function_ir.domain, overload_func.name
                 )
                 onnx_decomposition = OnnxDecompMeta(
                     onnx_function=overload_func,
-                    op_id=op_id,
+                    fx_target=target,
                     is_custom=False,
                     is_complex=False,
                 )
-                registry._register(op_id, onnx_decomposition)
+                registry._register(target, onnx_decomposition)
 
             for complex_func in aten_overloads_func.complex:
                 overload_func.signature = _schemas.OpSignature.from_function(
@@ -119,35 +120,35 @@ class OnnxRegistry:
                 )
                 onnx_decomposition = OnnxDecompMeta(
                     onnx_function=complex_func,
-                    op_id=op_id,
+                    fx_target=target,
                     is_custom=False,
                     is_complex=True,
                 )
-                registry._register(op_id, onnx_decomposition)
+                registry._register(target, onnx_decomposition)
         return registry
 
     def _register(
         self,
-        target: TorchOpIdentifier,
+        target: TorchOp,
         onnx_decomposition: OnnxDecompMeta,
     ) -> None:
         """Registers a OnnxDecompMeta to an operator.
 
         Args:
-            op_identifier: The qualified name of the operator to register: OpName.
+            target: The PyTorch node callable target.
             onnx_decomposition: The OnnxDecompMeta to register.
         """
         if onnx_decomposition.is_complex:
-            self._complex[op_identifier].append(onnx_decomposition)
+            self._complex[target].append(onnx_decomposition)
         elif onnx_decomposition.is_custom:
-            self._customs[op_identifier].append(onnx_decomposition)
+            self._customs[target].append(onnx_decomposition)
         else:
-            self._functions[op_identifier].append(onnx_decomposition)
+            self._functions[target].append(onnx_decomposition)
 
     def register_op(
         self,
-        function: Union["onnxscript.OnnxFunction", "onnxscript.TracedOnnxFunction"],
-        target: Callable,
+        target: TorchOp,
+        function: onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction,
         is_complex: bool = False,
     ) -> None:
         """Registers a custom operator: torch.ops.<namespace>.<op_name>.<overload>.
@@ -165,15 +166,13 @@ class OnnxRegistry:
         """
         onnx_decomposition = OnnxDecompMeta(
             onnx_function=function,
-            target=target,
+            fx_target=target,
             is_custom=True,
             is_complex=is_complex,
         )
         self._register(target, onnx_decomposition)
 
-    def get_op_functions(
-        self, namespace: str, op_name: str, overload: Optional[str] = None
-    ) -> Optional[List[OnnxDecompMeta]]:
+    def get_op_functions(self, target: TorchOp) -> list[OnnxDecompMeta]:
         """Returns a list of OnnxDecompMeta for the given op: torch.ops.<namespace>.<op_name>.<overload>.
 
         The list is ordered by the time of registration. The custom operators should be
@@ -188,14 +187,16 @@ class OnnxRegistry:
             A list of OnnxDecompMeta corresponding to the given name, or None if
             the name is not in the registry.
         """
-        op_id = TorchOpIdentifier.from_name_parts(
-            namespace=namespace, op_name=op_name, overload=overload
-        )
-        return self._registry.get(op_id)
+        found = []
+        if decompositions := self._functions.get(target):
+            found.extend(decompositions)
+        if decompositions := self._customs.get(target):
+            found.extend(decompositions)
+        if decompositions := self._complex.get(target):
+            found.extend(decompositions)
+        return found
 
-    def is_registered_op(
-        self, namespace: str, op_name: str, overload: str | None = None
-    ) -> bool:
+    def is_registered_op(self, target: TorchOp) -> bool:
         """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.
 
         Args:
@@ -207,7 +208,4 @@ class OnnxRegistry:
         Returns:
             True if the given op is registered, otherwise False.
         """
-        functions = self.get_op_functions(
-            namespace=namespace, op_name=op_name, overload=overload
-        )
-        return functions is not None
+        return bool(self.get_op_functions(target))

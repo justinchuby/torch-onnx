@@ -7,7 +7,7 @@ import torch
 import torch.fx
 from onnxscript import ir
 
-from torch_onnx import _schemas
+from torch_onnx import _schemas, _registration
 
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
@@ -206,5 +206,11 @@ def get_matching_overload(
     return None, None
 
 
-def dispatch(node: torch.fx.Node, registry: _registration.OnnxRegistry) -> Any:
-    pass
+def dispatch(node: torch.fx.Node, registry: _registration.OnnxRegistry) -> onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction | None:
+    # TODO: Handle when node does not have a target
+    # Determine if the node has complex inputs.
+    # TODO: Complex can have customs too
+    overload, schema = get_matching_overload(node, [(decomp.onnx_function, decomp.onnx_function.signature) for decomp in decomp_metas])
+    if overload is None:
+        return None
+    return overload

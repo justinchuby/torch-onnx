@@ -76,9 +76,10 @@ class OnnxRegistry:
         # TODO: Design multi-opset version support
         self._opset_version = _DEFAULT_OPSET_VERSION
 
-        self._functions: dict[TorchOp, list[OnnxDecompMeta]] = {}
-        self._complex: dict[TorchOp, list[OnnxDecompMeta]] = {}
-        self._customs: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        self.functions: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        # TODO: Complex can have customs too. Better merge in single list?
+        self.complexes: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        self.customs: dict[TorchOp, list[OnnxDecompMeta]] = {}
 
     @property
     def opset_version(self) -> int:
@@ -139,11 +140,11 @@ class OnnxRegistry:
             onnx_decomposition: The OnnxDecompMeta to register.
         """
         if onnx_decomposition.is_complex:
-            self._complex[target].append(onnx_decomposition)
+            self.complexes[target].append(onnx_decomposition)
         elif onnx_decomposition.is_custom:
-            self._customs[target].append(onnx_decomposition)
+            self.customs[target].append(onnx_decomposition)
         else:
-            self._functions[target].append(onnx_decomposition)
+            self.functions[target].append(onnx_decomposition)
 
     def register_op(
         self,
@@ -172,40 +173,40 @@ class OnnxRegistry:
         )
         self._register(target, onnx_decomposition)
 
-    def get_op_functions(self, target: TorchOp) -> list[OnnxDecompMeta]:
-        """Returns a list of OnnxDecompMeta for the given op: torch.ops.<namespace>.<op_name>.<overload>.
+    # def get_decomps(self, target: TorchOp) -> list[OnnxDecompMeta]:
+    #     """Returns a list of OnnxDecompMeta for the given op: torch.ops.<namespace>.<op_name>.<overload>.
 
-        The list is ordered by the time of registration. The custom operators should be
-        in the second half of the list.
+    #     The list is ordered by the time of registration. The custom operators should be
+    #     in the second half of the list.
 
-        Args:
-            namespace: The namespace of the operator to get.
-            op_name: The name of the operator to get.
-            overload: The overload of the operator to get. If it's default overload,
-                leave it to None.
-        Returns:
-            A list of OnnxDecompMeta corresponding to the given name, or None if
-            the name is not in the registry.
-        """
-        found = []
-        if decompositions := self._functions.get(target):
-            found.extend(decompositions)
-        if decompositions := self._customs.get(target):
-            found.extend(decompositions)
-        if decompositions := self._complex.get(target):
-            found.extend(decompositions)
-        return found
+    #     Args:
+    #         namespace: The namespace of the operator to get.
+    #         op_name: The name of the operator to get.
+    #         overload: The overload of the operator to get. If it's default overload,
+    #             leave it to None.
+    #     Returns:
+    #         A list of OnnxDecompMeta corresponding to the given name, or None if
+    #         the name is not in the registry.
+    #     """
+    #     found = []
+    #     if decompositions := self.functions.get(target):
+    #         found.extend(decompositions)
+    #     if decompositions := self.customs.get(target):
+    #         found.extend(decompositions)
+    #     if decompositions := self.complexes.get(target):
+    #         found.extend(decompositions)
+    #     return found
 
-    def is_registered_op(self, target: TorchOp) -> bool:
-        """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.
+    # def is_registered_op(self, target: TorchOp) -> bool:
+    #     """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.
 
-        Args:
-            namespace: The namespace of the operator to check.
-            op_name: The name of the operator to check.
-            overload: The overload of the operator to check. If it's default overload,
-                leave it to None.
+    #     Args:
+    #         namespace: The namespace of the operator to check.
+    #         op_name: The name of the operator to check.
+    #         overload: The overload of the operator to check. If it's default overload,
+    #             leave it to None.
 
-        Returns:
-            True if the given op is registered, otherwise False.
-        """
-        return bool(self.get_op_functions(target))
+    #     Returns:
+    #         True if the given op is registered, otherwise False.
+    #     """
+    #     return bool(self.get_decomps(target))

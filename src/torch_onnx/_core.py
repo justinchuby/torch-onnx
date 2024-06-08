@@ -329,7 +329,11 @@ def _handle_call_function_node_with_lowering(
     # TODO: Pass in the registry or the dispatcher here.
     # TODO: Mark - pick up from here
     # NOTE: Create different registries for different ONNX opset versions
-    onnx_function = _dispatching.dispatch(registry, node)
+    onnx_function = _dispatching.dispatch(node, registry)
+
+    if onnx_function is None:
+        # TODO(justinchuby): Fall back or do something else
+        raise RuntimeError(f"No ONNX function found for {node.target}")
 
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
     # torch_args and torch_kwargs are for op-level validation

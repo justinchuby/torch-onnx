@@ -155,14 +155,17 @@ def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argu
 
 def get_matching_overload(
     node: torch.fx.Node,
-    overload_and_signatures: Sequence[tuple[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction, _schemas.OpSignature]],
+    overloads: Sequence[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction],
 ):
     named_args = _get_named_fx_node_args(node)
     schema_args = {arg.name: arg for arg in node.target._schema.arguments}
-    for overload, schema in overload_and_signatures:
+    for overload in overloads:
         assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
         matched = True
-        for param in schema:
+        if not hasattr(overload, "signature"):
+            # When an overload does not have a signature, we assume it is a custom op and should be matched
+            return overload
+        for param in overload.signature:
             if param.name not in schema_args and param.required:
                 # We don't need to handle variadic inputs as there is none.
                 # A required parameter is not supplied.
@@ -202,15 +205,40 @@ def get_matching_overload(
                     matched = False
                     break
         if matched:
-            return overload, schema
-    return None, None
+            return overload
+    return None
 
 
-def dispatch(node: torch.fx.Node, registry: _registration.OnnxRegistry) -> onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction | None:
+def _arg_has_complex_dtype(arg) -> bool:
+    """Check if the node has complex dtype recursively."""
+    if (
+        isinstance(arg, torch.fx.Node)
+        and "val" in arg.meta
+        and isinstance(arg.meta["val"], torch.Tensor)
+        and torch.is_complex(arg.meta["val"])
+    ):
+        return True
+    elif isinstance(arg, list):
+        return any(_arg_has_complex_dtype(item) for item in arg)
+    return False
+
+
+def dispatch(
+    node: torch.fx.Node, registry: _registration.OnnxRegistry
+) -> onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction | None:
     # TODO: Handle when node does not have a target
+    decomp_metas = registry.get_decomps(node.target)
     # Determine if the node has complex inputs.
-    # TODO: Complex can have customs too
-    overload, schema = get_matching_overload(node, [(decomp.onnx_function, decomp.onnx_function.signature) for decomp in decomp_metas])
+    is_complex = any(_arg_has_complex_dtype(arg) for arg in node.args) or any(
+        _arg_has_complex_dtype(arg) for arg in node.kwargs.values()
+    )
+    if is_complex:
+        decomp_metas = [decomp for decomp in decomp_metas if decomp.is_complex]
+    else:
+        decomp_metas = [decomp for decomp in decomp_metas if not decomp.is_complex]
+    overload = get_matching_overload(
+        node, [decomp.onnx_function for decomp in decomp_metas]
+    )
     if overload is None:
         return None
     return overload

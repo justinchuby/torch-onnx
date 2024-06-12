@@ -319,15 +319,13 @@ def _handle_call_function_node_with_lowering(
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
-    registry: _registration.Registry,
+    registry: _registration.OnnxRegistry,
 ):
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
         return
 
     # Find the matching ONNX overload for the node
-    # TODO: Pass in the registry or the dispatcher here.
-    # TODO: Mark - pick up from here
     # NOTE: Create different registries for different ONNX opset versions
     onnx_function = _dispatching.dispatch(node, registry)
 
@@ -384,7 +382,7 @@ def _add_nodes(
     exported_program: torch.export.ExportedProgram,
     model: ir.Model,
     lower: Literal["at_conversion", "post_conversion", "none"],
-    registry: _registration.Registry,
+    registry: _registration.OnnxRegistry,
 ) -> dict[str, ir.Value]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
@@ -487,7 +485,7 @@ def _get_inputs_and_attributes(
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.Registry,
+    registry: _registration.OnnxRegistry,
     lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> ir.Model:
     """Convert an exported program to an ONNX IR model.

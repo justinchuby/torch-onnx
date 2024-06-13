@@ -135,9 +135,9 @@ def _get_type_from_str(
 
     # Split the type_str a sequence types and dtypes
     # 1. Remove the ending ")"
-    type_str = type_str.rstrip(")")
+    striped = type_str.rstrip(")")
     # 2. Split the type_str by "("
-    type_parts = type_str.split("(")
+    type_parts = striped.split("(")
 
     # Convert the dtype to ir.DataType
     dtype = ir.DataType[type_parts[-1].upper()]
@@ -149,9 +149,9 @@ def _get_type_from_str(
     for type_part in reversed(type_parts[:-1]):
         if type_part == "tensor":
             type_ = ir.TensorType(dtype)
-        if type_part == "seq":
+        elif type_part == "seq":
             type_ = ir.SequenceType(type_)
-        if type_part == "optional":
+        elif type_part == "optional":
             type_ = ir.OptionalType(type_)
         else:
             raise ValueError(f"Unknown type part: '{type_part}' in type '{type_str}'")

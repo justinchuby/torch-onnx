@@ -215,3 +215,6 @@ class OnnxRegistry:
             True if the given op is registered, otherwise False.
         """
         return bool(self.get_decomps(target))
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(functions={self.functions})"

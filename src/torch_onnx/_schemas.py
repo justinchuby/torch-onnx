@@ -393,7 +393,7 @@ class OpSignature:
         for param in py_signature.parameters.values():
             if param.name not in type_hints:
                 logger.warning(
-                    f"Missing annotation for parameter '{param.name}'. Treating as an Input."
+                    f"Missing annotation for parameter '{param.name}' from {py_signature}. Treating as an Input."
                 )
                 type_constraints[param.name] = TypeConstraintParam.any_value(
                     f"T{param.name}"

@@ -333,8 +333,8 @@ def _handle_call_function_node_with_lowering(
     onnx_function = _dispatching.dispatch(node, registry)
 
     if onnx_function is None:
-        # TODO(justinchuby): Fall back or do something else
-        raise RuntimeError(f"No ONNX function found for {node.target}")
+        # TODO(justinchuby): Fall back to ATen op or do something else
+        raise RuntimeError(f"No ONNX function found for {node.target!r}")
 
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
     # torch_args and torch_kwargs are for op-level validation

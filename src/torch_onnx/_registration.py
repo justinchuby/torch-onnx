@@ -12,6 +12,7 @@ https://github.com/pytorch/pytorch/blob/6aa5bb1a76dee8112f1a9e7c194c790b5cdc6462
 from __future__ import annotations
 
 import dataclasses
+import math
 import types
 from typing import Callable, Mapping, TypeAlias, Union
 import operator
@@ -56,6 +57,8 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
     if namespace == "_operator":
         # Builtin functions
         return getattr(operator, op_name)
+    if namespace == "math":
+        return getattr(math, op_name)
     if namespace == "torchvision":
         import torchvision.ops
         return getattr(torchvision.ops, op_name)
@@ -110,6 +113,9 @@ class OnnxRegistry:
         """
         registry = cls()
         for qualified_name, aten_overloads_func in torchlib_registry.items():
+            if qualified_name.startswith("internal::"):
+                # Skip the custom defined internal functions
+                continue
             target = _get_overload(qualified_name)
             for overload_func in aten_overloads_func.overloads:
                 overload_func.signature = _schemas.OpSignature.from_function(

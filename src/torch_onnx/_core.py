@@ -11,6 +11,9 @@ from typing import Any, Literal, Sequence
 import numpy as np
 import onnxscript
 import onnxscript.evaluator
+import onnxscript.function_libs
+import onnxscript.function_libs.torch_lib
+import onnxscript.function_libs.torch_lib.registration
 import torch
 import torch.fx
 from onnxscript import ir
@@ -485,7 +488,7 @@ def _get_inputs_and_attributes(
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.OnnxRegistry,
+    registry: _registration.OnnxRegistry | None = None,
     lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> ir.Model:
     """Convert an exported program to an ONNX IR model.
@@ -498,6 +501,10 @@ def exported_program_to_ir(
             none: Do not lower the graph.
         registry: The registry of all ONNX Script decomposition.
     """
+    if registry is None:
+        registry = _registration.OnnxRegistry.from_torchlib(
+            onnxscript.function_libs.torch_lib.registration.default_registry
+        )
     model = ir.Model(
         graph=ir.Graph(
             [],

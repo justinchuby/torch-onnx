@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import types
 from typing import Callable, Mapping, TypeAlias, Union
+import operator
 
 import onnxscript
 import torch
@@ -52,13 +53,23 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
     """Obtain the torch op from <namespace>::<op_name>[.<overload>]"""
     namespace, opname_overload = qualified_name.split("::")
     op_name, *overload = opname_overload.split(".", 1)
-    overload = overload[0] if overload else "default"
+    if namespace == "_operator":
+        # Builtin functions
+        return getattr(operator, op_name)
     if namespace == "torchvision":
         import torchvision.ops
-
         return getattr(torchvision.ops, op_name)
-    # TODO: Builtin functions
-    return getattr(getattr(getattr(torch.ops, namespace), op_name), overload)
+
+    op_packet = getattr(getattr(torch.ops, namespace), op_name)
+    if overload:
+        overload = overload[0]
+    elif "default" in op_packet._overload_names:
+            overload = "default"
+    else:
+        # Use the first overload as the default overload
+        overload = op_packet._overload_names[0]
+
+    return getattr(op_packet, overload)
 
 
 class OnnxRegistry:

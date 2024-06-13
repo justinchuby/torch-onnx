@@ -14,7 +14,7 @@ from __future__ import annotations
 import dataclasses
 import math
 import types
-from typing import Callable, Mapping, TypeAlias, Union
+from typing import Callable, Literal, Mapping, TypeAlias, Union
 import operator
 
 import onnxscript
@@ -37,17 +37,17 @@ class OnnxDecompMeta:
     """A wrapper of onnx-script function with additional metadata.
 
     onnx_function: The onnx-script function from torchlib.
-    signature: The signature of the function.
+    fx_target: The PyTorch node callable target.
     is_custom: Whether the function is a custom function.
     is_complex: Whether the function is a function that handles complex valued inputs.
-
+    device: The device the function is registered to. If None, it is registered to all devices.
     """
 
     onnx_function: onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction
     fx_target: TorchOp
     is_custom: bool = False
     is_complex: bool = False
-    device: str | None = None
+    device: Literal["cuda", "cpu"] | str | None = None
 
 
 def _get_overload(qualified_name: str) -> torch._ops.OpOverload:

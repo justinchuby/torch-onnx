@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc
 import inspect
 import dataclasses
 import types
@@ -81,6 +82,9 @@ class TypeConstraintParam:
     name: str
     allowed_types: set[ir.TypeProtocol]
     description: str = ""
+
+    def __hash__(self) -> int:
+        return hash((self.name, tuple(self.allowed_types)))
 
     @classmethod
     def any_tensor(cls, name: str, description: str = "") -> TypeConstraintParam:
@@ -202,7 +206,7 @@ def _get_attr_type(type_: Type) -> ir.AttributeType:
         origin_type = typing.get_origin(type_)
         if origin_type is None:
             return ir.AttributeType.UNDEFINED
-        if origin_type in (Sequence, list, tuple):
+        if origin_type in (collections.abc.Sequence, Sequence, typing.List, list, typing.Tuple, tuple):
             inner_type = typing.get_args(type_)[0]
             if inner_type in _LIST_TYPE_TO_ATTR_TYPE:
                 return _LIST_TYPE_TO_ATTR_TYPE[inner_type]

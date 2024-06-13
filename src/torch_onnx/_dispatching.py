@@ -68,7 +68,8 @@ def _param_type_compatible_with_arg(
     | float
     | complex
     | Sequence[int]
-    | Sequence[float],
+    | Sequence[float]
+    | None,
     assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol],
 ) -> bool:
     # Handle Python types first
@@ -116,6 +117,9 @@ def _param_type_compatible_with_arg(
         }:
             if all(isinstance(i, float) for i in value):
                 return True
+    if value is None and not param.required:
+        # An optional parameter is not supplied
+        return True
 
     if not isinstance(value, ir.TypeProtocol):
         return False
@@ -161,11 +165,10 @@ def get_matching_overload(
     overloads: Sequence[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction],
 ):
     named_args = _get_named_fx_node_args(node)
-    schema_args = {arg.name: arg for arg in node.target._schema.arguments}
+    schema_args: dict[str, torch.Argument] = {arg.name: arg for arg in node.target._schema.arguments}
     for overload in overloads:
         assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
         fail_reason = ""
-        where_arg_obtained = ""
         if not hasattr(overload, "signature"):
             # When an overload does not have a signature, we assume it is a custom op and should be matched
             return overload
@@ -182,10 +185,10 @@ def get_matching_overload(
                 arg = named_args[param.name]
             elif (
                 param.name in schema_args
-                and schema_args[param.name].default is not None
+                and schema_args[param.name].has_default_value()
             ):
                 # Provided in schema args
-                arg = schema_args[param.name].default
+                arg = schema_args[param.name].default_value
             elif param.has_default():
                 # Provided in the ONNX op definition
                 arg = param.default
@@ -199,9 +202,11 @@ def get_matching_overload(
                     and any(isinstance(t, torch.Tensor) for t in arg)
                 ):
                     arg = _get_type_from_tensor(arg)
+                elif isinstance(arg, torch.fx.Node):
+                    meta_val = arg.meta["val"]
+                    arg = _get_type_from_tensor(meta_val)
                 # TODO: Handle None attributes
                 # Handle tensors and Python values
-                # FIXME: The arg is an fx node. Figure out the type?
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
                     fail_reason = f"Parameter type not compatible with argument: param={param}, arg={arg}, assigned_types={assigned_types}"
                     break
@@ -212,8 +217,9 @@ def get_matching_overload(
         if not fail_reason:
             return overload
         else:
+            print(f"Failed to match overload '{overload}' with node '{node}': {fail_reason}")
             logger.debug(
-                f"Failed to match overload {overload} with node {node}: {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node}': {fail_reason}"
             )
     return None
 

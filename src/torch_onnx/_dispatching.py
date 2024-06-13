@@ -236,9 +236,8 @@ def dispatch(
         decomp_metas = [decomp for decomp in decomp_metas if decomp.is_complex]
     else:
         decomp_metas = [decomp for decomp in decomp_metas if not decomp.is_complex]
+    print([decomp.onnx_function for decomp in decomp_metas])
     overload = get_matching_overload(
         node, [decomp.onnx_function for decomp in decomp_metas]
     )
-    if overload is None:
-        return None
     return overload

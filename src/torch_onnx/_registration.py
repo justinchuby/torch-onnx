@@ -157,9 +157,9 @@ class OnnxRegistry:
         if isinstance(target, torch._ops.OpOverload):
             # Get the qualified name of the aten op because torch._ops.OpOverload lookup in
             # a dictionary is unreliable for some reason.
-            target_or_name = target.name()
+            target_or_name: str | TorchOp = target.name()
         else:
-            target_or_name = target
+            target_or_name: str | TorchOp = target
         if onnx_decomposition.is_custom:
             self.functions.setdefault(target_or_name, []).insert(0, onnx_decomposition)
         else:
@@ -210,9 +210,9 @@ class OnnxRegistry:
         if isinstance(target, torch._ops.OpOverload):
             # Get the qualified name of the aten op because torch._ops.OpOverload lookup in
             # a dictionary is unreliable for some reason.
-            target_or_name = target.name()
+            target_or_name: str | TorchOp = target.name()
         else:
-            target_or_name = target
+            target_or_name: str | TorchOp = target
         return self.functions.get(target_or_name, [])
 
     def is_registered(self, target: TorchOp) -> bool:

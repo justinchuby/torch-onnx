@@ -597,6 +597,11 @@ def exported_program_to_ir(
     ):
         initializer = model.graph.initializers.pop(name)
         initializer.name = param_name
+        # Record the original name so users can search the metadata and correspond
+        # with the FX graph
+        initializer.metadata_props[
+            "pkg.torch.onnx.original_node_name"
+        ] = name
         model.graph.initializers[param_name] = initializer
 
     # 5. Add initializers to the graph

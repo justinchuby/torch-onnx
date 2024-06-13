@@ -6,8 +6,11 @@ import onnxscript
 import torch
 import torch.fx
 from onnxscript import ir
+import logging
 
 from torch_onnx import _schemas, _registration
+
+logger = logging.getLogger(__name__)
 
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX_COMPATIBLE: dict[torch.dtype, ir.DataType] = {
@@ -161,7 +164,8 @@ def get_matching_overload(
     schema_args = {arg.name: arg for arg in node.target._schema.arguments}
     for overload in overloads:
         assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
-        matched = True
+        fail_reason = ""
+        where_arg_obtained = ""
         if not hasattr(overload, "signature"):
             # When an overload does not have a signature, we assume it is a custom op and should be matched
             return overload
@@ -169,7 +173,7 @@ def get_matching_overload(
             if param.name not in schema_args and param.required:
                 # We don't need to handle variadic inputs as there is none.
                 # A required parameter is not supplied.
-                matched = False
+                fail_reason = "Required parameter not supplied"
                 break
 
             # Get the argument
@@ -186,7 +190,7 @@ def get_matching_overload(
                 # Provided in the ONNX op definition
                 arg = param.default
             else:
-                matched = False
+                fail_reason = "Parameter not provided"
                 break
 
             if isinstance(param, _schemas.Parameter):
@@ -197,15 +201,20 @@ def get_matching_overload(
                     arg = _get_type_from_tensor(arg)
                 # TODO: Handle None attributes
                 # Handle tensors and Python values
+                # FIXME: The arg is an fx node. Figure out the type?
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
-                    matched = False
+                    fail_reason = f"Parameter type not compatible with argument: param={param}, arg={arg}, assigned_types={assigned_types}"
                     break
             elif isinstance(param, _schemas.AttributeParameter):
                 if not _attribute_type_compatible_with_arg(param, arg):
-                    matched = False
+                    fail_reason = f"Attribute type not compatible with argument: param={param}, arg={arg}"
                     break
-        if matched:
+        if not fail_reason:
             return overload
+        else:
+            logger.debug(
+                f"Failed to match overload {overload} with node {node}: {fail_reason}"
+            )
     return None
 
 
@@ -236,7 +245,6 @@ def dispatch(
         decomp_metas = [decomp for decomp in decomp_metas if decomp.is_complex]
     else:
         decomp_metas = [decomp for decomp in decomp_metas if not decomp.is_complex]
-    print([decomp.onnx_function for decomp in decomp_metas])
     overload = get_matching_overload(
         node, [decomp.onnx_function for decomp in decomp_metas]
     )

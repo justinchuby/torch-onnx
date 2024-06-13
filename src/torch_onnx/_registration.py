@@ -61,13 +61,14 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
         return getattr(math, op_name)
     if namespace == "torchvision":
         import torchvision.ops
+
         return getattr(torchvision.ops, op_name)
 
     op_packet = getattr(getattr(torch.ops, namespace), op_name)
     if overload:
         overload = overload[0]
     elif "default" in op_packet._overload_names:
-            overload = "default"
+        overload = "default"
     else:
         # Use the first overload as the default overload
         overload = op_packet._overload_names[0]
@@ -90,7 +91,7 @@ class OnnxRegistry:
         # TODO: Design multi-opset version support
         self._opset_version = _DEFAULT_OPSET_VERSION
 
-        self.functions: dict[TorchOp, list[OnnxDecompMeta]] = {}
+        self.functions: dict[TorchOp | str, list[OnnxDecompMeta]] = {}
 
     @property
     def opset_version(self) -> int:
@@ -153,10 +154,16 @@ class OnnxRegistry:
             target: The PyTorch node callable target.
             onnx_decomposition: The OnnxDecompMeta to register.
         """
-        if onnx_decomposition.is_custom:
-            self.functions.setdefault(target, []).insert(0, onnx_decomposition)
+        if isinstance(target, torch._ops.OpOverload):
+            # Get the qualified name of the aten op because torch._ops.OpOverload lookup in
+            # a dictionary is unreliable for some reason.
+            target_or_name = target.name()
         else:
-            self.functions.setdefault(target, []).append(onnx_decomposition)
+            target_or_name = target
+        if onnx_decomposition.is_custom:
+            self.functions.setdefault(target_or_name, []).insert(0, onnx_decomposition)
+        else:
+            self.functions.setdefault(target_or_name, []).append(onnx_decomposition)
 
     def register_op(
         self,
@@ -200,7 +207,13 @@ class OnnxRegistry:
             A list of OnnxDecompMeta corresponding to the given name, or None if
             the name is not in the registry.
         """
-        return self.functions.get(target, [])
+        if isinstance(target, torch._ops.OpOverload):
+            # Get the qualified name of the aten op because torch._ops.OpOverload lookup in
+            # a dictionary is unreliable for some reason.
+            target_or_name = target.name()
+        else:
+            target_or_name = target
+        return self.functions.get(target_or_name, [])
 
     def is_registered(self, target: TorchOp) -> bool:
         """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.

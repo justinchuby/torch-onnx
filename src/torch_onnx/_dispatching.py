@@ -47,7 +47,7 @@ def _attribute_type_compatible_with_arg(
     if isinstance(value, str):
         return attr.type is ir.AttributeType.STRING
     if isinstance(value, int):
-        return attr.type is ir.AttributeType.INT
+        return attr.type in {ir.AttributeType.INT, ir.AttributeType.FLOAT}
     if isinstance(value, float):
         return attr.type is ir.AttributeType.FLOAT
     if isinstance(value, complex):
@@ -56,7 +56,7 @@ def _attribute_type_compatible_with_arg(
         if attr.type is ir.AttributeType.INTS:
             return all(isinstance(i, int) for i in value)
         if attr.type is ir.AttributeType.FLOATS:
-            return all(isinstance(i, float) for i in value)
+            return all(isinstance(i, (int, float)) for i in value)
     return False
 
 
@@ -74,56 +74,59 @@ def _param_type_compatible_with_arg(
 ) -> bool:
     # Handle Python types first
     if isinstance(value, bool):
-        if param.type_constraint.allowed_types & {ir.DataType.BOOL}:
+        if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.BOOL)}:
             return True
     if isinstance(value, int):
         if param.type_constraint.allowed_types & {
-            ir.DataType.INT4,
-            ir.DataType.INT8,
-            ir.DataType.INT16,
-            ir.DataType.INT32,
-            ir.DataType.INT64,
+            ir.TensorType(ir.DataType.INT4),
+            ir.TensorType(ir.DataType.INT8),
+            ir.TensorType(ir.DataType.INT16),
+            ir.TensorType(ir.DataType.INT32),
+            ir.TensorType(ir.DataType.INT64),
             # Int inputs can be casted to a float too
-            ir.DataType.FLOAT8E4M3FN,
-            ir.DataType.FLOAT8E4M3FNUZ,
-            ir.DataType.FLOAT8E5M2,
-            ir.DataType.FLOAT8E5M2FNUZ,
-            ir.DataType.FLOAT16,
-            ir.DataType.FLOAT,
-            ir.DataType.DOUBLE,
+            ir.TensorType(ir.DataType.FLOAT8E4M3FN),
+            ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
+            ir.TensorType(ir.DataType.FLOAT8E5M2),
+            ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
+            ir.TensorType(ir.DataType.FLOAT16),
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.DOUBLE),
         }:
             return True
     if isinstance(value, float):
         if param.type_constraint.allowed_types & {
-            ir.DataType.FLOAT8E4M3FN,
-            ir.DataType.FLOAT8E4M3FNUZ,
-            ir.DataType.FLOAT8E5M2,
-            ir.DataType.FLOAT8E5M2FNUZ,
-            ir.DataType.FLOAT16,
-            ir.DataType.FLOAT,
-            ir.DataType.DOUBLE,
+            ir.TensorType(ir.DataType.FLOAT8E4M3FN),
+            ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
+            ir.TensorType(ir.DataType.FLOAT8E5M2),
+            ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
+            ir.TensorType(ir.DataType.FLOAT16),
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.DOUBLE),
         }:
             return True
     if isinstance(value, complex):
         if param.type_constraint.allowed_types & {
-            ir.DataType.FLOAT,
-            ir.DataType.DOUBLE,
-            ir.DataType.COMPLEX64,
-            ir.DataType.COMPLEX128,
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.DOUBLE),
+            ir.TensorType(ir.DataType.COMPLEX64),
+            ir.TensorType(ir.DataType.COMPLEX128),
         }:
             return True
     if isinstance(value, str):
-        if param.type_constraint.allowed_types & {ir.DataType.STRING}:
+        if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.STRING)}:
             return True
     if isinstance(value, Sequence):
-        if param.type_constraint.allowed_types & {ir.DataType.INT32, ir.DataType.INT64}:
+        if param.type_constraint.allowed_types & {
+            ir.SequenceType(ir.TensorType(ir.DataType.INT32)),
+            ir.SequenceType(ir.TensorType(ir.DataType.INT64)),
+        }:
             if all(isinstance(i, int) for i in value):
                 return True
         if param.type_constraint.allowed_types & {
-            ir.DataType.FLOAT,
-            ir.DataType.DOUBLE,
+            ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
+            ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
-            if all(isinstance(i, float) for i in value):
+            if all(isinstance(i, (int, float)) for i in value):
                 return True
     if value is None and not param.required:
         # An optional parameter is not supplied

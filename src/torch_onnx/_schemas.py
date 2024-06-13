@@ -24,8 +24,14 @@ import onnxscript
 
 logger = logging.getLogger(__name__)
 
+
 # A special value to indicate that the default value is not specified
-_EMPTY_DEFAULT = object()
+class _Empty:
+    def __repr__(self):
+        return "_EMPTY_DEFAULT"
+
+
+_EMPTY_DEFAULT = _Empty()
 
 # Map from python type to corresponding ONNX AttributeProto type
 _PY_TYPE_TO_ATTR_TYPE = {
@@ -206,7 +212,14 @@ def _get_attr_type(type_: Type) -> ir.AttributeType:
         origin_type = typing.get_origin(type_)
         if origin_type is None:
             return ir.AttributeType.UNDEFINED
-        if origin_type in (collections.abc.Sequence, Sequence, typing.List, list, typing.Tuple, tuple):
+        if origin_type in (
+            collections.abc.Sequence,
+            Sequence,
+            typing.List,
+            list,
+            typing.Tuple,
+            tuple,
+        ):
             inner_type = typing.get_args(type_)[0]
             if inner_type in _LIST_TYPE_TO_ATTR_TYPE:
                 return _LIST_TYPE_TO_ATTR_TYPE[inner_type]
@@ -355,14 +368,20 @@ class OpSignature:
         ]
 
         for param in opschema.attributes.values():
+            default_attr = (
+                ir.serde.deserialize_attribute(param.default_value)
+                if param.default_value is not None
+                else None
+            )
+            if default_attr is not None:
+                # Set the name of the default attribute because it may have a different name from the parameter
+                default_attr.name = param.name
             params.append(
                 AttributeParameter(
                     name=param.name,
                     type=ir.AttributeType(param.type),
                     required=param.required,
-                    default=ir.serde.deserialize_attribute(param.default_value)
-                    if param.default_value is not None
-                    else None,  # type: ignore
+                    default=default_attr,  # type: ignore
                 )
             )
 
@@ -400,7 +419,7 @@ class OpSignature:
                     f"Missing annotation for parameter '{param.name}' from {py_signature}. Treating as an Input."
                 )
                 type_constraints[param.name] = TypeConstraintParam.any_value(
-                    f"T{param.name}"
+                    f"T_{param.name}"
                 )
             else:
                 type_ = type_hints[param.name]
@@ -420,10 +439,10 @@ class OpSignature:
 
                     # 1. Get a type constraint name from the type annotation
                     # If the type annotation is a TypeVar or Optional[TypeVar], get its name
-                    # Otherwise, name it T{param.name}
+                    # Otherwise, name it T_{param.name}
                     type_constraint_name = _get_type_constraint_name(type_)
                     if type_constraint_name is None:
-                        type_constraint_name = f"T{param.name}"
+                        type_constraint_name = f"T_{param.name}"
 
                     # 2. If the type constraint param is already initialized, use it
                     if type_constraint_name in type_constraints:

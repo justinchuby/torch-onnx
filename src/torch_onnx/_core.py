@@ -381,6 +381,20 @@ def _handle_call_function_node_with_lowering(
         model.functions[identifier] = ir_function
 
 
+def _handle_placeholder_node(
+    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value]
+) -> None:
+    # Placeholder nodes are user inputs
+    # We need to create a new tensor for each user input
+    # and add it to the graph's inputs
+    name = node.name
+    input_ = ir.Input(name)
+    input_.meta["node"] = node
+    _set_shape_type(input_, node.meta["val"])
+    node_name_to_values[name] = input_
+    # The inputs will be added to the graph later
+
+
 def _add_nodes(
     exported_program: torch.export.ExportedProgram,
     model: ir.Model,
@@ -394,16 +408,7 @@ def _add_nodes(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
         )
         if node.op == "placeholder":
-            # Placeholder nodes are user inputs
-            # We need to create a new tensor for each user input
-            # and add it to the graph's inputs
-            name = node.name
-            # shape = node.kwargs["shape"]
-            # dtype = node.kwargs["dtype"]
-            input_ = ir.Input(name)
-            input_.meta["node"] = node
-            node_name_to_values[name] = input_
-            # The inputs will be added to the graph later
+            _handle_placeholder_node(node, node_name_to_values)
         elif node.op == "call_function":
             if lower == "at_conversion":
                 _handle_call_function_node_with_lowering(
@@ -599,9 +604,7 @@ def exported_program_to_ir(
         initializer.name = param_name
         # Record the original name so users can search the metadata and correspond
         # with the FX graph
-        initializer.metadata_props[
-            "pkg.torch.onnx.original_node_name"
-        ] = name
+        initializer.metadata_props["pkg.torch.onnx.original_node_name"] = name
         model.graph.initializers[param_name] = initializer
 
     # 5. Add initializers to the graph

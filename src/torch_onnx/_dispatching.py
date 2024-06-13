@@ -70,7 +70,7 @@ def _param_type_compatible_with_arg(
     | Sequence[int]
     | Sequence[float]
     | None,
-    assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol],
+    assigned_types: dict[str, ir.TypeProtocol],
 ) -> bool:
     # Handle Python types first
     if isinstance(value, bool):
@@ -83,6 +83,14 @@ def _param_type_compatible_with_arg(
             ir.DataType.INT16,
             ir.DataType.INT32,
             ir.DataType.INT64,
+            # Int inputs can be casted to a float too
+            ir.DataType.FLOAT8E4M3FN,
+            ir.DataType.FLOAT8E4M3FNUZ,
+            ir.DataType.FLOAT8E5M2,
+            ir.DataType.FLOAT8E5M2FNUZ,
+            ir.DataType.FLOAT16,
+            ir.DataType.FLOAT,
+            ir.DataType.DOUBLE,
         }:
             return True
     if isinstance(value, float):
@@ -127,12 +135,12 @@ def _param_type_compatible_with_arg(
     # Then check tensor types
     if param.type_constraint.name in assigned_types:
         # If a typevar is already bound, check if the value has the same type
-        assigned_type = assigned_types[param.type_constraint]
+        assigned_type = assigned_types[param.type_constraint.name]
         return assigned_type == value
     # If the typevar is not bound, bind it to the value type
     if value in param.type_constraint.allowed_types:
         # TODO: Maybe just check dtype? Being more strict here for now
-        assigned_types[param.type_constraint] = value
+        assigned_types[param.type_constraint.name] = value
         return True
     return False
 
@@ -165,9 +173,11 @@ def get_matching_overload(
     overloads: Sequence[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction],
 ):
     named_args = _get_named_fx_node_args(node)
-    schema_args: dict[str, torch.Argument] = {arg.name: arg for arg in node.target._schema.arguments}
+    schema_args: dict[str, torch.Argument] = {
+        arg.name: arg for arg in node.target._schema.arguments
+    }
     for overload in overloads:
-        assigned_types: dict[_schemas.TypeConstraintParam, ir.TypeProtocol] = {}
+        assigned_types: dict[str, ir.TypeProtocol] = {}
         fail_reason = ""
         if not hasattr(overload, "signature"):
             # When an overload does not have a signature, we assume it is a custom op and should be matched
@@ -217,9 +227,11 @@ def get_matching_overload(
         if not fail_reason:
             return overload
         else:
-            print(f"Failed to match overload '{overload}' with node '{node}': {fail_reason}")
+            print(
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
+            )
             logger.debug(
-                f"Failed to match overload '{overload}' with node '{node}': {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
             )
     return None
 

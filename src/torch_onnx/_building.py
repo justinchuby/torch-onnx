@@ -143,6 +143,9 @@ def _resolve_parameter_dtypes(
             # Skip the Python constants because we do not know what dtype they should take yet
             continue
         elif isinstance(arg, ir.Value):
+            if arg.dtype is None:
+                # Skip the ir.Value if the dtype is not set
+                continue
             # NOTE: We assume arg.dtype is compatible with the type_constraint
             assert arg.dtype is not None, f"Expected dtype to be set for {arg}"
             # TODO(justinchuby): Implement type promotion logic here.
@@ -320,20 +323,21 @@ class OpRecorder(evaluator.Evaluator):
             assert len(named_inputs) == 2
             # Skip CastLike if the input and output types are the same
             src_input = named_inputs["input"]
-            target_input = named_inputs["target_input"]
+            target_type = named_inputs["target_type"]
+
             dtypes_available = (
                 isinstance(src_input, ir.Value)
-                and isinstance(target_input, ir.Value)
+                and isinstance(target_type, ir.Value)
                 and src_input.dtype is not None
-                and target_input.dtype is not None
+                and target_type.dtype is not None
             )
             if dtypes_available:
-                if src_input.dtype == target_input.dtype:
+                if src_input.dtype == target_type.dtype:
                     # Same type. No cast needed
                     return src_input
                 else:
                     # Create a Cast node
-                    return self.opset.Cast(src_input, to=target_input.dtype)
+                    return self.opset.Cast(src_input, to=target_type.dtype)
 
         outputs = self._call_op(op_signature, named_inputs, named_attrs)
         if len(outputs) == 1:
@@ -384,7 +388,7 @@ class OpRecorder(evaluator.Evaluator):
             else:
                 # Python constants are scalars
                 return 0
-        elif function.experimental_traceable:
+        elif function.traceable:
             # Trace the function call instead of adding the function as a node
             return function.function(*args, **kwargs)
 

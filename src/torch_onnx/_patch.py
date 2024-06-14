@@ -125,8 +125,12 @@ def torch_onnx_export_adaptor(
         if output_names:
             _ir_passes.rename_outputs(ir_model, output_names)
 
+        if not export_params:
+            ir_model.graph.initializers.clear()
+
         proto = ir.serde.serialize_model(ir_model)
         if proto.ByteSize() >= 1 << 31:
+            # TODO: Create an IR pass to handle external tensors conversion
             logger.warning(
                 "The serialized ONNX model is larger than 2GB. "
                 "Saving the weights in a separate file"

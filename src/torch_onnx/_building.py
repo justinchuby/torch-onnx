@@ -264,11 +264,11 @@ def _construct_node(
         named_attrs: The mapping of attribute names to their values.
     """
     outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
-    attributes = {
-        k: v
-        for k, v in ir_convenience.convert_attributes(named_attrs).items()
-        if v is not None
-    }
+    attributes = [
+        attr
+        for attr in ir_convenience.convert_attributes(named_attrs)
+        if attr.value is not None
+    ]
     return ir.Node(
         signature.domain,
         signature.name,

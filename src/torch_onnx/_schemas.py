@@ -16,7 +16,6 @@ from typing import (
 )
 
 from onnxscript import ir
-from onnxscript.ir import convenience as ir_convenience
 import onnx
 import logging
 import typing

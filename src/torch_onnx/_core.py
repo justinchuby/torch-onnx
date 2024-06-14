@@ -342,7 +342,7 @@ def _handle_call_function_node_with_lowering(
 
     # Replace the input FX nodes with ONNX values
     onnx_args = []
-    for i, input_ in enumerate(fx_args):
+    for input_ in fx_args:
         onnx_args.append(_fx_arg_to_onnx_arg(input_, node_name_to_values))
 
     onnx_kwargs = {}
@@ -379,6 +379,9 @@ def _handle_call_function_node_with_lowering(
         proto = onnxscript_function.to_function_proto()
         ir_function = ir.serde.deserialize_function(proto)
         model.functions[identifier] = ir_function
+        if ir_function.domain not in model.opset_imports:
+            # FIXME: Record the opset version of the function
+            model.opset_imports[ir_function.domain] = 1
 
 
 def _handle_placeholder_node(
@@ -521,7 +524,6 @@ def exported_program_to_ir(
             nodes=[],
             opset_imports={
                 "": registry.opset_version,
-                "pkg.torch.ops": _torch_version_integer(),
             },
             name="main_graph",
         ),
@@ -529,6 +531,10 @@ def exported_program_to_ir(
         producer_name="torch",
         producer_version=torch.__version__,
     )
+
+    if lower == "none":
+        # Add the opset import for the torch ops
+        model.opset_imports["pkg.torch.ops"] = _torch_version_integer()
 
     # TODO: We can call exported_program.graph.eliminate_dead_code()
 

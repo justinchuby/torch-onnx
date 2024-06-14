@@ -92,6 +92,7 @@ def _construct_named_inputs_and_attrs(
                 )
                 named_inputs[param.name] = None
         else:
+            attribute: ValidAttributeType | ir.Attr
             assert isinstance(
                 param, _schemas.AttributeParameter
             ), f"Expected AttributeParameter, got {type(param)}"
@@ -118,6 +119,10 @@ def _construct_named_inputs_and_attrs(
                     signature,
                 )
                 continue
+
+            if isinstance(attribute, int) and param.type == ir.AttributeType.FLOAT:
+                # Convert the attribute to float if needed
+                attribute = float(attribute)
             named_attrs[param.name] = attribute
     return named_inputs, named_attrs
 
@@ -282,19 +287,21 @@ def _construct_node(
         named_inputs: The mapping of parameter names to their arguments.
         named_attrs: The mapping of attribute names to their values.
     """
-    outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
     inputs = []
+    # Flatten variadic inputs
     for value in named_inputs.values():
         if isinstance(value, Sequence):
-            # Flatten variadic inputs
             inputs.extend(value)
         else:
             inputs.append(value)
+
+    # Construct and filter out None attributes
     attributes = [
         attr
         for attr in ir_convenience.convert_attributes(named_attrs)
         if attr.value is not None
     ]
+    outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
     return ir.Node(
         signature.domain,
         signature.name,

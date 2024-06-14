@@ -259,9 +259,6 @@ def get_matching_overload(
         if not fail_reason:
             return overload
         else:
-            print(
-                f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
-            )
             logger.debug(
                 f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
             )

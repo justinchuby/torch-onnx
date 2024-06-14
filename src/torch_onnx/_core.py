@@ -113,7 +113,7 @@ def _set_shape_types(
 def _set_shape_type(
     value: ir.Value,
     meta_val: torch.Tensor | tuple[torch.Tensor],
-    complex_to_float: bool = False,
+    complex_to_float: bool,
 ):
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
@@ -129,10 +129,12 @@ def _set_shape_type(
         if complex_to_float:
             if meta_val.dtype == torch.complex64:
                 value.dtype = ir.DataType.FLOAT
+                # Add 2 as the last dimension if the tensor is complex to hold the real/imag parts
+                dims.append(2)
             elif meta_val.dtype == torch.complex128:
                 value.dtype = ir.DataType.DOUBLE
-            # Add 2 as the last dimension if the tensor is complex to hold the real/imag parts
-            dims.append(2)
+                # Add 2 as the last dimension if the tensor is complex to hold the real/imag parts
+                dims.append(2)
 
         value.shape = ir.Shape(dims)
     elif isinstance(meta_val, (int, torch.SymInt)):
@@ -259,10 +261,10 @@ def _handle_call_function_node(
 
     outputs = [ir.Value(name=name) for name in output_names]
     if len(outputs) > 1:
-        _set_shape_types(outputs, node.meta["val"])
+        _set_shape_types(outputs, node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs
     else:
-        _set_shape_type(outputs[0], node.meta["val"])
+        _set_shape_type(outputs[0], node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs[0]
     ir_node = ir.Node(
         "pkg.torch.ops",

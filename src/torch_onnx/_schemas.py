@@ -16,6 +16,7 @@ from typing import (
 )
 
 from onnxscript import ir
+from onnxscript.ir import convenience as ir_convenience
 import onnx
 import logging
 import typing
@@ -424,14 +425,18 @@ class OpSignature:
             else:
                 type_ = type_hints[param.name]
                 if (attr_type := _get_attr_type(type_)) != ir.AttributeType.UNDEFINED:
+                    # Construct the default attribute
+                    if param.default is not inspect.Parameter.empty:
+                        # TODO: Use ir_convenience instead to handle int as float
+                        default = ir.Attr(param.name, attr_type, param.default)
+                    else:
+                        default = None
                     params.append(
                         AttributeParameter(
                             name=param.name,
                             type=attr_type,
                             required=param.default is inspect.Parameter.empty,
-                            default=param.default
-                            if param.default is not inspect.Parameter.empty
-                            else None,
+                            default=default,
                         )
                     )
                 else:

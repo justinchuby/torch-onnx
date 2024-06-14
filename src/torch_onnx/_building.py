@@ -23,7 +23,14 @@ logger = logging.getLogger(__name__)
 
 # TODO(justinchuby): Update ValidAttributeType to ir_convenience.SupportedAttrTypes
 ValidAttributeType = (
-    ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float] | None
+    ir.TensorProtocol
+    | int
+    | float
+    | bool
+    | str
+    | Sequence[int]
+    | Sequence[float]
+    | None
 )
 
 AllowedArgType = ir.Value | ValidAttributeType

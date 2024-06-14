@@ -561,8 +561,6 @@ def exported_program_to_ir(
         model.opset_imports["pkg.torch.ops"] = _torch_version_integer()
     # NOTE: Function domains are added when translating nodes when lower="at_conversion"
 
-    # TODO: We can call exported_program.graph.eliminate_dead_code()
-
     # 1. Add all nodes to the graph and create a dictionary of values
     if lower == "at_conversion":
         # Include explicit type promotion nodes
@@ -617,7 +615,7 @@ def exported_program_to_ir(
     ]
     for spec in itertools.chain(user_outputs, non_user_outputs):
         if isinstance(spec.arg, graph_signature.ConstantArgument):
-            logger.debug("Skipping constant argument %s", spec.arg)
+            logger.warning("Skipping constant argument %s", spec.arg)
             continue
         value_name = spec.arg.name
         output_kind = spec.kind

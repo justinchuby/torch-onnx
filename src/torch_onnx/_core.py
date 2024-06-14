@@ -378,9 +378,10 @@ def _handle_call_function_node_with_lowering(
     except AttributeError:
         logger.debug("No schema found for node %s", node.format_node())
     else:
-        for output in node_schema.returns:
+        for i, output in enumerate(node_schema.returns):
             if not output.name:
-                output_names.append(f"val_{node.name}")
+                # More than one output may not have a name, in which case we append an index
+                output_names.append(f"val_{node.name}__{i}")
             else:
                 output_names.append(f"val_{node.name}_{output.name}")
 

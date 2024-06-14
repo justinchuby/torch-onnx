@@ -125,6 +125,9 @@ def torch_onnx_export_adaptor(
         if output_names:
             _ir_passes.rename_outputs(ir_model, output_names)
 
+        if not export_params:
+            ir_model.graph.initializers.clear()
+
         proto = ir.serde.serialize_model(ir_model)
         if proto.ByteSize() >= 1 << 31:
             logger.warning(

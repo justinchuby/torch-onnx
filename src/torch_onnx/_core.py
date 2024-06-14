@@ -507,6 +507,10 @@ def exported_program_to_ir(
         registry: The registry of all ONNX Script decomposition.
     """
     if registry is None:
+        # Trigger op registration
+        from onnxscript.function_libs.torch_lib import ops
+
+        del ops
         registry = _registration.OnnxRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )

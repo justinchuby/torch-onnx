@@ -117,12 +117,20 @@ def _param_type_compatible_with_arg(
             return True
     if isinstance(value, Sequence):
         if param.type_constraint.allowed_types & {
+            ir.TensorType(ir.DataType.INT32),
+            ir.TensorType(ir.DataType.INT64),
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.DOUBLE),
             ir.SequenceType(ir.TensorType(ir.DataType.INT32)),
             ir.SequenceType(ir.TensorType(ir.DataType.INT64)),
+            ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
+            ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
             if all(isinstance(i, int) for i in value):
                 return True
         if param.type_constraint.allowed_types & {
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.DOUBLE),
             ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:

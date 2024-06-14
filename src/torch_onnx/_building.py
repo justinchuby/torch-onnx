@@ -121,7 +121,8 @@ def _construct_named_inputs_and_attrs(
                 continue
 
             if isinstance(attribute, int) and param.type == ir.AttributeType.FLOAT:
-                # Convert the attribute to float if needed
+                # Convert the attribute to float if needed. This happens in PyTorch
+                # where an attribute marked as float can be passed as an int.
                 attribute = float(attribute)
             named_attrs[param.name] = attribute
     return named_inputs, named_attrs

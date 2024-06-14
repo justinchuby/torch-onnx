@@ -12,6 +12,7 @@ https://github.com/pytorch/pytorch/blob/6aa5bb1a76dee8112f1a9e7c194c790b5cdc6462
 from __future__ import annotations
 
 import dataclasses
+import logging
 import math
 import types
 from typing import Callable, Literal, Mapping, TypeAlias, Union
@@ -31,6 +32,8 @@ _DEFAULT_OPSET_VERSION = 18
 
 
 TorchOp: TypeAlias = Union[torch._ops.OpOverload, types.BuiltinFunctionType, Callable]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,16 +68,20 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
 
         return getattr(torchvision.ops, op_name)
 
-    op_packet = getattr(getattr(torch.ops, namespace), op_name)
-    if overload:
-        overload = overload[0]
-    elif "default" in op_packet._overload_names or "" in op_packet._overload_names:
-        # Has a default overload
-        overload = "default"
-    else:
-        return None
+    try:
+        op_packet = getattr(getattr(torch.ops, namespace), op_name)
+        if overload:
+            overload = overload[0]
+        elif "default" in op_packet._overload_names or "" in op_packet._overload_names:
+            # Has a default overload
+            overload = "default"
+        else:
+            return None
 
-    return getattr(op_packet, overload)
+        return getattr(op_packet, overload)
+    except AttributeError:
+        logger.warning(f"{qualified_name} is not found is this version of PyTorch.")
+        return None
 
 
 class OnnxRegistry:
@@ -121,7 +128,7 @@ class OnnxRegistry:
             target = _get_overload(qualified_name)
             if target is None:
                 warnings.warn(
-                    f"{qualified_name} does not have a default overload. Please specify the overload. Ignoring."
+                    f"{qualified_name} does not have a default overload or is not found. Ignoring."
                 )
                 continue
             for overload_func in aten_overloads_func.overloads:

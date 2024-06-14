@@ -101,15 +101,24 @@ class TorchTensor(ir.Tensor):
 #     TOKEN = auto()
 
 
-def _set_shape_types(values: Sequence[ir.Value], meta_vals: Sequence[torch.Tensor]):
+def _set_shape_types(
+    values: Sequence[ir.Value],
+    meta_vals: Sequence[torch.Tensor],
+    complex_to_float: bool = True,
+):
     for value, meta_val in zip(values, meta_vals):
-        _set_shape_type(value, meta_val)
+        _set_shape_type(value, meta_val, complex_to_float=complex_to_float)
 
 
-def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor]):
+def _set_shape_type(
+    value: ir.Value,
+    meta_val: torch.Tensor | tuple[torch.Tensor],
+    complex_to_float: bool = False,
+):
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
     if isinstance(meta_val, torch.Tensor):
+        # FIXME: Consider shape for complex values
         dims = []
         for dim in meta_val.shape:
             if isinstance(dim, int):
@@ -390,13 +399,13 @@ def _handle_call_function_node_with_lowering(
                 output_names.append(f"val_{node.name}_{output.name}")
 
     if isinstance(outputs, Sequence):
-        _set_shape_types(outputs, node.meta["val"])
+        _set_shape_types(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             for output, name in zip(outputs, output_names):
                 output.name = name
     else:
-        _set_shape_type(outputs, node.meta["val"])
+        _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             outputs.name = output_names[0]

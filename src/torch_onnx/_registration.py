@@ -67,11 +67,13 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
     op_packet = getattr(getattr(torch.ops, namespace), op_name)
     if overload:
         overload = overload[0]
-    elif "default" in op_packet._overload_names:
+    elif "default" in op_packet._overload_names or "" in op_packet._overload_names:
+        # Has a default overload
         overload = "default"
     else:
-        # Use the first overload as the default overload
-        overload = op_packet._overload_names[0]
+        raise ValueError(
+            f"{qualified_name} does not have a default overload. Please specify the overload."
+        )
 
     return getattr(op_packet, overload)
 

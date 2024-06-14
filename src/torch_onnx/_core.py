@@ -288,9 +288,17 @@ def _fill_in_default_kwargs(
     return complete_args, complete_kwargs
 
 
-def _fx_arg_to_onnx_arg(
+def _convert_fx_arg_to_onnx_arg(
     arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
 ):
+    """Convert an FX argument to an ONNX compatible argument.
+
+    This function
+    - Converts a torch dtype to an integer
+    - Converts a torch device/memory_format/layout to a string
+    - Converts a torch.fx.Node to an ir.Value
+    - Converts a sequence of torch.fx.Node to a sequence of ir.Value
+    """
     if arg is None:
         # None arguments are not modified because when the arg is an ONNX input
         # we need to preserve the None value; when the arg is an ONNX attribute,
@@ -303,9 +311,9 @@ def _fx_arg_to_onnx_arg(
             return _handle_getitem_node(arg, node_name_to_values)
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
-    if isinstance(arg, Sequence):
-        return [_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
-    if isinstance(arg, torch.device):
+    if isinstance(arg, (list, tuple)):
+        return [_convert_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
+    if isinstance(arg, (torch.device, torch.memory_format, torch.layout)):
         return str(arg)
     if isinstance(arg, torch.dtype):
         return _torch_dtype_to_onnx_dtype(arg)
@@ -342,19 +350,27 @@ def _handle_call_function_node_with_lowering(
 
     # Replace the input FX nodes with ONNX values
     onnx_args = []
-    for i, input_ in enumerate(fx_args):
-        onnx_args.append(_fx_arg_to_onnx_arg(input_, node_name_to_values))
+    for input_ in fx_args:
+        onnx_args.append(_convert_fx_arg_to_onnx_arg(input_, node_name_to_values))
 
     onnx_kwargs = {}
     for key, value in fx_kwargs.items():
-        onnx_kwargs[key] = _fx_arg_to_onnx_arg(value, node_name_to_values)
+        onnx_kwargs[key] = _convert_fx_arg_to_onnx_arg(value, node_name_to_values)
+        if key == "dtype" and onnx_kwargs[key] is None:
+            # Set dtype to -1 if it is None
+            onnx_kwargs[key] = -1
 
     with onnxscript.evaluator.default_as(
         tracer := _building.OpRecorder(
             _get_onnxscript_opset(registry.opset_version), constant_farm
         )
     ):
-        outputs = onnx_function(*onnx_args, **onnx_kwargs)
+        try:
+            outputs = onnx_function(*onnx_args, **onnx_kwargs)
+        except Exception as e:
+            raise RuntimeError(
+                f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
+            ) from e
 
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])
@@ -379,6 +395,9 @@ def _handle_call_function_node_with_lowering(
         proto = onnxscript_function.to_function_proto()
         ir_function = ir.serde.deserialize_function(proto)
         model.functions[identifier] = ir_function
+        if ir_function.domain not in model.opset_imports:
+            # FIXME: Record the opset version of the function
+            model.opset_imports[ir_function.domain] = 1
 
 
 def _handle_placeholder_node(
@@ -407,17 +426,25 @@ def _add_nodes(
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
         )
-        if node.op == "placeholder":
-            _handle_placeholder_node(node, node_name_to_values)
-        elif node.op == "call_function":
-            if lower == "at_conversion":
-                _handle_call_function_node_with_lowering(
-                    model, node, node_name_to_values, constant_farm, registry=registry
-                )
-            else:
-                # No lowering
-                _handle_call_function_node(model.graph, node, node_name_to_values)
-
+        try:
+            if node.op == "placeholder":
+                _handle_placeholder_node(node, node_name_to_values)
+            elif node.op == "call_function":
+                if lower == "at_conversion":
+                    _handle_call_function_node_with_lowering(
+                        model,
+                        node,
+                        node_name_to_values,
+                        constant_farm,
+                        registry=registry,
+                    )
+                else:
+                    # No lowering
+                    _handle_call_function_node(model.graph, node, node_name_to_values)
+        except Exception as e:
+            raise RuntimeError(
+                f"Error when translating node {node.format_node()}. See the stack trace for more information."
+            ) from e
     return node_name_to_values
 
 
@@ -507,6 +534,10 @@ def exported_program_to_ir(
         registry: The registry of all ONNX Script decomposition.
     """
     if registry is None:
+        # Trigger op registration
+        from onnxscript.function_libs.torch_lib import ops
+
+        del ops
         registry = _registration.OnnxRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )
@@ -517,7 +548,6 @@ def exported_program_to_ir(
             nodes=[],
             opset_imports={
                 "": registry.opset_version,
-                "pkg.torch.ops": _torch_version_integer(),
             },
             name="main_graph",
         ),
@@ -526,7 +556,10 @@ def exported_program_to_ir(
         producer_version=torch.__version__,
     )
 
-    # TODO: We can call exported_program.graph.eliminate_dead_code()
+    if lower == "none":
+        # Add the opset import for the torch ops
+        model.opset_imports["pkg.torch.ops"] = _torch_version_integer()
+    # NOTE: Function domains are added when translating nodes when lower="at_conversion"
 
     # 1. Add all nodes to the graph and create a dictionary of values
     if lower == "at_conversion":
@@ -582,7 +615,7 @@ def exported_program_to_ir(
     ]
     for spec in itertools.chain(user_outputs, non_user_outputs):
         if isinstance(spec.arg, graph_signature.ConstantArgument):
-            logger.debug("Skipping constant argument %s", spec.arg)
+            logger.warning("Skipping constant argument %s", spec.arg)
             continue
         value_name = spec.arg.name
         output_kind = spec.kind

@@ -16,6 +16,7 @@ import math
 import types
 from typing import Callable, Literal, Mapping, TypeAlias, Union
 import operator
+import warnings
 
 import onnxscript
 import torch
@@ -50,7 +51,7 @@ class OnnxDecompMeta:
     device: Literal["cuda", "cpu"] | str | None = None
 
 
-def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
+def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
     """Obtain the torch op from <namespace>::<op_name>[.<overload>]"""
     namespace, opname_overload = qualified_name.split("::")
     op_name, *overload = opname_overload.split(".", 1)
@@ -67,11 +68,11 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload:
     op_packet = getattr(getattr(torch.ops, namespace), op_name)
     if overload:
         overload = overload[0]
-    elif "default" in op_packet._overload_names:
+    elif "default" in op_packet._overload_names or "" in op_packet._overload_names:
+        # Has a default overload
         overload = "default"
     else:
-        # Use the first overload as the default overload
-        overload = op_packet._overload_names[0]
+        return None
 
     return getattr(op_packet, overload)
 
@@ -118,6 +119,11 @@ class OnnxRegistry:
                 # Skip the custom defined internal functions
                 continue
             target = _get_overload(qualified_name)
+            if target is None:
+                warnings.warn(
+                    f"{qualified_name} does not have a default overload. Please specify the overload. Ignoring."
+                )
+                continue
             for overload_func in aten_overloads_func.overloads:
                 overload_func.signature = _schemas.OpSignature.from_function(
                     overload_func, overload_func.function_ir.domain, overload_func.name

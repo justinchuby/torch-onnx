@@ -39,7 +39,7 @@ def _torch_dtype_to_onnx_compatible_dtype(dtype: torch.dtype) -> ir.DataType:
 
 def _attribute_type_compatible_with_arg(
     attr: _schemas.AttributeParameter,
-    value: ir.Value | int | float | bool | Sequence[int] | Sequence[float],
+    value: ir.Value | int | float | bool | Sequence[int] | Sequence[float] | None,
 ) -> bool:
     """Check if the attribute type is compatible with the argument."""
     if isinstance(value, bool):
@@ -57,6 +57,13 @@ def _attribute_type_compatible_with_arg(
             return all(isinstance(i, int) for i in value)
         if attr.type is ir.AttributeType.FLOATS:
             return all(isinstance(i, (int, float)) for i in value)
+    if isinstance(value, torch.dtype):
+        return attr.type is ir.AttributeType.INT
+    if isinstance(value, (torch.device, torch.memory_format, torch.layout)):
+        return attr.type is ir.AttributeType.STRING
+    if value is None and not attr.required:
+        # An optional attribute is not supplied
+        return True
     return False
 
 
@@ -115,7 +122,7 @@ def _param_type_compatible_with_arg(
     if isinstance(value, str):
         if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.STRING)}:
             return True
-    if isinstance(value, Sequence):
+    if isinstance(value, (list, tuple)):
         if param.type_constraint.allowed_types & {
             ir.TensorType(ir.DataType.INT32),
             ir.TensorType(ir.DataType.INT64),
@@ -126,7 +133,8 @@ def _param_type_compatible_with_arg(
             ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
-            if all(isinstance(i, int) for i in value):
+            if all(isinstance(i, (int)) for i in value):
+                # We will just allow any fx node and trust that the overload handles it
                 return True
         if param.type_constraint.allowed_types & {
             ir.TensorType(ir.DataType.FLOAT),
@@ -135,6 +143,7 @@ def _param_type_compatible_with_arg(
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
             if all(isinstance(i, (int, float)) for i in value):
+                # We will just allow any fx node and trust that the overload handles it
                 return True
     if value is None and not param.required:
         # An optional parameter is not supplied
@@ -167,6 +176,15 @@ def _get_type_from_tensor(
     return ir.SequenceType(
         ir.TensorType(_torch_dtype_to_onnx_compatible_dtype(first_tensor.dtype))
     )
+
+
+def _get_first_tensor_in_node_list(
+    nodes: Sequence[torch.fx.Node],
+) -> torch.Tensor | None:
+    for node in nodes:
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            return node.meta["val"]
+    return None
 
 
 def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
@@ -218,18 +236,21 @@ def get_matching_overload(
                 break
 
             if isinstance(param, _schemas.Parameter):
-                if isinstance(arg, torch.Tensor) or (
-                    isinstance(arg, Sequence)
-                    and any(isinstance(t, torch.Tensor) for t in arg)
-                ):
+                if isinstance(arg, torch.Tensor):
                     arg = _get_type_from_tensor(arg)
+                if isinstance(arg, (list, tuple)) and any(
+                    isinstance(t, torch.fx.Node) for t in arg
+                ):
+                    first_tensor = _get_first_tensor_in_node_list(arg)
+                    assert first_tensor is not None
+                    arg = ir.SequenceType(_get_type_from_tensor(first_tensor))
                 elif isinstance(arg, torch.fx.Node):
                     meta_val = arg.meta["val"]
                     arg = _get_type_from_tensor(meta_val)
                 # TODO: Handle None attributes
                 # Handle tensors and Python values
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
-                    fail_reason = f"Parameter type not compatible with argument: param={param}, arg={arg}, assigned_types={assigned_types}"
+                    fail_reason = f"Parameter type not compatible with argument: param={param}, assigned_types={assigned_types}, arg={arg}"
                     break
             elif isinstance(param, _schemas.AttributeParameter):
                 if not _attribute_type_compatible_with_arg(param, arg):
@@ -239,10 +260,10 @@ def get_matching_overload(
             return overload
         else:
             print(
-                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
             )
             logger.debug(
-                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
             )
     return None
 

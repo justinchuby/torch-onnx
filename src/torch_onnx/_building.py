@@ -23,10 +23,17 @@ logger = logging.getLogger(__name__)
 
 # TODO(justinchuby): Update ValidAttributeType to ir_convenience.SupportedAttrTypes
 ValidAttributeType = (
-    ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float]
+    ir.TensorProtocol
+    | int
+    | float
+    | bool
+    | str
+    | Sequence[int]
+    | Sequence[float]
+    | None
 )
 
-AllowedArgType = ir.Value | ValidAttributeType | None
+AllowedArgType = ir.Value | Sequence[ir.Value] | ValidAttributeType
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -64,7 +71,12 @@ def _construct_named_inputs_and_attrs(
         if isinstance(param, _schemas.Parameter):
             if reversed_args_stack:
                 # First exhaust the positional arguments
-                named_inputs[param.name] = reversed_args_stack.pop()
+                if param.variadic:
+                    # Handle variadic arguments
+                    named_inputs[param.name] = tuple(args)
+                    reversed_args_stack.clear()
+                else:
+                    named_inputs[param.name] = reversed_args_stack.pop()
             elif param.name in kwargs:
                 named_inputs[param.name] = kwargs[param.name]
             elif param.required:
@@ -80,6 +92,7 @@ def _construct_named_inputs_and_attrs(
                 )
                 named_inputs[param.name] = None
         else:
+            attribute: ValidAttributeType | ir.Attr
             assert isinstance(
                 param, _schemas.AttributeParameter
             ), f"Expected AttributeParameter, got {type(param)}"
@@ -106,19 +119,24 @@ def _construct_named_inputs_and_attrs(
                     signature,
                 )
                 continue
+
+            if isinstance(attribute, int) and param.type == ir.AttributeType.FLOAT:
+                # Convert the attribute to float if needed. This happens in PyTorch
+                # where an attribute marked as float can be passed as an int.
+                attribute = float(attribute)
             named_attrs[param.name] = attribute
     return named_inputs, named_attrs
 
 
 def _resolve_parameter_dtypes(
     signature: _schemas.OpSignature, named_inputs: Mapping[str, AllowedArgType]
-) -> Mapping[_schemas.TypeConstraintParam, ir.DataType]:
-    """Determine which parameter takes which dtype.
+) -> Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol]:
+    """Determine which parameter takes which type.
 
     Handle non-tensor input corner cases and type promotion.
 
     Requires:
-        All ir.Value in name_inputs should have dtype set. Their dtype should be
+        All ir.Value in name_inputs should have type set. Their type should be
         compatible with the type_constraint of the corresponding parameter in the signature.
 
     Args:
@@ -126,13 +144,13 @@ def _resolve_parameter_dtypes(
         named_inputs: The mapping of parameter names to their arguments.
 
     Returns:
-        A mapping of Constraint names to ir.DataType.
+        A mapping of Constraint names to ir.TypeProtocol.
     """
-    #   a. Create type_binding: dict[str, ir.DataType]
+    #   a. Create type_binding: dict[str, ir.TypeProtocol]
     #   b. Iterate over all named_inputs
     #   b0. Find the corresponding parameter in the signature
     #   b1. If the argument is a Python constant, skip.
-    #   b2. If the argument is a ir.Value, Bind {constraint: arg.dtype}.
+    #   b2. If the argument is a ir.Value, Bind {constraint: arg.type}.
     type_binding = {}
     for name, arg in named_inputs.items():
         param = signature.params_map[name]
@@ -143,20 +161,20 @@ def _resolve_parameter_dtypes(
             # Skip the Python constants because we do not know what dtype they should take yet
             continue
         elif isinstance(arg, ir.Value):
-            if arg.dtype is None:
-                # Skip the ir.Value if the dtype is not set
+            if arg.type is None:
+                # Skip the ir.Value if the type is not set
                 continue
-            # NOTE: We assume arg.dtype is compatible with the type_constraint
-            assert arg.dtype is not None, f"Expected dtype to be set for {arg}"
+            # NOTE: We assume arg.type is compatible with the type_constraint
+            assert arg.type is not None, f"Expected type to be set for {arg}"
             # TODO(justinchuby): Implement type promotion logic here.
-            type_binding[param.type_constraint] = arg.dtype
+            type_binding[param.type_constraint] = arg.type
     return type_binding
 
 
-def _convert_python_constants(
+def _process_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
-    type_binding: Mapping[_schemas.TypeConstraintParam, ir.DataType],
+    type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
     constant_farm: dict[
         tuple[
             bool | int | float | str | ir.TensorProtocol | tuple[int] | tuple[float],
@@ -189,8 +207,12 @@ def _convert_python_constants(
     #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
     #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
+        # FIXME: Handle when arg is list[ir.Value]
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
+            continue
+        if isinstance(arg, Sequence) and all(isinstance(val, ir.Value) for val in arg):
+            # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
             continue
 
         param = signature.params_map[name]
@@ -200,7 +222,7 @@ def _convert_python_constants(
 
         if param.type_constraint in type_binding:
             # A known dtype is available
-            dtype = type_binding[param.type_constraint]
+            dtype = type_binding[param.type_constraint].dtype
         elif len(param.type_constraint.allowed_types) == 1:
             # Only one type is allowed
             dtype = next(iter(param.type_constraint.allowed_types)).dtype
@@ -218,9 +240,10 @@ def _convert_python_constants(
                 isinstance(val, int) for val in arg
             ):
                 dtype = ir.DataType.INT64
-            elif isinstance(arg, (tuple, list)) and all(
+            elif isinstance(arg, (tuple, list)) and any(
                 isinstance(val, float) for val in arg
             ):
+                # NOTE: if any float is present, the dtype is float
                 dtype = ir.DataType.FLOAT
             elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
                 dtype = arg.dtype
@@ -258,21 +281,32 @@ def _construct_node(
 ) -> ir.Node:
     """Construct the node with the inputs and attributes.
 
+    Variadic inputs are flattened.
+
     Args:
         signature: The OpSignature for the node.
         named_inputs: The mapping of parameter names to their arguments.
         named_attrs: The mapping of attribute names to their values.
     """
-    outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
+    inputs = []
+    # Flatten variadic inputs
+    for value in named_inputs.values():
+        if isinstance(value, Sequence):
+            inputs.extend(value)
+        else:
+            inputs.append(value)
+
+    # Construct and filter out None attributes
     attributes = [
         attr
         for attr in ir_convenience.convert_attributes(named_attrs)
         if attr.value is not None
     ]
+    outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
     return ir.Node(
         signature.domain,
         signature.name,
-        inputs=tuple(named_inputs.values()),
+        inputs=inputs,
         attributes=attributes,
         outputs=outputs,
     )
@@ -303,7 +337,7 @@ class OpRecorder(evaluator.Evaluator):
             named_attrs: The mapping of attribute names to their values.
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
-        converted_named_inputs = _convert_python_constants(
+        converted_named_inputs = _process_python_constants(
             op_signature, named_inputs, type_binding, self.constant_farm, self.opset
         )
         self.nodes.append(

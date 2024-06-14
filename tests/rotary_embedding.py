@@ -81,7 +81,11 @@ model = Model()
 cos_ms, sin_ms = rotary_embedding_ms.get_cos_sin_cache()
 pos_ms = 0
 
+lower = "at_conversion"
+print("Exporting model...")
 exported = torch.export.export(model, (x_bsnh, cos_ms, sin_ms, pos_ms))
-ir_model = torch_onnx.exported_program_to_ir(exported)
+print("ExportedProgram done.")
+ir_model = torch_onnx.exported_program_to_ir(exported, lower=lower)
 proto = ir.to_proto(ir_model)
-onnx.save_model(proto, "rotary_embedding_ms.onnx")
+onnx.save_model(proto, f"rotary_embedding_ms_lower_{lower}.onnx")
+onnx.checker.check_model(proto, full_check=True)

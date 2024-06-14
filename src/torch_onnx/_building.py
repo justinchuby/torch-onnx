@@ -33,7 +33,7 @@ ValidAttributeType = (
     | None
 )
 
-AllowedArgType = ir.Value | ValidAttributeType
+AllowedArgType = ir.Value | Sequence[ir.Value] | ValidAttributeType
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -275,12 +275,21 @@ def _construct_node(
 ) -> ir.Node:
     """Construct the node with the inputs and attributes.
 
+    Variadic inputs are flattened.
+
     Args:
         signature: The OpSignature for the node.
         named_inputs: The mapping of parameter names to their arguments.
         named_attrs: The mapping of attribute names to their values.
     """
     outputs = [_tensors.SymbolicTensor(opset) for _ in signature.outputs]
+    inputs = []
+    for value in named_inputs.values():
+        if isinstance(value, Sequence):
+            # Flatten variadic inputs
+            inputs.extend(value)
+        else:
+            inputs.append(value)
     attributes = [
         attr
         for attr in ir_convenience.convert_attributes(named_attrs)
@@ -289,7 +298,7 @@ def _construct_node(
     return ir.Node(
         signature.domain,
         signature.name,
-        inputs=tuple(named_inputs.values()),
+        inputs=inputs,
         attributes=attributes,
         outputs=outputs,
     )

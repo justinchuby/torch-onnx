@@ -372,12 +372,23 @@ def _handle_call_function_node_with_lowering(
                 f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
             ) from e
 
+    try:
+        node_schema = node.target._schema
+    except AttributeError:
+        logger.debug("No schema found for node %s", node.format_node())
+        output_names = []
+    else:
+        output_names = [f"{node.name}_{output.name}" for output in node_schema.returns]
+
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])
         node_name_to_values[node.name] = outputs
+        for output, name in zip(outputs, output_names):
+            output.name = name
     else:
         _set_shape_type(outputs, node.meta["val"])
         node_name_to_values[node.name] = outputs
+        outputs.name = output_names[0]
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node

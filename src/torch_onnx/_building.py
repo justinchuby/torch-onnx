@@ -23,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 # TODO(justinchuby): Update ValidAttributeType to ir_convenience.SupportedAttrTypes
 ValidAttributeType = (
-    ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float]
+    ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float] | None
 )
 
-AllowedArgType = ir.Value | ValidAttributeType | None
+AllowedArgType = ir.Value | ValidAttributeType
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value

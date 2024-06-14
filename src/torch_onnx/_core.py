@@ -354,7 +354,12 @@ def _handle_call_function_node_with_lowering(
             _get_onnxscript_opset(registry.opset_version), constant_farm
         )
     ):
-        outputs = onnx_function(*onnx_args, **onnx_kwargs)
+        try:
+            outputs = onnx_function(*onnx_args, **onnx_kwargs)
+        except Exception as e:
+            raise RuntimeError(
+                f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
+            ) from e
 
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])
@@ -410,17 +415,25 @@ def _add_nodes(
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
         )
-        if node.op == "placeholder":
-            _handle_placeholder_node(node, node_name_to_values)
-        elif node.op == "call_function":
-            if lower == "at_conversion":
-                _handle_call_function_node_with_lowering(
-                    model, node, node_name_to_values, constant_farm, registry=registry
-                )
-            else:
-                # No lowering
-                _handle_call_function_node(model.graph, node, node_name_to_values)
-
+        try:
+            if node.op == "placeholder":
+                _handle_placeholder_node(node, node_name_to_values)
+            elif node.op == "call_function":
+                if lower == "at_conversion":
+                    _handle_call_function_node_with_lowering(
+                        model,
+                        node,
+                        node_name_to_values,
+                        constant_farm,
+                        registry=registry,
+                    )
+                else:
+                    # No lowering
+                    _handle_call_function_node(model.graph, node, node_name_to_values)
+        except Exception as e:
+            raise RuntimeError(
+                f"Error when translating node {node.format_node()}"
+            ) from e
     return node_name_to_values
 
 

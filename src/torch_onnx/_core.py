@@ -535,6 +535,7 @@ def exported_program_to_ir(
     if lower == "none":
         # Add the opset import for the torch ops
         model.opset_imports["pkg.torch.ops"] = _torch_version_integer()
+    # NOTE: Function domains are added when translating nodes when lower="at_conversion"
 
     # TODO: We can call exported_program.graph.eliminate_dead_code()
 

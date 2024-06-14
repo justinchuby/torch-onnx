@@ -314,35 +314,40 @@ class OpRecorder(evaluator.Evaluator):
         args: Sequence[AllowedArgType],
         kwargs: Mapping[str, AllowedArgType],
     ) -> _tensors.SymbolicTensor | Sequence[_tensors.SymbolicTensor]:
-        op_signature = _schemas.OpSignature.from_opschema(schema)
-        named_inputs, named_attrs = _construct_named_inputs_and_attrs(
-            op_signature, args, kwargs
-        )
-        # TODO(justinchuby): Handle cast
-        if schema.name == "CastLike":
-            assert len(named_inputs) == 2
-            # Skip CastLike if the input and output types are the same
-            src_input = named_inputs["input"]
-            target_type = named_inputs["target_type"]
-
-            dtypes_available = (
-                isinstance(src_input, ir.Value)
-                and isinstance(target_type, ir.Value)
-                and src_input.dtype is not None
-                and target_type.dtype is not None
+        try:
+            op_signature = _schemas.OpSignature.from_opschema(schema)
+            named_inputs, named_attrs = _construct_named_inputs_and_attrs(
+                op_signature, args, kwargs
             )
-            if dtypes_available:
-                if src_input.dtype == target_type.dtype:
-                    # Same type. No cast needed
-                    return src_input
-                else:
-                    # Create a Cast node
-                    return self.opset.Cast(src_input, to=target_type.dtype)
+            # TODO(justinchuby): Handle cast
+            if schema.name == "CastLike":
+                assert len(named_inputs) == 2
+                # Skip CastLike if the input and output types are the same
+                src_input = named_inputs["input"]
+                target_type = named_inputs["target_type"]
 
-        outputs = self._call_op(op_signature, named_inputs, named_attrs)
-        if len(outputs) == 1:
-            return outputs[0]
-        return outputs
+                dtypes_available = (
+                    isinstance(src_input, ir.Value)
+                    and isinstance(target_type, ir.Value)
+                    and src_input.dtype is not None
+                    and target_type.dtype is not None
+                )
+                if dtypes_available:
+                    if src_input.dtype == target_type.dtype:
+                        # Same type. No cast needed
+                        return src_input
+                    else:
+                        # Create a Cast node
+                        return self.opset.Cast(src_input, to=target_type.dtype)
+
+            outputs = self._call_op(op_signature, named_inputs, named_attrs)
+            if len(outputs) == 1:
+                return outputs[0]
+            return outputs
+        except Exception as e:
+            raise RuntimeError(
+                f"Error calling operator '{schema.name}' with args {args} and kwargs {kwargs}."
+            ) from e
 
     def eval_function(  # type: ignore[override]
         self,
@@ -350,63 +355,67 @@ class OpRecorder(evaluator.Evaluator):
         args: Sequence[AllowedArgType],
         kwargs: Mapping[str, AllowedArgType],
     ) -> _tensors.SymbolicTensor | Sequence[_tensors.SymbolicTensor] | bool | int:
-        # TODO(justinchuby): Pick up from here
-        # Special cases for handling IsScalar and Rank
-        if function.name == "IsScalar":
-            if len(args) != 1:
-                raise TypeError(
-                    f"Expected 1 positional argument for function '{function}', got {len(args)}."
-                )
-            if isinstance(args[0], _tensors.SymbolicTensor):
-                if args[0].rank is not None:
-                    return args[0].rank == 0
+        try:
+            # Special cases for handling IsScalar and Rank
+            if function.name == "IsScalar":
+                if len(args) != 1:
+                    raise TypeError(
+                        f"Expected 1 positional argument for function '{function}', got {len(args)}."
+                    )
+                if isinstance(args[0], _tensors.SymbolicTensor):
+                    if args[0].rank is not None:
+                        return args[0].rank == 0
+                    else:
+                        # Fall to call add_function_call
+                        pass
+                elif isinstance(args[0], Sequence):  # noqa: SIM103
+                    return False
                 else:
-                    # Fall to call add_function_call
-                    pass
-            elif isinstance(args[0], Sequence):  # noqa: SIM103
-                return False
-            else:
-                # Python constants are scalars
-                return True
-        if function.name == "Rank":
-            if len(args) != 1:
-                raise TypeError(
-                    f"Expected 1 positional argument for function '{function}', got {len(args)}."
-                )
-            if isinstance(args[0], _tensors.SymbolicTensor):
-                if args[0].rank is not None:
-                    return args[0].rank
+                    # Python constants are scalars
+                    return True
+            if function.name == "Rank":
+                if len(args) != 1:
+                    raise TypeError(
+                        f"Expected 1 positional argument for function '{function}', got {len(args)}."
+                    )
+                if isinstance(args[0], _tensors.SymbolicTensor):
+                    if args[0].rank is not None:
+                        return args[0].rank
+                    else:
+                        # Fall to call add_function_call
+                        pass
+                elif isinstance(args[0], Sequence):
+                    if all(isinstance(arg, (int, float)) for arg in args[0]):
+                        return 1
+                    else:
+                        # Fall to call add_function_call
+                        pass
                 else:
-                    # Fall to call add_function_call
-                    pass
-            elif isinstance(args[0], Sequence):
-                if all(isinstance(arg, (int, float)) for arg in args[0]):
-                    return 1
-                else:
-                    # Fall to call add_function_call
-                    pass
-            else:
-                # Python constants are scalars
-                return 0
-        elif function.traceable:
-            # Trace the function call instead of adding the function as a node
-            return function.function(*args, **kwargs)
+                    # Python constants are scalars
+                    return 0
+            elif function.traceable:
+                # Trace the function call instead of adding the function as a node
+                return function.function(*args, **kwargs)
 
-        # NOTE: signature is written to function in the registration process
-        # TODO: Upstream signature to ONNX Function
-        if hasattr(function, "signature"):
-            op_signature = function.signature
-        else:
-            op_signature = _schemas.OpSignature.from_function(
-                function, function.function_ir.domain, function.name
+            # NOTE: signature is written to function in the registration process
+            # TODO: Upstream signature to ONNX Function
+            if hasattr(function, "signature"):
+                op_signature = function.signature
+            else:
+                op_signature = _schemas.OpSignature.from_function(
+                    function, function.function_ir.domain, function.name
+                )
+
+            named_inputs, named_attrs = _construct_named_inputs_and_attrs(
+                op_signature, args, kwargs
             )
+            outputs = self._call_op(op_signature, named_inputs, named_attrs)
 
-        named_inputs, named_attrs = _construct_named_inputs_and_attrs(
-            op_signature, args, kwargs
-        )
-        outputs = self._call_op(op_signature, named_inputs, named_attrs)
-
-        self.functions[(function.function_ir.domain, function.name, "")] = function
-        if len(outputs) == 1:
-            return outputs[0]
-        return outputs
+            self.functions[(function.function_ir.domain, function.name, "")] = function
+            if len(outputs) == 1:
+                return outputs[0]
+            return outputs
+        except Exception as e:
+            raise RuntimeError(
+                f"Error calling operator '{function.name}' with args {args} and kwargs {kwargs}."
+            ) from e

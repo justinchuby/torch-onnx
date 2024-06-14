@@ -101,15 +101,24 @@ class TorchTensor(ir.Tensor):
 #     TOKEN = auto()
 
 
-def _set_shape_types(values: Sequence[ir.Value], meta_vals: Sequence[torch.Tensor]):
+def _set_shape_types(
+    values: Sequence[ir.Value],
+    meta_vals: Sequence[torch.Tensor],
+    complex_to_float: bool = True,
+):
     for value, meta_val in zip(values, meta_vals):
-        _set_shape_type(value, meta_val)
+        _set_shape_type(value, meta_val, complex_to_float=complex_to_float)
 
 
-def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor]):
+def _set_shape_type(
+    value: ir.Value,
+    meta_val: torch.Tensor | tuple[torch.Tensor],
+    complex_to_float: bool = False,
+):
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
     if isinstance(meta_val, torch.Tensor):
+        # FIXME: Consider shape for complex values
         dims = []
         for dim in meta_val.shape:
             if isinstance(dim, int):
@@ -117,6 +126,14 @@ def _set_shape_type(value: ir.Value, meta_val: torch.Tensor | tuple[torch.Tensor
             else:
                 dims.append(str(dim.node))
         value.dtype = _torch_dtype_to_onnx_dtype(meta_val.dtype)
+        if complex_to_float:
+            if meta_val.dtype == torch.complex64:
+                value.dtype = ir.DataType.FLOAT
+            elif meta_val.dtype == torch.complex128:
+                value.dtype = ir.DataType.DOUBLE
+            # Add 2 as the last dimension if the tensor is complex to hold the real/imag parts
+            dims.append(2)
+
         value.shape = ir.Shape(dims)
     elif isinstance(meta_val, (int, torch.SymInt)):
         # aten::sym_size output is a int, not a tensor, which stands
@@ -154,9 +171,9 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
 
     Will yield
 
-    namespace: ": torchvision.models.resnet.ResNet/avgpool: torch.nn.modules.pooling.AdaptiveAvgPool2d"
-    class_hierarchy: ["torchvision.models.resnet.ResNet", "torch.nn.modules.pooling.AdaptiveAvgPool2d"]
-    name_scopes: ["", "avgpool"]
+    namespace: ": torchvision.models.resnet.ResNet/avgpool: torch.nn.modules.pooling.AdaptiveAvgPool2d/node_name: node_target"
+    class_hierarchy: ["torchvision.models.resnet.ResNet", "torch.nn.modules.pooling.AdaptiveAvgPool2d", <node_target>]
+    name_scopes: ["", "avgpool", <node_name>]
 
     Args:
         node: The node to get the namespace and scope of.
@@ -168,7 +185,7 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     logger.debug("%s", nn_module_stack)
     if nn_module_stack is None:
         logger.warning("nn_module_stack not found for node %s", node.name)
-        return "", [], []
+        return f"{node.name}: {node.target}", [str(node.target)], [node.name]
     namespaces = []
     class_hierarchy = []
     name_scopes = []
@@ -177,6 +194,9 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
         nn_module_name = _get_qualified_module_name(nn_module)
         class_hierarchy.append(nn_module_name)
         namespaces.append(f"{name}: {_get_qualified_module_name(nn_module)}")
+    namespaces.append(f"{node.name}: {node.target}")
+    class_hierarchy.append(str(node.target))
+    name_scopes.append(node.name)
 
     return "/".join(namespaces), class_hierarchy, name_scopes
 
@@ -390,13 +410,13 @@ def _handle_call_function_node_with_lowering(
                 output_names.append(f"val_{node.name}_{output.name}")
 
     if isinstance(outputs, Sequence):
-        _set_shape_types(outputs, node.meta["val"])
+        _set_shape_types(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             for output, name in zip(outputs, output_names):
                 output.name = name
     else:
-        _set_shape_type(outputs, node.meta["val"])
+        _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             outputs.name = output_names[0]
@@ -423,7 +443,7 @@ def _handle_call_function_node_with_lowering(
 
 
 def _handle_placeholder_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value]
+    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value], lower: str
 ) -> None:
     # Placeholder nodes are user inputs
     # We need to create a new tensor for each user input
@@ -431,7 +451,7 @@ def _handle_placeholder_node(
     name = node.name
     input_ = ir.Input(name)
     input_.meta["node"] = node
-    _set_shape_type(input_, node.meta["val"])
+    _set_shape_type(input_, node.meta["val"], complex_to_float=lower != "none")
     node_name_to_values[name] = input_
     # The inputs will be added to the graph later
 
@@ -450,7 +470,7 @@ def _add_nodes(
         )
         try:
             if node.op == "placeholder":
-                _handle_placeholder_node(node, node_name_to_values)
+                _handle_placeholder_node(node, node_name_to_values, lower=lower)
             elif node.op == "call_function":
                 if lower == "at_conversion":
                     _handle_call_function_node_with_lowering(
@@ -674,7 +694,11 @@ def exported_program_to_ir(
             continue
         ir_tensor = TorchTensor(torch_tensor, name=name)
         model.graph.initializers[name].const_value = ir_tensor
-        _set_shape_type(model.graph.initializers[name], torch_tensor)
+        _set_shape_type(
+            model.graph.initializers[name],
+            torch_tensor,
+            complex_to_float=lower != "none",
+        )
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 

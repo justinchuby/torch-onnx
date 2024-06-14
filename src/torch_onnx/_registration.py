@@ -80,7 +80,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
 
         return getattr(op_packet, overload)
     except AttributeError:
-        logger.warning(f"{qualified_name} is not found is this version of PyTorch.")
+        logger.warning(f"{qualified_name} is not found in this version of PyTorch.")
         return None
 
 

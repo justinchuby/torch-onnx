@@ -236,7 +236,7 @@ def get_matching_overload(
                 # TODO: Handle None attributes
                 # Handle tensors and Python values
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
-                    fail_reason = f"Parameter type not compatible with argument: param={param}, arg={arg}, assigned_types={assigned_types}"
+                    fail_reason = f"Parameter type not compatible with argument: param={param}, assigned_types={assigned_types}, arg={arg}"
                     break
             elif isinstance(param, _schemas.AttributeParameter):
                 if not _attribute_type_compatible_with_arg(param, arg):
@@ -246,10 +246,10 @@ def get_matching_overload(
             return overload
         else:
             print(
-                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
             )
             logger.debug(
-                f"Failed to match overload '{overload}' with node '{node.format_node()}'. {fail_reason}"
+                f"Failed to match overload '{overload}' with node '{node.format_node()}'. Reason: {fail_reason}"
             )
     return None
 

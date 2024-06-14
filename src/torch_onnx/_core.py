@@ -443,7 +443,7 @@ def _add_nodes(
                     _handle_call_function_node(model.graph, node, node_name_to_values)
         except Exception as e:
             raise RuntimeError(
-                f"Error when translating node {node.format_node()}"
+                f"Error when translating node {node.format_node()}. See the stack trace for more information."
             ) from e
     return node_name_to_values
 

@@ -443,7 +443,7 @@ def _handle_call_function_node_with_lowering(
 
 
 def _handle_placeholder_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value]
+    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value], lower: str
 ) -> None:
     # Placeholder nodes are user inputs
     # We need to create a new tensor for each user input
@@ -451,7 +451,7 @@ def _handle_placeholder_node(
     name = node.name
     input_ = ir.Input(name)
     input_.meta["node"] = node
-    _set_shape_type(input_, node.meta["val"])
+    _set_shape_type(input_, node.meta["val"], complex_to_float=lower != "none")
     node_name_to_values[name] = input_
     # The inputs will be added to the graph later
 
@@ -470,7 +470,7 @@ def _add_nodes(
         )
         try:
             if node.op == "placeholder":
-                _handle_placeholder_node(node, node_name_to_values)
+                _handle_placeholder_node(node, node_name_to_values, lower=lower)
             elif node.op == "call_function":
                 if lower == "at_conversion":
                     _handle_call_function_node_with_lowering(
@@ -694,7 +694,11 @@ def exported_program_to_ir(
             continue
         ir_tensor = TorchTensor(torch_tensor, name=name)
         model.graph.initializers[name].const_value = ir_tensor
-        _set_shape_type(model.graph.initializers[name], torch_tensor)
+        _set_shape_type(
+            model.graph.initializers[name],
+            torch_tensor,
+            complex_to_float=lower != "none",
+        )
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 

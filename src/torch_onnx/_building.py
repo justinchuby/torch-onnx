@@ -119,13 +119,13 @@ def _construct_named_inputs_and_attrs(
 
 def _resolve_parameter_dtypes(
     signature: _schemas.OpSignature, named_inputs: Mapping[str, AllowedArgType]
-) -> Mapping[_schemas.TypeConstraintParam, ir.DataType]:
-    """Determine which parameter takes which dtype.
+) -> Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol]:
+    """Determine which parameter takes which type.
 
     Handle non-tensor input corner cases and type promotion.
 
     Requires:
-        All ir.Value in name_inputs should have dtype set. Their dtype should be
+        All ir.Value in name_inputs should have type set. Their type should be
         compatible with the type_constraint of the corresponding parameter in the signature.
 
     Args:
@@ -133,13 +133,13 @@ def _resolve_parameter_dtypes(
         named_inputs: The mapping of parameter names to their arguments.
 
     Returns:
-        A mapping of Constraint names to ir.DataType.
+        A mapping of Constraint names to ir.TypeProtocol.
     """
-    #   a. Create type_binding: dict[str, ir.DataType]
+    #   a. Create type_binding: dict[str, ir.TypeProtocol]
     #   b. Iterate over all named_inputs
     #   b0. Find the corresponding parameter in the signature
     #   b1. If the argument is a Python constant, skip.
-    #   b2. If the argument is a ir.Value, Bind {constraint: arg.dtype}.
+    #   b2. If the argument is a ir.Value, Bind {constraint: arg.type}.
     type_binding = {}
     for name, arg in named_inputs.items():
         param = signature.params_map[name]
@@ -150,20 +150,20 @@ def _resolve_parameter_dtypes(
             # Skip the Python constants because we do not know what dtype they should take yet
             continue
         elif isinstance(arg, ir.Value):
-            if arg.dtype is None:
-                # Skip the ir.Value if the dtype is not set
+            if arg.type is None:
+                # Skip the ir.Value if the type is not set
                 continue
-            # NOTE: We assume arg.dtype is compatible with the type_constraint
-            assert arg.dtype is not None, f"Expected dtype to be set for {arg}"
+            # NOTE: We assume arg.type is compatible with the type_constraint
+            assert arg.type is not None, f"Expected type to be set for {arg}"
             # TODO(justinchuby): Implement type promotion logic here.
-            type_binding[param.type_constraint] = arg.dtype
+            type_binding[param.type_constraint] = arg.type
     return type_binding
 
 
-def _convert_python_constants(
+def _process_python_constants_and_sequences(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
-    type_binding: Mapping[_schemas.TypeConstraintParam, ir.DataType],
+    type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
     constant_farm: dict[
         tuple[
             bool | int | float | str | ir.TensorProtocol | tuple[int] | tuple[float],
@@ -173,7 +173,7 @@ def _convert_python_constants(
     ],
     opset: onnxscript.values.Opset,
 ) -> dict[str, ir.Value | None]:
-    """Convert Python constants to Constant nodes based on the dtype information.
+    """Convert Python constants to Constant nodes and/or produce SequenceConstruct nodes based on the dtype information.
 
     The added constants will be replacing values in named_inputs in place.
 
@@ -196,7 +196,7 @@ def _convert_python_constants(
     #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
     #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
-        # TODO: Handle when arg is list[ir.Value]
+        # FIXME: Handle when arg is list[ir.Value]
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
@@ -206,12 +206,22 @@ def _convert_python_constants(
             param, _schemas.Parameter
         ), f"Expected Parameter, got {type(param)}"
 
+        # Obtain the value type if known
+        type_ = None
         if param.type_constraint in type_binding:
             # A known dtype is available
-            dtype = type_binding[param.type_constraint]
+            type_ = type_binding[param.type_constraint]
         elif len(param.type_constraint.allowed_types) == 1:
             # Only one type is allowed
-            dtype = next(iter(param.type_constraint.allowed_types)).dtype
+            type_ = next(iter(param.type_constraint.allowed_types))
+
+        if type_ is not None:
+            # Process the sequence if the type is known
+            if isinstance(type_, ir.SequenceType) and isinstance(arg, (tuple, list)):
+                # Construct a SequenceConstruct node from a list of inputs
+                named_inputs[param.name] = opset.SequenceConstruct(*arg)
+                continue
+            dtype = type_.dtype
         else:
             # No dtype information available. Infer from the Python constant
             if isinstance(arg, bool):
@@ -312,7 +322,7 @@ class OpRecorder(evaluator.Evaluator):
             named_attrs: The mapping of attribute names to their values.
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
-        converted_named_inputs = _convert_python_constants(
+        converted_named_inputs = _process_python_constants_and_sequences(
             op_signature, named_inputs, type_binding, self.constant_farm, self.opset
         )
         self.nodes.append(

@@ -85,6 +85,7 @@ lower = "at_conversion"
 print("Exporting model...")
 exported = torch.export.export(model, (x_bsnh, cos_ms, sin_ms, pos_ms))
 print("ExportedProgram done.")
+print(exported)
 ir_model = torch_onnx.exported_program_to_ir(exported, lower=lower)
 proto = ir.to_proto(ir_model)
 onnx.save_model(proto, f"rotary_embedding_ms_lower_{lower}.onnx")

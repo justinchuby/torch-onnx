@@ -392,12 +392,14 @@ def _handle_call_function_node_with_lowering(
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"])
         node_name_to_values[node.name] = outputs
-        for output, name in zip(outputs, output_names):
-            output.name = name
+        if output_names:
+            for output, name in zip(outputs, output_names):
+                output.name = name
     else:
         _set_shape_type(outputs, node.meta["val"])
         node_name_to_values[node.name] = outputs
-        outputs.name = output_names[0]
+        if output_names:
+            outputs.name = output_names[0]
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node

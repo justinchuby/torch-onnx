@@ -3,6 +3,7 @@ import torch
 import torch_onnx
 from onnxscript import ir
 from torch import nn
+import onnxscript
 
 
 class LlamaMSRotaryEmbedding(nn.Module):
@@ -88,5 +89,6 @@ print("ExportedProgram done.")
 print(exported)
 ir_model = torch_onnx.exported_program_to_ir(exported, lower=lower)
 proto = ir.to_proto(ir_model)
+proto = onnxscript.optimizer.optimize(proto)
 onnx.save_model(proto, f"rotary_embedding_ms_lower_{lower}.onnx")
 onnx.checker.check_model(proto, full_check=True)

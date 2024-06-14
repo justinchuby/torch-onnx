@@ -1,6 +1,7 @@
 import onnx
 import torch
 import torch_onnx
+import onnxscript
 from onnxscript import ir
 from transformers import LongformerModel, LongformerTokenizer
 
@@ -16,5 +17,6 @@ exported = torch.export.export(
 print("ExportedProgram done.")
 ir_model = torch_onnx.exported_program_to_ir(exported, lower=lower)
 proto = ir.to_proto(ir_model)
+proto = onnxscript.optimizer.optimize(proto)
 onnx.save_model(proto, f"longformer_lower_{lower}.onnx")
 onnx.checker.check_model(proto, full_check=True)

@@ -71,7 +71,12 @@ def _construct_named_inputs_and_attrs(
         if isinstance(param, _schemas.Parameter):
             if reversed_args_stack:
                 # First exhaust the positional arguments
-                named_inputs[param.name] = reversed_args_stack.pop()
+                if param.variadic:
+                    # Handle variadic arguments
+                    named_inputs[param.name] = tuple(args)
+                    reversed_args_stack.clear()
+                else:
+                    named_inputs[param.name] = reversed_args_stack.pop()
             elif param.name in kwargs:
                 named_inputs[param.name] = kwargs[param.name]
             elif param.required:
@@ -160,7 +165,7 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
-def _process_python_constants_and_sequences(
+def _process_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
@@ -173,7 +178,7 @@ def _process_python_constants_and_sequences(
     ],
     opset: onnxscript.values.Opset,
 ) -> dict[str, ir.Value | None]:
-    """Convert Python constants to Constant nodes and/or produce SequenceConstruct nodes based on the dtype information.
+    """Convert Python constants to Constant nodes based on the dtype information.
 
     The added constants will be replacing values in named_inputs in place.
 
@@ -200,28 +205,21 @@ def _process_python_constants_and_sequences(
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
+        if isinstance(arg, Sequence) and all(isinstance(val, ir.Value) for val in arg):
+            # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
+            continue
 
         param = signature.params_map[name]
         assert isinstance(
             param, _schemas.Parameter
         ), f"Expected Parameter, got {type(param)}"
 
-        # Obtain the value type if known
-        type_ = None
         if param.type_constraint in type_binding:
             # A known dtype is available
-            type_ = type_binding[param.type_constraint]
+            dtype = type_binding[param.type_constraint].dtype
         elif len(param.type_constraint.allowed_types) == 1:
             # Only one type is allowed
-            type_ = next(iter(param.type_constraint.allowed_types))
-
-        if type_ is not None:
-            # Process the sequence if the type is known
-            if isinstance(type_, ir.SequenceType) and isinstance(arg, (tuple, list)):
-                # Construct a SequenceConstruct node from a list of inputs
-                named_inputs[param.name] = opset.SequenceConstruct(*arg)
-                continue
-            dtype = type_.dtype
+            dtype = next(iter(param.type_constraint.allowed_types)).dtype
         else:
             # No dtype information available. Infer from the Python constant
             if isinstance(arg, bool):
@@ -322,7 +320,7 @@ class OpRecorder(evaluator.Evaluator):
             named_attrs: The mapping of attribute names to their values.
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
-        converted_named_inputs = _process_python_constants_and_sequences(
+        converted_named_inputs = _process_python_constants(
             op_signature, named_inputs, type_binding, self.constant_farm, self.opset
         )
         self.nodes.append(

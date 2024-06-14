@@ -394,7 +394,13 @@ class OpRecorder(evaluator.Evaluator):
 
         # NOTE: signature is written to function in the registration process
         # TODO: Upstream signature to ONNX Function
-        op_signature = function.signature
+        if hasattr(function, "signature"):
+            op_signature = function.signature
+        else:
+            op_signature = _schemas.OpSignature.from_function(
+                function, function.function_ir.domain, function.name
+            )
+
         named_inputs, named_attrs = _construct_named_inputs_and_attrs(
             op_signature, args, kwargs
         )

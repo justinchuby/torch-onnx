@@ -380,7 +380,8 @@ def _handle_call_function_node_with_lowering(
     else:
         for i, output in enumerate(node_schema.returns):
             if not output.name:
-                # More than one output may not have a name, in which case we append an index
+                # More than one output may not have a name, in which case we
+                # append an index to avoid duplication
                 output_names.append(f"val_{node.name}__{i}")
             else:
                 output_names.append(f"val_{node.name}_{output.name}")

@@ -20,7 +20,7 @@ from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 
-from torch_onnx import _building, _dispatching, _fx_passes, _registration
+from torch_onnx import _building, _dispatching, _fx_passes, _registration, _decomp
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -584,7 +584,11 @@ def exported_program_to_ir(
     # NOTE: Function domains are added when translating nodes when lower="at_conversion"
 
     # 1. Add all nodes to the graph and create a dictionary of values
-    if lower == "at_conversion":
+    if lower != "none":
+        # Decompose the graph given the implemented torch ops in ONNX
+        decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
+        exported_program.run_decompositions(decomp_table)
+
         # Include explicit type promotion nodes
         _fx_passes.insert_type_promotion_nodes(exported_program)
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)

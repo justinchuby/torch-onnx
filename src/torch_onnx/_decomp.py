@@ -1,4 +1,5 @@
 """Build decomp table from PyTorch."""
+
 from __future__ import annotations
 import torch
 import torch._ops
@@ -6,6 +7,7 @@ import torch._ops
 from torch_onnx import _registration
 
 from typing import Callable
+
 
 def _get_registered_ops(
     registry: _registration.OnnxRegistry,
@@ -33,8 +35,9 @@ def _get_registered_ops(
                     registered_ops.add(op_overload)
     return registered_ops
 
+
 def create_onnx_friendly_decomposition_table(
-    registry
+    registry,
 ) -> dict[torch._ops.OperatorBase, Callable]:
     """
     This function creates a dictionary of op overloads and their decomposition functions
@@ -60,10 +63,7 @@ def create_onnx_friendly_decomposition_table(
         # are not generally supported by ONNX.
         # Skip decomposition for op_overload as long as that op_overload has a corresponding ONNX
         # symbolic function.
-        if (
-            "torch._refs" in decomp_fn.__module__
-            or op_overload in onnx_registered_ops
-        ):
+        if "torch._refs" in decomp_fn.__module__ or op_overload in onnx_registered_ops:
             continue
         decomposition_table[op_overload] = decomp_fn
 

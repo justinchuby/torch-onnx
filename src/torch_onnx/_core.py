@@ -585,8 +585,8 @@ def exported_program_to_ir(
 
     # 1. Add all nodes to the graph and create a dictionary of values
     if lower != "none":
+        # Decompose the graph given the implemented torch ops in ONNX
         decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-        print(decomp_table)
         exported_program.run_decompositions(decomp_table)
 
         # Include explicit type promotion nodes

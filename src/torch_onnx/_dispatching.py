@@ -59,7 +59,7 @@ def _attribute_type_compatible_with_arg(
             return all(isinstance(i, (int, float)) for i in value)
     if isinstance(value, torch.dtype):
         return attr.type is ir.AttributeType.INT
-    if isinstance(value, (torch.device, torch.memory_format)):
+    if isinstance(value, (torch.device, torch.memory_format, torch.layout)):
         return attr.type is ir.AttributeType.STRING
     if value is None and not attr.required:
         # An optional attribute is not supplied

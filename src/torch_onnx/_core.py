@@ -288,9 +288,17 @@ def _fill_in_default_kwargs(
     return complete_args, complete_kwargs
 
 
-def _fx_arg_to_onnx_arg(
+def _convert_fx_arg_to_onnx_arg(
     arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
 ):
+    """Convert an FX argument to an ONNX compatible argument.
+
+    This function
+    - Converts a torch dtype to an integer
+    - Converts a torch device/memory_format/layout to a string
+    - Converts a torch.fx.Node to an ir.Value
+    - Converts a sequence of torch.fx.Node to a sequence of ir.Value
+    """
     if arg is None:
         # None arguments are not modified because when the arg is an ONNX input
         # we need to preserve the None value; when the arg is an ONNX attribute,
@@ -304,8 +312,8 @@ def _fx_arg_to_onnx_arg(
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
     if isinstance(arg, Sequence):
-        return [_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
-    if isinstance(arg, torch.device):
+        return [_convert_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
+    if isinstance(arg, (torch.device, torch.memory_format, torch.layout)):
         return str(arg)
     if isinstance(arg, torch.dtype):
         return _torch_dtype_to_onnx_dtype(arg)
@@ -343,11 +351,14 @@ def _handle_call_function_node_with_lowering(
     # Replace the input FX nodes with ONNX values
     onnx_args = []
     for input_ in fx_args:
-        onnx_args.append(_fx_arg_to_onnx_arg(input_, node_name_to_values))
+        onnx_args.append(_convert_fx_arg_to_onnx_arg(input_, node_name_to_values))
 
     onnx_kwargs = {}
     for key, value in fx_kwargs.items():
-        onnx_kwargs[key] = _fx_arg_to_onnx_arg(value, node_name_to_values)
+        onnx_kwargs[key] = _convert_fx_arg_to_onnx_arg(value, node_name_to_values)
+        if key == "dtype" and onnx_kwargs[key] is None:
+            # Set dtype to -1 if it is None
+            onnx_kwargs[key] = -1
 
     with onnxscript.evaluator.default_as(
         tracer := _building.OpRecorder(

@@ -26,7 +26,7 @@ ValidAttributeType = (
     ir.TensorProtocol | int | float | bool | str | Sequence[int] | Sequence[float]
 )
 
-AllowedArgType = ir.Value | ValidAttributeType
+AllowedArgType = ir.Value | ValidAttributeType | None
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -218,23 +218,26 @@ def _convert_python_constants(
                 isinstance(val, int) for val in arg
             ):
                 dtype = ir.DataType.INT64
-                # Make the arg hashable
-                arg = tuple(arg)
             elif isinstance(arg, (tuple, list)) and all(
                 isinstance(val, float) for val in arg
             ):
                 dtype = ir.DataType.FLOAT
-                # Make the arg hashable
-                arg = tuple(arg)
             elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
                 dtype = arg.dtype
+            elif arg is None:
+                dtype = ir.DataType.UNDEFINED
             else:
                 raise TypeError(
                     f"Constant input '{arg}' of type '{type(arg)}' is not supported"
                 )
 
-        if not isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
+        if arg is None:
+            constant_value = None
+        elif not isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
             # Deduplicate the constants
+            if isinstance(arg, (tuple, list)):
+                # Make the arg hashable
+                arg = tuple(arg)
             constant_value = constant_farm.get((arg, dtype))
             if constant_value is None:
                 constant_tensor = ir.tensor(value=arg, dtype=dtype)
@@ -243,9 +246,6 @@ def _convert_python_constants(
         else:
             constant_value = opset.Constant(value=arg)
 
-        assert (
-            constant_value is not None
-        ), f"constant_value should not be None here. Arg: {arg}"
         named_inputs[param.name] = constant_value
     return named_inputs  # type: ignore[return-type]
 
@@ -393,14 +393,11 @@ class OpRecorder(evaluator.Evaluator):
                 else:
                     # Python constants are scalars
                     return 0
-            elif function.traceable:
-                # Trace the function call instead of adding the function as a node
-                return function.function(*args, **kwargs)
 
             # NOTE: signature is written to function in the registration process
             # TODO: Upstream signature to ONNX Function
             if hasattr(function, "signature"):
-                op_signature = function.signature
+                op_signature = getattr(function, "signature")
             else:
                 op_signature = _schemas.OpSignature.from_function(
                     function, function.function_ir.domain, function.name
@@ -409,6 +406,14 @@ class OpRecorder(evaluator.Evaluator):
             named_inputs, named_attrs = _construct_named_inputs_and_attrs(
                 op_signature, args, kwargs
             )
+
+            # NOTE: We need to call traceable functions after the _construct_named_inputs_and_attrs
+            # call because it will filter out the unexpected kwargs for us.
+            if function.traceable:
+                # Trace the function call instead of adding the function as a node
+                # print("calling", function.function_ir.domain, function.name, function.function)
+                return function.function(*named_inputs.values(), **named_attrs)
+
             outputs = self._call_op(op_signature, named_inputs, named_attrs)
 
             self.functions[(function.function_ir.domain, function.name, "")] = function
@@ -417,5 +422,5 @@ class OpRecorder(evaluator.Evaluator):
             return outputs
         except Exception as e:
             raise RuntimeError(
-                f"Error calling operator '{function.name}' with args {args} and kwargs {kwargs}."
+                f"Error calling function '{function.name}' with args {args} and kwargs {kwargs}."
             ) from e

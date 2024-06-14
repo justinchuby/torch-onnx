@@ -311,7 +311,7 @@ def _convert_fx_arg_to_onnx_arg(
             return _handle_getitem_node(arg, node_name_to_values)
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
-    if isinstance(arg, Sequence):
+    if isinstance(arg, (list, tuple)):
         return [_convert_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
     if isinstance(arg, (torch.device, torch.memory_format, torch.layout)):
         return str(arg)

@@ -4,12 +4,13 @@ import torch_onnx
 from onnxscript import ir
 import onnx
 
-
+lower = "at_conversion"
 resnet18 = torchvision.models.resnet18(
     weights=torchvision.models.ResNet18_Weights.DEFAULT
 )
 sample_input = (torch.randn(4, 3, 224, 224),)
 exported = torch.export.export(resnet18, sample_input)
-model = torch_onnx.exported_program_to_ir(exported)
+model = torch_onnx.exported_program_to_ir(exported, lower=lower)
+model.display(page=False)
 proto = ir.to_proto(model)
-onnx.save(proto, "resnet18.onnx")
+onnx.save(proto, f"resnet18_lower_{lower}.onnx")

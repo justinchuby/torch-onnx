@@ -6,14 +6,21 @@ import itertools
 import logging
 import operator
 import typing
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import numpy as np
+import onnxscript
+import onnxscript.evaluator
+import onnxscript.function_libs
+import onnxscript.function_libs.torch_lib
+import onnxscript.function_libs.torch_lib.registration
 import torch
 import torch.fx
 from onnxscript import ir
-from onnxscript.ir import _convenience as ir_convenience
+from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
+
+from torch_onnx import _building, _dispatching, _fx_passes, _registration
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -206,72 +213,211 @@ def _handle_getitem_node(
     return value
 
 
+def _handle_call_function_node(
+    graph: ir.Graph,
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+):
+    if node.target == operator.getitem:
+        _handle_getitem_node(node, node_name_to_values)
+        return
+    # Add op to the graph
+    op = str(node.target)
+    fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
+    inputs = []
+    for i, input_ in enumerate(fx_inputs):
+        if input_ is None:
+            inputs.append(None)
+        elif hasattr(input_, "name"):
+            if isinstance(input_, torch.fx.Node) and input_.target == operator.getitem:
+                actual_input = _handle_getitem_node(input_, node_name_to_values)
+                inputs.append(actual_input)
+            else:
+                inputs.append(node_name_to_values[input_.name])
+        else:
+            attributes[f"arg_{i}"] = input_
+
+    outputs = [ir.Value(name=name) for name in output_names]
+    if len(outputs) > 1:
+        _set_shape_types(outputs, node.meta["val"])
+        node_name_to_values[node.name] = outputs
+    else:
+        _set_shape_type(outputs[0], node.meta["val"])
+        node_name_to_values[node.name] = outputs[0]
+    ir_node = ir.Node(
+        "pkg.torch.ops",
+        op,
+        inputs,
+        attributes=ir_convenience.convert_attributes(attributes),
+        outputs=outputs,
+        name=node.name,
+    )
+    ir_node.meta["node"] = node
+    ir_node.metadata_props["fx_node"] = str(node.format_node())
+    ir_node.metadata_props["input_names"] = repr(input_names)
+    # Record the nn.Module stack for the node
+    _set_namespace(node, ir_node)
+
+    graph.append(ir_node)
+
+
+def _fill_in_default_kwargs(
+    node: torch.fx.Node,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Find and Fill in the not provided kwargs with default values."""
+    assert not isinstance(node.target, str)
+    node_schema = node.target._schema
+    # This function assumes the order of arguments in FX op is the
+    # same as the order of arguments in TorchScript op.
+    complete_args = []
+    complete_kwargs = {}
+
+    if inspect.isbuiltin(node.target):
+        complete_args = list(node.args)
+    else:
+        for i, expected_arg in enumerate(node_schema.arguments):
+            # TODO: Fix this bugggg
+            if i < len(node.args):
+                complete_args.append(node.args[i])
+            elif expected_arg.name in node.kwargs:
+                complete_kwargs[expected_arg.name] = node.kwargs[expected_arg.name]
+            else:
+                # Get default from schema.
+                complete_kwargs[expected_arg.name] = expected_arg.default_value
+
+    return complete_args, complete_kwargs
+
+
+def _fx_arg_to_onnx_arg(
+    arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
+):
+    if arg is None:
+        # None arguments are not modified because when the arg is an ONNX input
+        # we need to preserve the None value; when the arg is an ONNX attribute,
+        # we want to drop the value.
+        # The actual dropping of a None attribute value is done by OpRecorder
+        return None
+    if hasattr(arg, "name"):
+        if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
+            # If the node is getting an input from another node, get the actual value the node is retrieving
+            return _handle_getitem_node(arg, node_name_to_values)
+        # If the input is a node, get the value from the mapping
+        return node_name_to_values[arg.name]
+    if isinstance(arg, Sequence):
+        return [_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
+    if isinstance(arg, torch.device):
+        return str(arg)
+    if isinstance(arg, torch.dtype):
+        return _torch_dtype_to_onnx_dtype(arg)
+    # Maybe a Python value
+    return arg
+
+
+def _get_onnxscript_opset(opset_version: int) -> onnxscript.Opset:
+    return onnxscript.values.Opset("", opset_version)
+
+
+def _handle_call_function_node_with_lowering(
+    model: ir.Model,
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    constant_farm: dict[Any, ir.Value],
+    registry: _registration.OnnxRegistry,
+):
+    if node.target == operator.getitem:
+        _handle_getitem_node(node, node_name_to_values)
+        return
+
+    # Find the matching ONNX overload for the node
+    # NOTE: Create different registries for different ONNX opset versions
+    onnx_function = _dispatching.dispatch(node, registry)
+
+    if onnx_function is None:
+        # TODO(justinchuby): Fall back to ATen op or do something else
+        raise RuntimeError(f"No ONNX function found for {node.target!r}")
+
+    # Map FX inputs to ONNX inputs and fill optional inputs with default values.
+    # torch_args and torch_kwargs are for op-level validation
+    fx_args, fx_kwargs = _fill_in_default_kwargs(node)
+
+    # Replace the input FX nodes with ONNX values
+    onnx_args = []
+    for i, input_ in enumerate(fx_args):
+        onnx_args.append(_fx_arg_to_onnx_arg(input_, node_name_to_values))
+
+    onnx_kwargs = {}
+    for key, value in fx_kwargs.items():
+        onnx_kwargs[key] = _fx_arg_to_onnx_arg(value, node_name_to_values)
+
+    with onnxscript.evaluator.default_as(
+        tracer := _building.OpRecorder(
+            _get_onnxscript_opset(registry.opset_version), constant_farm
+        )
+    ):
+        outputs = onnx_function(*onnx_args, **onnx_kwargs)
+
+    if isinstance(outputs, Sequence):
+        _set_shape_types(outputs, node.meta["val"])
+        node_name_to_values[node.name] = outputs
+    else:
+        _set_shape_type(outputs, node.meta["val"])
+        node_name_to_values[node.name] = outputs
+
+    for ir_node in tracer.nodes:
+        ir_node.meta["node"] = node
+        ir_node.metadata_props["fx_node"] = str(node.format_node())
+        # Record the nn.Module stack for the node
+        _set_namespace(node, ir_node)
+
+    # Add the traced nodes to the graph
+    model.graph.extend(tracer.nodes)
+    # Add the defined functions to the model
+    for identifier, onnxscript_function in tracer.functions.items():
+        if identifier in model.functions:
+            continue
+        # TODO: Get IR function directly when onnxscript is updated
+        proto = onnxscript_function.to_function_proto()
+        ir_function = ir.serde.deserialize_function(proto)
+        model.functions[identifier] = ir_function
+
+
+def _handle_placeholder_node(
+    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value]
+) -> None:
+    # Placeholder nodes are user inputs
+    # We need to create a new tensor for each user input
+    # and add it to the graph's inputs
+    name = node.name
+    input_ = ir.Input(name)
+    input_.meta["node"] = node
+    _set_shape_type(input_, node.meta["val"])
+    node_name_to_values[name] = input_
+    # The inputs will be added to the graph later
+
+
 def _add_nodes(
-    exported_program: torch.export.ExportedProgram, graph: ir.Graph
+    exported_program: torch.export.ExportedProgram,
+    model: ir.Model,
+    lower: Literal["at_conversion", "post_conversion", "none"],
+    registry: _registration.OnnxRegistry,
 ) -> dict[str, ir.Value]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
+    constant_farm = {}
     for node in exported_program.graph.nodes:
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
         )
         if node.op == "placeholder":
-            # Placeholder nodes are user inputs
-            # We need to create a new tensor for each user input
-            # and add it to the graph's inputs
-            name = node.name
-            # shape = node.kwargs["shape"]
-            # dtype = node.kwargs["dtype"]
-            input_ = ir.Input(name)
-            input_.meta["node"] = node
-            node_name_to_values[name] = input_
-            # The inputs will be added to the graph later
+            _handle_placeholder_node(node, node_name_to_values)
         elif node.op == "call_function":
-            if node.target == operator.getitem:
-                _handle_getitem_node(node, node_name_to_values)
-                continue
-            # Add op to the graph
-            op = str(node.target)
-            fx_inputs, attributes, input_names, output_names = (
-                _get_inputs_and_attributes(node)
-            )
-            inputs = []
-            for i, input_ in enumerate(fx_inputs):
-                if input_ is None:
-                    inputs.append(None)
-                elif hasattr(input_, "name"):
-                    if (
-                        isinstance(input_, torch.fx.Node)
-                        and input_.target == operator.getitem
-                    ):
-                        actual_input = _handle_getitem_node(input_, node_name_to_values)
-                        inputs.append(actual_input)
-                    else:
-                        inputs.append(node_name_to_values[input_.name])
-                else:
-                    attributes[f"arg_{i}"] = input_
-
-            outputs = [ir.Value(name=name) for name in output_names]
-            if len(outputs) > 1:
-                _set_shape_types(outputs, node.meta["val"])
-                node_name_to_values[node.name] = outputs
+            if lower == "at_conversion":
+                _handle_call_function_node_with_lowering(
+                    model, node, node_name_to_values, constant_farm, registry=registry
+                )
             else:
-                _set_shape_type(outputs[0], node.meta["val"])
-                node_name_to_values[node.name] = outputs[0]
-            ir_node = ir.Node(
-                "pkg.torch.ops",
-                op,
-                inputs,
-                attributes=ir_convenience.convert_attributes(attributes),
-                outputs=outputs,
-                name=node.name,
-            )
-            ir_node.meta["node"] = node
-            ir_node.metadata_props["fx_node"] = str(node.format_node())
-            ir_node.metadata_props["input_names"] = repr(input_names)
-            # Record the nn.Module stack for the node
-            _set_namespace(node, ir_node)
+                # No lowering
+                _handle_call_function_node(model.graph, node, node_name_to_values)
 
-            graph.append(ir_node)
     return node_name_to_values
 
 
@@ -292,7 +438,7 @@ def _get_inputs_and_attributes(
         return inputs, {}, [], [node.name]
 
     # The target should be an ATen operator now
-    node_schema = node.target._schema
+    node_schema: torch.FunctionSchema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.
@@ -344,20 +490,49 @@ def _get_inputs_and_attributes(
     return inputs, attributes, input_names, output_names
 
 
-def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram):
-    # TODO: Make it an Interpreter
-    graph = ir.Graph(
-        [],
-        [],
-        nodes=[],
-        opset_imports={"": 20, "pkg.torch.ops": _torch_version_integer()},
-        name="main_graph",
+def exported_program_to_ir(
+    exported_program: torch.export.ExportedProgram,
+    *,
+    registry: _registration.OnnxRegistry | None = None,
+    lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
+) -> ir.Model:
+    """Convert an exported program to an ONNX IR model.
+
+    Args:
+        exported_program: The exported program to convert.
+        lower: Whether to lower the graph to core ONNX operators.
+            at_conversion: Lower whe translating the FX graph to ONNX IR.
+            post_conversion: Use an IR pass to lower the graph.
+            none: Do not lower the graph.
+        registry: The registry of all ONNX Script decomposition.
+    """
+    if registry is None:
+        registry = _registration.OnnxRegistry.from_torchlib(
+            onnxscript.function_libs.torch_lib.registration.default_registry
+        )
+    model = ir.Model(
+        graph=ir.Graph(
+            [],
+            [],
+            nodes=[],
+            opset_imports={
+                "": registry.opset_version,
+                "pkg.torch.ops": _torch_version_integer(),
+            },
+            name="main_graph",
+        ),
+        ir_version=9,
+        producer_name="torch",
+        producer_version=torch.__version__,
     )
 
     # TODO: We can call exported_program.graph.eliminate_dead_code()
 
     # 1. Add all nodes to the graph and create a dictionary of values
-    values = _add_nodes(exported_program, graph)
+    if lower == "at_conversion":
+        # Include explicit type promotion nodes
+        _fx_passes.insert_type_promotion_nodes(exported_program)
+    values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
     # Since the node names and the tensor names are different, we need to rename
@@ -390,12 +565,25 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
             "pkg.torch.export.graph_signature.InputSpec.persistent"
         ] = str(persistent)
 
-        graph.inputs.append(value)  # type: ignore
+        model.graph.inputs.append(value)  # type: ignore
         if input_kind != graph_signature.InputKind.USER_INPUT:
-            graph.initializers[value_name] = value
+            model.graph.initializers[value_name] = value
 
-    # 3. Add outputs to the graph. Keep the order of the outputs.
-    for spec in exported_program.graph_signature.output_specs:
+    # 3. Add outputs to the graph. Put the user outputs first.
+    user_outputs = [
+        spec
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind == graph_signature.OutputKind.USER_OUTPUT
+    ]
+    non_user_outputs = [
+        spec
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind != graph_signature.OutputKind.USER_OUTPUT
+    ]
+    for spec in itertools.chain(user_outputs, non_user_outputs):
+        if isinstance(spec.arg, graph_signature.ConstantArgument):
+            logger.debug("Skipping constant argument %s", spec.arg)
+            continue
         value_name = spec.arg.name
         output_kind = spec.kind
         value = values[value_name]
@@ -405,36 +593,30 @@ def exported_program_to_ir_graph(exported_program: torch.export.ExportedProgram)
         )
 
         if output_kind == graph_signature.OutputKind.USER_OUTPUT:
-            graph.outputs.append(value)
+            model.graph.outputs.append(value)
 
     # 4. Rename the initializers to match the tensor names
     for name, param_name in itertools.chain(
         exported_program.graph_signature.inputs_to_parameters.items(),
         exported_program.graph_signature.inputs_to_buffers.items(),
     ):
-        initializer = graph.initializers.pop(name)
+        initializer = model.graph.initializers.pop(name)
         initializer.name = param_name
-        graph.initializers[param_name] = initializer
+        # Record the original name so users can search the metadata and correspond
+        # with the FX graph
+        initializer.metadata_props["pkg.torch.onnx.original_node_name"] = name
+        model.graph.initializers[param_name] = initializer
 
     # 5. Add initializers to the graph
-    for name, value in graph.initializers.items():
+    for name, value in model.graph.initializers.items():
         torch_tensor = exported_program.state_dict.get(name)
         if torch_tensor is None:
             logger.warning("Tensor '%s' not found in state_dict", name)
             continue
         ir_tensor = TorchTensor(torch_tensor, name=name)
-        graph.initializers[name].const_value = ir_tensor
-        _set_shape_type(graph.initializers[name], torch_tensor)
+        model.graph.initializers[name].const_value = ir_tensor
+        _set_shape_type(model.graph.initializers[name], torch_tensor)
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 
-    return graph
-
-
-def exported_program_to_ir(exported_program: torch.export.ExportedProgram) -> ir.Model:
-    return ir.Model(
-        exported_program_to_ir_graph(exported_program),
-        ir_version=9,
-        producer_name="torch",
-        producer_version=torch.__version__,
-    )
+    return model

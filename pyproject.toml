@@ -25,7 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["torch", "onnxscript", "onnx"]
+dependencies = ["torch", "onnxscript>=0.1.0.dev20240614", "onnx"]
 
 [project.urls]
 Repository = "https://github.com/justinchuby/torch-onnx"

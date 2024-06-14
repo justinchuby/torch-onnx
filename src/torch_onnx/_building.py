@@ -196,6 +196,7 @@ def _convert_python_constants(
     #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
     #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
+        # TODO: Handle when arg is list[ir.Value]
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
@@ -225,9 +226,10 @@ def _convert_python_constants(
                 isinstance(val, int) for val in arg
             ):
                 dtype = ir.DataType.INT64
-            elif isinstance(arg, (tuple, list)) and all(
+            elif isinstance(arg, (tuple, list)) and any(
                 isinstance(val, float) for val in arg
             ):
+                # NOTE: if any float is present, the dtype is float
                 dtype = ir.DataType.FLOAT
             elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
                 dtype = arg.dtype

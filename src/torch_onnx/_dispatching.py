@@ -122,7 +122,7 @@ def _param_type_compatible_with_arg(
     if isinstance(value, str):
         if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.STRING)}:
             return True
-    if isinstance(value, Sequence):
+    if isinstance(value, (list, tuple)):
         if param.type_constraint.allowed_types & {
             ir.TensorType(ir.DataType.INT32),
             ir.TensorType(ir.DataType.INT64),
@@ -133,7 +133,8 @@ def _param_type_compatible_with_arg(
             ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
-            if all(isinstance(i, int) for i in value):
+            if all(isinstance(i, (int)) for i in value):
+                # We will just allow any fx node and trust that the overload handles it
                 return True
         if param.type_constraint.allowed_types & {
             ir.TensorType(ir.DataType.FLOAT),
@@ -142,6 +143,7 @@ def _param_type_compatible_with_arg(
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
         }:
             if all(isinstance(i, (int, float)) for i in value):
+                # We will just allow any fx node and trust that the overload handles it
                 return True
     if value is None and not param.required:
         # An optional parameter is not supplied
@@ -174,6 +176,15 @@ def _get_type_from_tensor(
     return ir.SequenceType(
         ir.TensorType(_torch_dtype_to_onnx_compatible_dtype(first_tensor.dtype))
     )
+
+
+def _get_first_tensor_in_node_list(
+    nodes: Sequence[torch.fx.Node],
+) -> torch.Tensor | None:
+    for node in nodes:
+        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+            return node.meta["val"]
+    return None
 
 
 def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
@@ -225,11 +236,14 @@ def get_matching_overload(
                 break
 
             if isinstance(param, _schemas.Parameter):
-                if isinstance(arg, torch.Tensor) or (
-                    isinstance(arg, Sequence)
-                    and any(isinstance(t, torch.Tensor) for t in arg)
-                ):
+                if isinstance(arg, torch.Tensor):
                     arg = _get_type_from_tensor(arg)
+                if isinstance(arg, (list, tuple)) and any(
+                    isinstance(t, torch.fx.Node) for t in arg
+                ):
+                    first_tensor = _get_first_tensor_in_node_list(arg)
+                    assert first_tensor is not None
+                    arg = ir.SequenceType(_get_type_from_tensor(first_tensor))
                 elif isinstance(arg, torch.fx.Node):
                     meta_val = arg.meta["val"]
                     arg = _get_type_from_tensor(meta_val)

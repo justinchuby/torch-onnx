@@ -411,7 +411,7 @@ class OpRecorder(evaluator.Evaluator):
             # call because it will filter out the unexpected kwargs for us.
             if function.traceable:
                 # Trace the function call instead of adding the function as a node
-                return function.function(*named_inputs.values(), **named_attrs)
+                return function.function(**named_inputs, **named_attrs)
 
             outputs = self._call_op(op_signature, named_inputs, named_attrs)
 

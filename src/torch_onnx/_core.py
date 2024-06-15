@@ -115,6 +115,7 @@ def _set_shape_type(
     meta_val: torch.Tensor | tuple[torch.Tensor],
     complex_to_float: bool,
 ):
+    # TODO: Consider using meta["tensor_meta"] for this? Would it be faster?
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
     if isinstance(meta_val, torch.Tensor):
@@ -203,7 +204,7 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     return "/".join(namespaces), class_hierarchy, name_scopes
 
 
-def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node):
+def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
     """Adds namespace and other node metadata to the ONNX node."""
     nn_module_stack = fx_node.meta.get("nn_module_stack")
     fx_node.meta["nn_module_stack"] = nn_module_stack
@@ -212,7 +213,7 @@ def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node):
     ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)
     ir_node.metadata_props["pkg.torch.onnx.name_scopes"] = repr(name_scopes)
     ir_node.metadata_props["pkg.torch.onnx.fx_node"] = str(fx_node.format_node())
-    ir_node.metadata_props["pkg.torch.onnx.source_range"] = str(fx_node.range)
+    ir_node.metadata_props["pkg.torch.onnx.stack_trace"] = fx_node.meta.get("stack_trace", "")
 
 
 def _handle_getitem_node(

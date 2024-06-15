@@ -213,7 +213,9 @@ def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
     ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)
     ir_node.metadata_props["pkg.torch.onnx.name_scopes"] = repr(name_scopes)
     ir_node.metadata_props["pkg.torch.onnx.fx_node"] = str(fx_node.format_node())
-    ir_node.metadata_props["pkg.torch.onnx.stack_trace"] = fx_node.meta.get("stack_trace", "")
+    ir_node.metadata_props["pkg.torch.onnx.stack_trace"] = fx_node.meta.get(
+        "stack_trace", ""
+    )
 
 
 def _handle_getitem_node(
@@ -363,11 +365,13 @@ def _handle_call_function_node_with_lowering(
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
-    onnx_function = _dispatching.dispatch(node, registry)
+    onnx_function, message = _dispatching.dispatch(node, registry)
 
     if onnx_function is None:
-        # TODO(justinchuby): Fall back to ATen op or do something else
-        raise RuntimeError(f"No ONNX function found for {node.target!r}")
+        # TODO(justinchuby): Fall back to ATen op or do something else?
+        raise RuntimeError(
+            f"No ONNX function found for {node.target!r}. Failure message: {message}"
+        )
 
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
     # torch_args and torch_kwargs are for op-level validation

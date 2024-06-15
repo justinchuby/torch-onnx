@@ -203,13 +203,16 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     return "/".join(namespaces), class_hierarchy, name_scopes
 
 
-def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
-    nn_module_stack = node.meta.get("nn_module_stack")
-    node.meta["nn_module_stack"] = nn_module_stack
-    namespace, class_hierarchy, name_scopes = _get_node_namespace(node)
+def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node):
+    """Adds namespace and other node metadata to the ONNX node."""
+    nn_module_stack = fx_node.meta.get("nn_module_stack")
+    fx_node.meta["nn_module_stack"] = nn_module_stack
+    namespace, class_hierarchy, name_scopes = _get_node_namespace(fx_node)
     ir_node.metadata_props["namespace"] = namespace
-    ir_node.metadata_props["class_hierarchy"] = repr(class_hierarchy)
-    ir_node.metadata_props["name_scopes"] = repr(name_scopes)
+    ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)
+    ir_node.metadata_props["pkg.torch.onnx.name_scopes"] = repr(name_scopes)
+    ir_node.metadata_props["pkg.torch.onnx.fx_node"] = str(fx_node.format_node())
+    ir_node.metadata_props["pkg.torch.onnx.source_range"] = str(fx_node.range)
 
 
 def _handle_getitem_node(
@@ -275,10 +278,9 @@ def _handle_call_function_node(
         name=node.name,
     )
     ir_node.meta["node"] = node
-    ir_node.metadata_props["fx_node"] = str(node.format_node())
-    ir_node.metadata_props["input_names"] = repr(input_names)
+    ir_node.metadata_props["pkg.torch.onnx.input_names"] = repr(input_names)
     # Record the nn.Module stack for the node
-    _set_namespace(node, ir_node)
+    _set_node_metadata(node, ir_node)
 
     graph.append(ir_node)
 
@@ -425,9 +427,9 @@ def _handle_call_function_node_with_lowering(
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node
-        ir_node.metadata_props["fx_node"] = str(node.format_node())
+
         # Record the nn.Module stack for the node
-        _set_namespace(node, ir_node)
+        _set_node_metadata(node, ir_node)
 
     # Add the traced nodes to the graph
     model.graph.extend(tracer.nodes)

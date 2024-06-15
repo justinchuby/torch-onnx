@@ -112,7 +112,10 @@ def torch_onnx_export_adaptor(
     except Exception as e:
         raise RuntimeError(
             "Failed to export the model with torch.export. "
-            "This is step 1/2 of exporting the model to ONNX. Please create an issue "
+            "\033[96m"
+            "This is step 1/2 "
+            "\033[0m"
+            "of exporting the model to ONNX. Please create an issue "
             "in the PyTorch GitHub repository against the *torch.export* component and "
             "attach the full error stack as well as reproduction scripts."
         ) from e
@@ -142,7 +145,10 @@ def torch_onnx_export_adaptor(
     except Exception as e:
         raise RuntimeError(
             "Failed to convert the exported program to an ONNX model. "
-            "This is step 2/2 of exporting the model to ONNX. Please create an issue "
+            "\033[96m"
+            "This is step 2/2 "
+            "\033[0m"
+            "of exporting the model to ONNX. Please create an issue "
             "in the PyTorch GitHub repository against the *onnx* component and "
             "attach the full error stack as well as reproduction scripts."
         ) from e

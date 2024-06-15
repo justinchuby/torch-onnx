@@ -420,11 +420,16 @@ def _handle_call_function_node_with_lowering(
         if output_names:
             for output, name in zip(outputs, output_names):
                 output.name = name
+        else:
+            for i, output in enumerate(outputs):
+                output.name = f"val_{node.name}_{i}"
     else:
         _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             outputs.name = output_names[0]
+        else:
+            outputs.name = f"val_{node.name}"
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node

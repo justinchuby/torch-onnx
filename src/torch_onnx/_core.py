@@ -115,6 +115,7 @@ def _set_shape_type(
     meta_val: torch.Tensor | tuple[torch.Tensor],
     complex_to_float: bool,
 ):
+    # TODO: Consider using meta["tensor_meta"] for this? Would it be faster?
     if isinstance(meta_val, tuple):
         logger.warning("Setting shape and type of tensors is not supported yet")
     if isinstance(meta_val, torch.Tensor):
@@ -203,13 +204,18 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     return "/".join(namespaces), class_hierarchy, name_scopes
 
 
-def _set_namespace(node: torch.fx.Node, ir_node: ir.Node):
-    nn_module_stack = node.meta.get("nn_module_stack")
-    node.meta["nn_module_stack"] = nn_module_stack
-    namespace, class_hierarchy, name_scopes = _get_node_namespace(node)
+def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
+    """Adds namespace and other node metadata to the ONNX node."""
+    nn_module_stack = fx_node.meta.get("nn_module_stack")
+    fx_node.meta["nn_module_stack"] = nn_module_stack
+    namespace, class_hierarchy, name_scopes = _get_node_namespace(fx_node)
     ir_node.metadata_props["namespace"] = namespace
-    ir_node.metadata_props["class_hierarchy"] = repr(class_hierarchy)
-    ir_node.metadata_props["name_scopes"] = repr(name_scopes)
+    ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)
+    ir_node.metadata_props["pkg.torch.onnx.name_scopes"] = repr(name_scopes)
+    ir_node.metadata_props["pkg.torch.onnx.fx_node"] = str(fx_node.format_node())
+    ir_node.metadata_props["pkg.torch.onnx.stack_trace"] = fx_node.meta.get(
+        "stack_trace", ""
+    )
 
 
 def _handle_getitem_node(
@@ -275,10 +281,9 @@ def _handle_call_function_node(
         name=node.name,
     )
     ir_node.meta["node"] = node
-    ir_node.metadata_props["fx_node"] = str(node.format_node())
-    ir_node.metadata_props["input_names"] = repr(input_names)
+    ir_node.metadata_props["pkg.torch.onnx.input_names"] = repr(input_names)
     # Record the nn.Module stack for the node
-    _set_namespace(node, ir_node)
+    _set_node_metadata(node, ir_node)
 
     graph.append(ir_node)
 
@@ -360,11 +365,13 @@ def _handle_call_function_node_with_lowering(
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
-    onnx_function = _dispatching.dispatch(node, registry)
+    onnx_function, message = _dispatching.dispatch(node, registry)
 
     if onnx_function is None:
-        # TODO(justinchuby): Fall back to ATen op or do something else
-        raise RuntimeError(f"No ONNX function found for {node.target!r}")
+        # TODO(justinchuby): Fall back to ATen op or do something else?
+        raise RuntimeError(
+            f"No ONNX function found for {node.target!r}. Failure message: {message}"
+        )
 
     # Map FX inputs to ONNX inputs and fill optional inputs with default values.
     # torch_args and torch_kwargs are for op-level validation
@@ -417,17 +424,22 @@ def _handle_call_function_node_with_lowering(
         if output_names:
             for output, name in zip(outputs, output_names):
                 output.name = name
+        else:
+            for i, output in enumerate(outputs):
+                output.name = f"val_{node.name}_{i}"
     else:
         _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             outputs.name = output_names[0]
+        else:
+            outputs.name = f"val_{node.name}"
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node
-        ir_node.metadata_props["fx_node"] = str(node.format_node())
+
         # Record the nn.Module stack for the node
-        _set_namespace(node, ir_node)
+        _set_node_metadata(node, ir_node)
 
     # Add the traced nodes to the graph
     model.graph.extend(tracer.nodes)

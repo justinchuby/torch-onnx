@@ -16,6 +16,9 @@ from onnxscript import ir
 import torch_onnx
 from torch_onnx import _ir_passes
 
+_BLUE = "\033[96m"
+_END = "\033[0m"
+
 logger = logging.Logger(__name__)
 
 
@@ -112,8 +115,9 @@ def torch_onnx_export_adaptor(
     except Exception as e:
         raise RuntimeError(
             "Failed to export the model with torch.export. "
-            "This is step 1/2 of exporting the model to ONNX. Please create an issue "
-            "in the PyTorch GitHub repository against the *torch.export* component and "
+            f"{_BLUE}This is step 1/2{_END} "
+            "of exporting the model to ONNX. Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
             "attach the full error stack as well as reproduction scripts."
         ) from e
 
@@ -142,8 +146,9 @@ def torch_onnx_export_adaptor(
     except Exception as e:
         raise RuntimeError(
             "Failed to convert the exported program to an ONNX model. "
-            "This is step 2/2 of exporting the model to ONNX. Please create an issue "
-            "in the PyTorch GitHub repository against the *onnx* component and "
+            f"{_BLUE}This is step 2/2{_END} "
+            "of exporting the model to ONNX. Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
             "attach the full error stack as well as reproduction scripts."
         ) from e
 
@@ -152,3 +157,4 @@ def torch_onnx_export_adaptor(
 
 def patch_torch():
     torch.onnx.export = torch_onnx_export_adaptor
+    torch.onnx.utils._export = torch_onnx_export_adaptor

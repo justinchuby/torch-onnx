@@ -14,7 +14,6 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 import numpy as np
 import onnx
 import onnx_test_common
-import parameterized
 import torchvision
 from pytorch_test_common import (
     BATCH_SIZE,
@@ -41,6 +40,7 @@ from torch.testing._internal.common_utils import skipIfNoLapack
 import torch_onnx
 
 torch_onnx.patch_torch()
+
 
 def _init_test_generalized_rcnn_transform():
     min_size = 100
@@ -113,49 +113,10 @@ def _construct_tensor_for_quantization_test(
     return tensor
 
 
-def _parameterized_class_attrs_and_values(
-    min_opset_version: int, max_opset_version: int
-):
-    attrs = ("opset_version", "is_script", "keep_initializers_as_inputs")
-    input_values = []
-    input_values.extend(itertools.product((7, 8), (True, False), (True,)))
-    # Valid opset versions are defined in torch/onnx/_constants.py.
-    # Versions are intentionally set statically, to not be affected by changes elsewhere.
-    if min_opset_version < 9:
-        raise ValueError("min_opset_version must be >= 9")
-    input_values.extend(
-        itertools.product(
-            range(min_opset_version, max_opset_version + 1),
-            (True, False),
-            (True, False),
-        )
-    )
-    return {"attrs": attrs, "input_values": input_values}
-
-
-def _parametrize_rnn_args(arg_name):
-    options = {
-        "layers": {1: "unilayer", 3: "trilayer"},
-        "bidirectional": {True: "bidirectional", False: "forward"},
-        "initial_state": {True: "with_initial_state", False: "no_initial_state"},
-        "packed_sequence": {
-            0: "without_sequence_lengths",
-            1: "with_variable_length_sequences",
-            2: "with_batch_first_sequence_lengths",
-        },
-        "dropout": {0.2: "with_dropout", 0.0: "without_dropout"},
-    }
-
-    return {
-        "arg_str": arg_name,
-        "arg_values": options[arg_name].keys(),
-        "name_fn": lambda val: options[arg_name][val],
-    }
-
-
 @common_utils.instantiate_parametrized_tests
 class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
     opset_version = 18
+
     def test_fuse_conv_bn1d(self):
         class Fuse(torch.nn.Module):
             def __init__(self):
@@ -438,7 +399,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x_in):
                 x_out = {}
                 x_out["test_key_out"] = torch.add(
-                    x_in[list(x_in.keys())[0]], list(x_in.keys())[0]  # noqa: RUF015
+                    x_in[list(x_in.keys())[0]],
+                    list(x_in.keys())[0],  # noqa: RUF015
                 )
                 return x_out
 
@@ -3111,7 +3073,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         with self.assertRaises(RuntimeError) as cm:
             self._interpolate(x, "area", True, True)
 
-        with self.assertRaises(RuntimeError) as cm:
+        with self.assertRaises(RuntimeError) as cm:  # noqa: F841
             self._interpolate(x, "area", False, True)
 
     def test_groupnorm(self):
@@ -4896,7 +4858,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 return torch.arange(a.size(0), dtype=torch.float).view(-1, 1) + a
 
         x = torch.randn(3, 4, requires_grad=True)
-        outputs = ArangeScript()(x)
+        outputs = ArangeScript()(x)  # noqa: F841
         self.run_test(ArangeScript(), x)
 
         class ArangeModel(torch.nn.Module):
@@ -4913,7 +4875,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 return torch.arange(a.size(0))
 
         x = torch.randn(3, 4, requires_grad=True)
-        outputs = ArangeScript()(x)
+        outputs = ArangeScript()(x)  # noqa: F841
         self.run_test(ArangeScript(), x, input_names=["x"], dynamic_axes={"x": [0, 1]})
         self.run_test(ArangeScript(), x, remained_onnx_input_idx=[])
 
@@ -6647,7 +6609,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                     )
                 return a + x
 
-        m = M()
+        m = M()  # noqa: F841
         x = torch.randn(
             12,
         )
@@ -6663,7 +6625,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 a = torch.ones(
                     12,
                 )  # used in loop, altered.
-                a_ref = a  # not used in loop, should be altered.
+                a_ref = a  # not used in loop, should be altered.  # noqa: F841
                 b = x.clone()  # used in loop, not be altered.
                 b_ref = b  # not used in loop, should not be altered.
                 for i in range(10):
@@ -6692,7 +6654,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 )
                 return _bias + x, a, b, b_ref
 
-        m = M()
+        m = M()  # noqa: F841
         x = torch.zeros(
             12,
         )
@@ -6719,7 +6681,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                             )
                 return self._bias + x
 
-        m = M()
+        m = M()  # noqa: F841
         x = torch.zeros(
             12,
         )
@@ -6761,7 +6723,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                     )
                 return self._bias + x
 
-        m = M()
+        m = M()  # noqa: F841
         x = torch.zeros(
             12,
         )
@@ -6800,7 +6762,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
                 return beam_hyps
 
-        m = torch.jit.script(M())
+        m = torch.jit.script(M())  # noqa: F841
         x = torch.randn(8, 4, 3)
         self.run_test(torch.jit.script(M()), (x))
 
@@ -9143,7 +9105,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 self.reduction = reduction
 
             def forward(self, preds, target, start_position):
-                n = preds.size()[-1]
+                n = preds.size()[-1]  # noqa: F841
                 log_preds = F.log_softmax(preds, dim=-1)
                 ignore_index = start_position.size(1)
                 nll = F.nll_loss(
@@ -10282,8 +10244,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         ort_outs = verification._run_onnx(ort_sess, (x,))
         assert not torch.all(torch.eq(x, torch.from_numpy(ort_outs[0])))
 
-        script_model = torch.jit.script(model)
-        output = model(x)
+        script_model = torch.jit.script(model)  # noqa: F841
+        output = model(x)  # noqa: F841
         model_onnx = io.BytesIO()
         torch.onnx.export(
             model,
@@ -10339,7 +10301,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         np.testing.assert_allclose(ratio_pytorch, ratio_ort, rtol=0.01, atol=0.01)
 
-        script_model = torch.jit.script(model)
+        script_model = torch.jit.script(model)  # noqa: F841
         y = model(input)
         output = y.cpu().numpy()
         model_onnx = io.BytesIO()
@@ -11310,7 +11272,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class ListModel(torch.nn.Module):
             def forward(self, x, y):
                 res = []
-                elem = torch.matmul(x[0], y)
+                elem = torch.matmul(x[0], y)  # noqa: F841
                 for i in range(x.size(0)):
                     res.append(torch.matmul(x[i], y))
                 a, b, c = res
@@ -11486,12 +11448,12 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class ArangeModel(torch.nn.Module):
             def forward(self, signal):
                 frame_step = 2
-                outer_dimensions = signal.size()[:-2]
+                outer_dimensions = signal.size()[:-2]  # noqa: F841
                 frames, frame_length = signal.size()[-2:]
 
                 subframe_length = signal.size()[0]
-                subframe_step = frame_step // subframe_length
-                subframes_per_frame = frame_length // subframe_length
+                subframe_step = frame_step // subframe_length  # noqa: F841
+                subframes_per_frame = frame_length // subframe_length  # noqa: F841
                 output_size = frame_step * (frames - 1) + frame_length
                 output_subframes = output_size // subframe_length
 
@@ -11779,7 +11741,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.randn(win_length, dtype=torch.float)
         module = HannWindowModule()
 
-        output = module(x, win_length)
+        output = module(x, win_length)  # noqa: F841
         self.run_test(module, (x, win_length))
 
     @skipIfUnsupportedMinOpsetVersion(12)
@@ -13333,6 +13295,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             output_names=output_names,
             dynamic_axes=dynamic_axes,
         )
+
 
 if __name__ == "__main__":
     common_utils.run_tests()

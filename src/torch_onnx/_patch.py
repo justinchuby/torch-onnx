@@ -152,3 +152,4 @@ def torch_onnx_export_adaptor(
 
 def patch_torch():
     torch.onnx.export = torch_onnx_export_adaptor
+    torch.onnx.utils._export = torch_onnx_export_adaptor

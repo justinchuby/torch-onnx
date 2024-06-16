@@ -23,6 +23,8 @@ _END = "\033[0m"
 
 logger = logging.getLogger(__name__)
 
+WRITE_ERROR_REPORT = False
+
 
 class TorchExportError(RuntimeError):
     """Error during torch.export.export."""
@@ -133,7 +135,7 @@ def _get_torch_export_args(
     return args, kwargs, dynamic_shapes
 
 
-def torch_onnx_export_adaptor(
+def _torch_onnx_export_adaptor(
     model: torch.nn.Module,
     args: tuple[Any, ...],
     f: str | io.BytesIO,
@@ -146,8 +148,6 @@ def torch_onnx_export_adaptor(
     dynamic_axes: Mapping[str, Mapping[int, str]]
     | Mapping[str, Sequence[int]]
     | None = None,
-    check: bool = False,  # Run ONNX checker
-    validate: bool = False,  # Validate with ONNX Runtime
     **_,
 ) -> tuple[ir.Model, torch.export.ExportedProgram]:
     args, kwargs, dynamic_shapes = _get_torch_export_args(
@@ -203,54 +203,30 @@ def torch_onnx_export_adaptor(
             "an ExportedProgram with `torch.export.export()`."
         ) from e
 
-    if not check:
-        return ir_model, program
-    try:
-        print("Run `onnx.checker` on the ONNX model... ", end="")
-        if not isinstance(f, io.BytesIO):
-            onnx.checker.check_model(f, full_check=True)
-        else:
-            onnx.checker.check_model(proto, full_check=True)
-        print("✅")
-    except Exception as e:
-        raise OnnxCheckerError(
-            "Conversion successful but the ONNX model fails ONNX checker. "
-            "Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. "
-        ) from e
-
-    if not validate:
-        return ir_model, program
-
-    # try:
-    #     print("Execute the model with ONNX Runtime... ", end="")
-    #     print("✅")
-    # except Exception as e:
-    #     raise OnnxConversionError(
-    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
-    #         "Please create an issue "
-    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-    #         "attach the full error stack as well as reproduction scripts. "
-    #     ) from e
-
     return ir_model, program
 
 
 def _torch_onnx_export_adapter_with_error_report(
     *args,
     profile: bool = False,
+    check: bool = False,
+    validate: bool = False,
+    error_report: bool = False,
     **kwargs,
 ) -> ir.Model:
+    if not (WRITE_ERROR_REPORT or error_report):
+        ir_model, _ = _torch_onnx_export_adaptor(*args, **kwargs)
+        return ir_model
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    error_report_name = f"{timestamp}.md"
+    f = args[2]
     try:
         if profile:
             import pyinstrument
 
             profiler = pyinstrument.Profiler()
             profiler.start()
-        torch_onnx_export_adaptor(*args, **kwargs, check=True)
+        ir_model, program = _torch_onnx_export_adaptor(*args, **kwargs, check=True)
     except TorchExportError:
         if profile:
             profiler.stop()
@@ -258,15 +234,12 @@ def _torch_onnx_export_adapter_with_error_report(
         else:
             profile_result = None
         _reporting.create_torch_export_error_report(
-            error_report_name, traceback.format_exc(), profile_result=profile_result
+            f"onnx_export_{timestamp}_pt_export.md",
+            traceback.format_exc(),
+            profile_result=profile_result,
         )
         raise
-    except (
-        OnnxConversionError,
-        OnnxCheckerError,
-        OnnxRuntimeError,
-        OnnxValidationError,
-    ) as e:
+    except OnnxConversionError:
         if profile:
             profiler.stop()
             profile_result = profiler.output_text(unicode=True)
@@ -285,31 +258,67 @@ def _torch_onnx_export_adapter_with_error_report(
         program = torch.export.export(
             model, arg_args, kwargs=arg_kwargs, dynamic_shapes=dynamic_shapes
         )
-        if isinstance(e, OnnxConversionError):
-            step = 1
-        elif isinstance(e, OnnxCheckerError):
-            step = 2
-        elif isinstance(e, OnnxRuntimeError):
-            step = 3
-        elif isinstance(e, OnnxValidationError):
-            step = 4
-
         _reporting.create_onnx_export_error_report(
-            error_report_name,
+            f"onnx_export_{timestamp}_conversion.md",
             traceback.format_exc(),
             program,
-            step=step,
+            step=1,
             profile_result=profile_result,
         )
         raise
-    else:
-        if profile:
-            profiler.stop()
-            profile_result = profiler.output_text(unicode=True)
-            _reporting.crete_onnx_export_profile_report(
-                error_report_name,
+
+    if profile:
+        profiler.stop()
+        profile_result = profiler.output_text(unicode=True)
+        _reporting.crete_onnx_export_profile_report(
+            f"onnx_export_{timestamp}_profile.md", profile_result
+        )
+
+    if not check:
+        return ir_model
+
+    try:
+        print("Run `onnx.checker` on the ONNX model... ", end="")
+        if not isinstance(f, io.BytesIO):
+            onnx.checker.check_model(f, full_check=True)
+        else:
+            # Reset the file pointer to the beginning
+            f.seek(0)
+            proto = onnx.load_model(f)
+            onnx.checker.check_model(proto, full_check=True)
+        print("✅")
+    except Exception as e:
+        try:
+            raise OnnxCheckerError(
+                "Conversion successful but the ONNX model fails ONNX checker. "
+                "Please create an issue "
+                f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+                "attach the full error stack as well as reproduction scripts. "
+            ) from e
+        except OnnxCheckerError:
+            _reporting.create_onnx_export_error_report(
+                f"onnx_export_{timestamp}_checker.md",
+                traceback.format_exc(),
+                program,
+                step=2,
                 profile_result=profile_result,
             )
+
+    if not validate:
+        return ir_model
+
+    # try:
+    #     print("Execute the model with ONNX Runtime... ", end="")
+    #     print("✅")
+    # except Exception as e:
+    #     raise OnnxConversionError(
+    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
+    #         "Please create an issue "
+    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+    #         "attach the full error stack as well as reproduction scripts. "
+    #     ) from e
+
+    return ir_model
 
 
 _original_torch_onnx_export = torch.onnx.export
@@ -317,12 +326,13 @@ _original_torch_onnx_utils_export = torch.onnx.utils._export
 
 
 def patch_torch(error_report: bool = False):
+    global WRITE_ERROR_REPORT
     if error_report:
-        torch.onnx.export = _torch_onnx_export_adapter_with_error_report
-        torch.onnx.utils._export = _torch_onnx_export_adapter_with_error_report
+        WRITE_ERROR_REPORT = True
     else:
-        torch.onnx.export = torch_onnx_export_adaptor
-        torch.onnx.utils._export = torch_onnx_export_adaptor
+        WRITE_ERROR_REPORT = False
+    torch.onnx.export = _torch_onnx_export_adapter_with_error_report
+    torch.onnx.utils._export = _torch_onnx_export_adapter_with_error_report
 
 
 def unpatch_torch():

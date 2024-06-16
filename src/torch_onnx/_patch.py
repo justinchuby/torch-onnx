@@ -272,7 +272,7 @@ def _torch_onnx_export_adapter_with_error_report(
         profiler.stop()
         profile_result = profiler.output_text(unicode=True)
         _reporting.crete_onnx_export_profile_report(
-            f"onnx_export_{timestamp}_profile.md", profile_result
+            f"onnx_export_{timestamp}_profile.md", program, profile_result
         )
 
     if not error_report:

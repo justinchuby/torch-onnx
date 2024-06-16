@@ -67,10 +67,16 @@ def create_onnx_export_error_report(
             f.write("```\n")
 
 
-def crete_onnx_export_profile_report(filename: str, profile_result: str):
+def crete_onnx_export_profile_report(
+    filename: str, program: torch.export.ExportedProgram, profile_result: str
+):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(4, False))
+        f.write("Exported program:\n\n")
+        f.write("```python\n")
+        f.write(str(program))
+        f.write("```\n\n")
         f.write("## Profile result\n\n")
         f.write("```\n")
         f.write(profile_result)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import textwrap
 import traceback
-import typing
 from collections import defaultdict
 
 import onnxscript

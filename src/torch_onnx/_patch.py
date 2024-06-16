@@ -111,6 +111,7 @@ def torch_onnx_export_adaptor(
     dynamic_axes: Mapping[str, Mapping[int, str]]
     | Mapping[str, Sequence[int]]
     | None = None,
+    check: bool = False,
     **_,
 ) -> ir.Model:
     if not kwargs and args and isinstance(args[-1], dict):
@@ -153,7 +154,8 @@ def torch_onnx_export_adaptor(
             )
             onnx.save_model(proto, f, save_as_external_data=True)
         else:
-            onnx.checker.check_model(proto, full_check=True)
+            if check:
+                onnx.checker.check_model(proto, full_check=True)
             onnx.save_model(proto, f)
 
     except Exception as e:
@@ -177,7 +179,7 @@ def _torch_onnx_export_adapter_with_error_report(
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     error_report_name = f"{timestamp}.md"
     try:
-        torch_onnx_export_adaptor(*args, **kwargs)
+        torch_onnx_export_adaptor(*args, **kwargs, check=True)
     except OnnxConversionError:
         # Run the analysis to get the error report
         model = args[0]

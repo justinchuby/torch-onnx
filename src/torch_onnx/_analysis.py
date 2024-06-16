@@ -72,6 +72,14 @@ def _format_model_info(model_info: ModelInfo) -> str:
             ## Model Information
 
             The model has {sum(model_info.parameter_count.values())} parameters and {sum(model_info.buffer_count.values())} buffers (non-trainable parameters).
+            Number of parameters per dtype:
+            ```python
+            {model_info.parameter_count}
+            ```
+            Number of buffers per dtype:
+            ```python
+            {model_info.buffer_count}
+            ```
             """
         ),
         "Inputs:",
@@ -117,9 +125,11 @@ def _format_model_info(model_info: ModelInfo) -> str:
         for target, nodes in sorted(
             target_to_nodes.items(), key=lambda x: x[0], reverse=True
         ):
-            lines.append(
-                f"- `{target}`: {target_to_messages[target]}. Example node: `{nodes[0].format_node()}`. All nodes: {nodes}"
+            message = textwrap.indent(
+                f"{target_to_messages[target]}. Example node: `{nodes[0].format_node()}`. All nodes: `{nodes}`",
+                "    ",
             )
+            lines.append(f"- `{target}`: {message}")
     else:
         lines.append("All operators in the model have registered ONNX decompositions.")
 
@@ -199,9 +209,7 @@ def analyze(
                 onnx_function, message = _dispatching.dispatch(node, registry)
             except Exception:
                 message = "Critical Error in dispatcher:\n"
-                message += textwrap.indent(
-                    f"```pytb\n{traceback.format_exc()}\n```\n", "    "
-                )
+                message += f"```pytb\n{traceback.format_exc()}\n```\n"
                 onnx_function = None
             if onnx_function is None:
                 model_info.dispatch_failures.append((node, message))

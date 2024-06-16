@@ -265,11 +265,11 @@ def get_matching_overload(
             return overload, "Successfully matched overload"
         else:
             failure_messages.append(
-                f"- Failed to match overload '{overload}': {fail_reason}"
+                f"- Failed to match overload `{overload}`: {fail_reason}"
             )
     return (
         None,
-        f"All overloads did not match the node '{node.format_node()}'.\n"
+        f"All overloads did not match the node `{node.format_node()}`.\n"
         + "\n".join(failure_messages),
     )
 

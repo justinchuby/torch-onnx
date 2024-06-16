@@ -217,7 +217,7 @@ def _torch_onnx_export_adapter_with_error_report(
         ir_model, _ = _torch_onnx_export_adaptor(*args, **kwargs)
         return ir_model
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
     f = args[2]
     try:
         if profile:

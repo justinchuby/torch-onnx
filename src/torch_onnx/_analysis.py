@@ -70,38 +70,42 @@ def _format_model_info(model_info: ModelInfo) -> str:
     lines = [
         textwrap.dedent(
             f"""\
-            # PyTorch ONNX Conversion Analysis
+            PyTorch ONNX Conversion Analysis
 
-            ## Model information
-            The model has {sum(model_info.parameter_count.values())} parameters and
-            {sum(model_info.buffer_count.values())} buffers (non-trainable parameters).
+            ## Model Information
 
-            The FX graph has {model_info.fx_node_count} nodes in total. Number of FX nodes per op:
+            The model has {sum(model_info.parameter_count.values())} parameters and {sum(model_info.buffer_count.values())} buffers (non-trainable parameters).
             """
-        )
+        ),
+        "Inputs:",
+        *[f"- `{name}`: `{meta}`" for name, meta in model_info.inputs.items()],
+        "",
+        "Outputs:",
+        *[f"- `{name}`: `{meta}`" for name, meta in model_info.outputs.items()],
+        "",
+        f"The FX graph has {model_info.fx_node_count} nodes in total. Number of FX nodes per op:",
     ]
     for op, count in model_info.fx_node_op_count.items():
-        lines.append(f"    {op}: {count}")
-
-    lines.append("\nOf the call_function nodes, the number of targets per function is:")
+        lines.append(f"- {op}: {count}")
+    lines.append("\n")
+    lines.append("Of the call_function nodes, the counts of operators used are:\n")
     sorted_targets = sorted(
         model_info.fx_node_target_count.items(), key=lambda x: x[1], reverse=True
     )
     for target, count in sorted_targets:
-        lines.append(f"    - {target}: {count}")
+        lines.append(f"- `{target}`: {count}")
 
     lines.append("")
-    lines.append("## ONNX conversion information")
+    lines.append("## ONNX Conversion Information")
     lines.append("")
 
     if model_info.dispatch_failures:
         lines.append(
-            "The model contains operators the dispatcher could not find ONNX equivalents for."
-        )
-        lines.append(
+            "The model contains operators the dispatcher could not find ONNX equivalents for. "
             "This may be due to missing implementations or a bug in the dispatcher."
         )
-        lines.append("Error grouped by operator:")
+        lines.append("")
+        lines.append("Errors grouped by operator:\n")
 
         target_to_nodes = defaultdict(list)
         for node, _ in model_info.dispatch_failures:
@@ -116,7 +120,7 @@ def _format_model_info(model_info: ModelInfo) -> str:
             target_to_nodes.items(), key=lambda x: x[0], reverse=True
         ):
             lines.append(
-                f"    - {target}: {target_to_messages[target]}. Example node: {nodes[0].format_node()}. All nodes: {nodes}"
+                f"- `{target}`: {target_to_messages[target]}. Example node: `{nodes[0].format_node()}`. All nodes: {nodes}"
             )
     else:
         lines.append("All operators in the model have ONNX equivalents.")
@@ -166,7 +170,7 @@ def analyze(
     exported_program: torch.export.ExportedProgram,
     registry: _registration.OnnxRegistry | None = None,
     file: SupportsWrite[str] | None = None,
-) -> None:
+) -> str:
     """Analyze the compatibility of the exported program."""
     # Get basic information about the model
     model_info = ModelInfo()
@@ -192,9 +196,15 @@ def analyze(
     for node in exported_program.graph.nodes:
         model_info.fx_node_op_count[node.op] += 1
         if node.op == "call_function":
-            onnx_function, message = _dispatching.dispatch(node, registry)
+            try:
+                onnx_function, message = _dispatching.dispatch(node, registry)
+            except Exception as e:
+                message = f"Critical Error in dispatcher: {e}"
+                onnx_function = None
             if onnx_function is None:
                 model_info.dispatch_failures.append((node, message))
 
-    # Write the results to a file
-    print(_format_model_info(model_info), file=file)
+    # Print the results
+    report = _format_model_info(model_info)
+    print(report, file=file)
+    return report

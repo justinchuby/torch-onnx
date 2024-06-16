@@ -309,11 +309,11 @@ def dispatch(
     if is_complex:
         decomp_metas = [decomp for decomp in decomp_metas if decomp.is_complex]
         if not decomp_metas:
-            return None, "No decompositions defined for the complex-valued input"
+            return None, "No decompositions registered for the complex-valued input"
     else:
         decomp_metas = [decomp for decomp in decomp_metas if not decomp.is_complex]
         if not decomp_metas:
-            return None, "No decompositions defined for the real-valued input"
+            return None, "No decompositions registered for the real-valued input"
 
     if len(decomp_metas) == 1:
         return decomp_metas[

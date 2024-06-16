@@ -16,7 +16,7 @@ import torch.export
 from onnxscript import ir
 
 import torch_onnx
-from torch_onnx import _analysis, _ir_passes
+from torch_onnx import _ir_passes, _reporting
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -32,6 +32,24 @@ class TorchExportError(RuntimeError):
 
 class OnnxConversionError(RuntimeError):
     """Error during ONNX conversion."""
+
+    pass
+
+
+class OnnxCheckerError(RuntimeError):
+    """Error during ONNX model checking."""
+
+    pass
+
+
+class OnnxRuntimeError(RuntimeError):
+    """Error during ONNX Runtime execution."""
+
+    pass
+
+
+class OnnxValidationError(RuntimeError):
+    """Output value mismatch."""
 
     pass
 
@@ -98,6 +116,23 @@ def _from_dynamic_axes_to_dynamic_shapes(
     return dynamic_shapes
 
 
+def _get_torch_export_args(
+    model: torch.nn.Module,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any] | None,
+    dynamic_axes: Mapping[str, Mapping[int, str]] | Mapping[str, Sequence[int]] | None,
+    input_names: Sequence[str] | None,
+):
+    if not kwargs and args and isinstance(args[-1], dict):
+        kwargs = args[-1]
+        args = args[:-1]
+
+    dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
+        model, dynamic_axes, input_names
+    )
+    return args, kwargs, dynamic_shapes
+
+
 def torch_onnx_export_adaptor(
     model: torch.nn.Module,
     args: tuple[Any, ...],
@@ -111,20 +146,19 @@ def torch_onnx_export_adaptor(
     dynamic_axes: Mapping[str, Mapping[int, str]]
     | Mapping[str, Sequence[int]]
     | None = None,
-    check: bool = False,
+    check: bool = False,  # Run ONNX checker
+    validate: bool = False,  # Validate with ONNX Runtime
     **_,
-) -> ir.Model:
-    if not kwargs and args and isinstance(args[-1], dict):
-        kwargs = args[-1]
-        args = args[:-1]
-
-    dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
-        model, dynamic_axes, input_names
+) -> tuple[ir.Model, torch.export.ExportedProgram]:
+    args, kwargs, dynamic_shapes = _get_torch_export_args(
+        model, args, kwargs, dynamic_axes, input_names
     )
     try:
+        print("Obtain model graph with `torch.export.export`... ", end="")
         program = torch.export.export(
             model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
         )
+        print("✅")
     except Exception as e:
         raise TorchExportError(
             "Failed to export the model with torch.export. "
@@ -135,6 +169,7 @@ def torch_onnx_export_adaptor(
         ) from e
 
     try:
+        print("Translate the graph into ONNX... ", end="")
         ir_model = torch_onnx.exported_program_to_ir(program)
 
         if input_names:
@@ -154,9 +189,8 @@ def torch_onnx_export_adaptor(
             )
             onnx.save_model(proto, f, save_as_external_data=True)
         else:
-            if check:
-                onnx.checker.check_model(proto, full_check=True)
             onnx.save_model(proto, f)
+        print("✅")
 
     except Exception as e:
         raise OnnxConversionError(
@@ -169,56 +203,113 @@ def torch_onnx_export_adaptor(
             "an ExportedProgram with `torch.export.export()`."
         ) from e
 
-    return ir_model
+    if not check:
+        return ir_model, program
+    try:
+        print("Run `onnx.checker` on the ONNX model... ", end="")
+        if not isinstance(f, io.BytesIO):
+            onnx.checker.check_model(f, full_check=True)
+        else:
+            onnx.checker.check_model(proto, full_check=True)
+        print("✅")
+    except Exception as e:
+        raise OnnxCheckerError(
+            "Conversion successful but the ONNX model fails ONNX checker. "
+            "Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. "
+        ) from e
+
+    if not validate:
+        return ir_model, program
+
+    # try:
+    #     print("Execute the model with ONNX Runtime... ", end="")
+    #     print("✅")
+    # except Exception as e:
+    #     raise OnnxConversionError(
+    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
+    #         "Please create an issue "
+    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+    #         "attach the full error stack as well as reproduction scripts. "
+    #     ) from e
+
+    return ir_model, program
 
 
 def _torch_onnx_export_adapter_with_error_report(
     *args,
+    profile: bool = False,
     **kwargs,
 ) -> ir.Model:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     error_report_name = f"{timestamp}.md"
     try:
+        if profile:
+            import pyinstrument
+
+            profiler = pyinstrument.Profiler()
+            profiler.start()
         torch_onnx_export_adaptor(*args, **kwargs, check=True)
-    except OnnxConversionError:
+    except TorchExportError:
+        if profile:
+            profiler.stop()
+            profile_result = profiler.output_text(unicode=True)
+        else:
+            profile_result = None
+        _reporting.create_torch_export_error_report(
+            error_report_name, traceback.format_exc(), profile_result=profile_result
+        )
+        raise
+    except (
+        OnnxConversionError,
+        OnnxCheckerError,
+        OnnxRuntimeError,
+        OnnxValidationError,
+    ) as e:
+        if profile:
+            profiler.stop()
+            profile_result = profiler.output_text(unicode=True)
+        else:
+            profile_result = None
+
         # Run the analysis to get the error report
         model = args[0]
         arg_args = args[1]
         arg_kwargs = kwargs.get("kwargs", {})
-        if not arg_kwargs and args and isinstance(arg_args[-1], dict):
-            arg_kwargs = arg_args[-1]
-            arg_args = arg_args[:-1]
         dynamic_axes = kwargs.get("dynamic_axes")
-        if dynamic_axes is not None:
-            dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(model, dynamic_axes)
-        else:
-            dynamic_shapes = None
+        arg_args, arg_kwargs, dynamic_shapes = _get_torch_export_args(
+            model, arg_args, arg_kwargs, dynamic_axes, None
+        )
+
         program = torch.export.export(
             model, arg_args, kwargs=arg_kwargs, dynamic_shapes=dynamic_shapes
         )
-        with open(f"torch_onnx_error_{error_report_name}", "w") as f:
-            f.write("# PyTorch ONNX Conversion Error report\n\n")
-            f.write("**Step 2/2 error: ONNX translation error.**\n\n")
-            f.write("Error message:\n\n")
-            f.write("```pytb\n")
-            f.write(traceback.format_exc())
-            f.write("```\n\n")
-            f.write("Exported program:\n\n")
-            f.write("```python\n")
-            f.write(str(program))
-            f.write("```\n\n")
-            f.write("## Analysis\n\n")
-            _analysis.analyze(program, file=f)
+        if isinstance(e, OnnxConversionError):
+            step = 1
+        elif isinstance(e, OnnxCheckerError):
+            step = 2
+        elif isinstance(e, OnnxRuntimeError):
+            step = 3
+        elif isinstance(e, OnnxValidationError):
+            step = 4
+
+        _reporting.create_onnx_export_error_report(
+            error_report_name,
+            traceback.format_exc(),
+            program,
+            step=step,
+            profile_result=profile_result,
+        )
         raise
-    except (TorchExportError, Exception):
-        with open(f"torch_export_error_{error_report_name}", "w") as f:
-            f.write("# PyTorch ONNX Conversion Error report\n\n")
-            f.write("**Step 1/2 error: `torch.export.export` error.**\n\n")
-            f.write("Error message:\n\n")
-            f.write("```pytb\n")
-            f.write(traceback.format_exc())
-            f.write("```\n")
-        raise
+    else:
+        if profile:
+            profiler.stop()
+            profile_result = profiler.output_text(unicode=True)
+            _reporting.crete_onnx_export_profile_report(
+                error_report_name,
+                profile_result=profile_result,
+            )
 
 
 _original_torch_onnx_export = torch.onnx.export

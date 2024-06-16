@@ -64,7 +64,7 @@ def create_onnx_export_error_report(
             f.write("ONNX model:\n\n")
             f.write("```python\n")
             f.write(str(ir_model))
-            f.write("```\n\n")
+            f.write("\n```\n\n")
         f.write("## Analysis\n\n")
         _analysis.analyze(program, file=f)
         if profile_result is not None:

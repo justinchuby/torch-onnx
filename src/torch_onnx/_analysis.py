@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import textwrap
 import traceback
-import typing
 from collections import defaultdict
 
 import onnxscript
@@ -15,9 +14,6 @@ import torch.fx
 from torch.export import graph_signature
 
 from torch_onnx import _dispatching, _registration
-
-if typing.TYPE_CHECKING:
-    from _typeshed import SupportsWrite
 
 
 @dataclasses.dataclass
@@ -172,7 +168,7 @@ def _count_fx_targets(
 def analyze(
     exported_program: torch.export.ExportedProgram,
     registry: _registration.OnnxRegistry | None = None,
-    file: SupportsWrite[str] | None = None,
+    file=None,
 ) -> str:
     """Analyze the compatibility of the exported program."""
     # Get basic information about the model
@@ -212,5 +208,5 @@ def analyze(
 
     # Print the results
     report = _format_model_info(model_info)
-    print(report, file=file)
+    print(report, file=file, flush=True)
     return report

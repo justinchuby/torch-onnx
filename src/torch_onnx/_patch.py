@@ -209,12 +209,11 @@ def _torch_onnx_export_adaptor(
 def _torch_onnx_export_adapter_with_error_report(
     *args,
     profile: bool = False,
-    check: bool = False,
-    validate: bool = False,
     error_report: bool = False,
     **kwargs,
 ) -> ir.Model:
-    if not (WRITE_ERROR_REPORT or error_report):
+    error_report = (WRITE_ERROR_REPORT or error_report)
+    if not error_report:
         ir_model, _ = _torch_onnx_export_adaptor(*args, **kwargs)
         return ir_model
 
@@ -274,7 +273,7 @@ def _torch_onnx_export_adapter_with_error_report(
             f"onnx_export_{timestamp}_profile.md", profile_result
         )
 
-    if not check:
+    if not error_report:
         return ir_model
 
     try:
@@ -304,9 +303,6 @@ def _torch_onnx_export_adapter_with_error_report(
                 profile_result=profile_result,
             )
 
-    if not validate:
-        return ir_model
-
     # try:
     #     print("Execute the model with ONNX Runtime... ", end="")
     #     print("✅")
@@ -325,7 +321,7 @@ _original_torch_onnx_export = torch.onnx.export
 _original_torch_onnx_utils_export = torch.onnx.utils._export
 
 
-def patch_torch(error_report: bool = False):
+def patch_torch(error_report: bool = False, profile: bool = False):
     global WRITE_ERROR_REPORT
     if error_report:
         WRITE_ERROR_REPORT = True

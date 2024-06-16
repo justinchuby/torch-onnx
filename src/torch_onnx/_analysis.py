@@ -16,9 +16,6 @@ from torch.export import graph_signature
 
 from torch_onnx import _dispatching, _registration
 
-if typing.TYPE_CHECKING:
-    from _typeshed import SupportsWrite
-
 
 @dataclasses.dataclass
 class ModelInfo:
@@ -172,7 +169,7 @@ def _count_fx_targets(
 def analyze(
     exported_program: torch.export.ExportedProgram,
     registry: _registration.OnnxRegistry | None = None,
-    file: SupportsWrite[str] | None = None,
+    file=None,
 ) -> str:
     """Analyze the compatibility of the exported program."""
     # Get basic information about the model
@@ -212,5 +209,5 @@ def analyze(
 
     # Print the results
     report = _format_model_info(model_info)
-    print(report, file=file)
+    print(report, file=file, flush=True)
     return report

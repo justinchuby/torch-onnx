@@ -255,11 +255,11 @@ def get_matching_overload(
                 # TODO: Handle None attributes
                 # Handle tensors and Python values
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
-                    fail_reason = f"Parameter type not compatible with argument: param={param}, assigned_types={assigned_types}, arg={arg}"
+                    fail_reason = f"Parameter type not compatible with argument: param=`{param}`, assigned_types=`{assigned_types}`, arg=`{arg}`"
                     break
             elif isinstance(param, _schemas.AttributeParameter):
                 if not _attribute_type_compatible_with_arg(param, arg):
-                    fail_reason = f"Attribute type not compatible with argument: param={param}, arg={arg}"
+                    fail_reason = f"Attribute type not compatible with argument: param=`{param}`, arg=`{arg}`"
                     break
         if not fail_reason:
             return overload, "Successfully matched overload"

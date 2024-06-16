@@ -25,7 +25,55 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["torch", "onnxscript>=0.1.0.dev20240614", "onnx"]
+dependencies = ["torch", "onnxscript>=0.1.0.dev20240614", "onnx>=1.16"]
 
 [project.urls]
 Repository = "https://github.com/justinchuby/torch-onnx"
+
+[tool.ruff]
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "B904", # Re-raised error without specifying the cause via the from keyword
+    "E",
+    "EXE",
+    "F",
+    "G",
+    "LOG",
+    "NPY",
+    "PERF",
+    "PGH004",
+    "PIE794",
+    "PIE800",
+    "PIE804",
+    "PIE807",
+    "PIE810",
+    "PLC",
+    "PLE",
+    "PLR0133", # constant comparison
+    "PLR0206", # property with params
+    "PLR1722", # use sys exit
+    "PLW",
+    "PYI",
+    "RSE",
+    "RUF",
+    "SIM",
+    "TRY002",
+    "TRY302",
+    "TRY401",
+    "UP",
+    "W",
+]
+
+ignore = [
+  "E501", # line too long
+  "PYI041",
+  "NPY002",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/onnx_test_common.py" = ["UP006", "UP007"]
+"tests/pytorch_test.py" = ["UP006", "UP007"]
+"tests/pytorch_test_common.py" = ["UP006", "UP007"]

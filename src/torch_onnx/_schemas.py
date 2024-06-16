@@ -10,7 +10,6 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
-    Type,
     TypeVar,
     Union,
 )
@@ -94,9 +93,7 @@ class TypeConstraintParam:
 
     @classmethod
     def any_tensor(cls, name: str, description: str = "") -> TypeConstraintParam:
-        return cls(
-            name, set(ir.TensorType(dtype) for dtype in ir.DataType), description
-        )
+        return cls(name, {ir.TensorType(dtype) for dtype in ir.DataType}, description)
 
     @classmethod
     def any_value(cls, name: str, description: str = "") -> TypeConstraintParam:
@@ -185,7 +182,7 @@ def _convert_formal_parameter(
     )
 
 
-def _is_optional(type_: Type) -> bool:
+def _is_optional(type_: type) -> bool:
     """Returns whether a type_ is an Optional."""
     origin_type = typing.get_origin(type_)
     if origin_type is Union and type(None) in typing.get_args(type_):
@@ -204,7 +201,7 @@ def _is_optional(type_: Type) -> bool:
     return False
 
 
-def _get_attr_type(type_: Type) -> ir.AttributeType:
+def _get_attr_type(type_: type) -> ir.AttributeType:
     """Obtain the type of the attribute from a Python class."""
     try:
         if type_ in _PY_TYPE_TO_ATTR_TYPE:
@@ -416,7 +413,9 @@ class OpSignature:
         for param in py_signature.parameters.values():
             if param.name not in type_hints:
                 logger.warning(
-                    f"Missing annotation for parameter '{param.name}' from {py_signature}. Treating as an Input."
+                    "Missing annotation for parameter '%s' from %s. Treating as an Input.",
+                    param.name,
+                    py_signature,
                 )
                 type_constraints[param.name] = TypeConstraintParam.any_value(
                     f"T_{param.name}"

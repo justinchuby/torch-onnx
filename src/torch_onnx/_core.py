@@ -378,9 +378,9 @@ def _handle_call_function_node_with_lowering(
     fx_args, fx_kwargs = _fill_in_default_kwargs(node)
 
     # Replace the input FX nodes with ONNX values
-    onnx_args = []
-    for input_ in fx_args:
-        onnx_args.append(_convert_fx_arg_to_onnx_arg(input_, node_name_to_values))
+    onnx_args = [
+        _convert_fx_arg_to_onnx_arg(input_, node_name_to_values) for input_ in fx_args
+    ]
 
     onnx_kwargs = {}
     for key, value in fx_kwargs.items():
@@ -557,9 +557,7 @@ def _get_inputs_and_attributes(
                 "requires_grad",
                 "memory_format",
                 "implicit",
-            }:
-                attr = str(kwarg)
-            elif isinstance(kwarg, torch.device):
+            } or isinstance(kwarg, torch.device):
                 attr = str(kwarg)
             elif isinstance(kwarg, torch.dtype):
                 attr = _torch_dtype_to_onnx_dtype(kwarg)
@@ -709,7 +707,7 @@ def exported_program_to_ir(
         ir_tensor = TorchTensor(torch_tensor, name=name)
         model.graph.initializers[name].const_value = ir_tensor
         _set_shape_type(
-            model.graph.initializers[name],
+            value,
             torch_tensor,
             complex_to_float=lower != "none",
         )

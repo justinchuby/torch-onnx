@@ -409,7 +409,7 @@ def _try_clone_model(model: _ModelType) -> _ModelType:
     try:
         return copy.deepcopy(model)
     except Exception:
-        warnings.warn(
+        warnings.warn(  # noqa: B028
             "Failed to clone model. Model state might be mutated during verification."
         )
         return model

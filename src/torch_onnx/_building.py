@@ -260,7 +260,7 @@ def _process_python_constants(
             # Deduplicate the constants
             if isinstance(arg, (tuple, list)):
                 # Make the arg hashable
-                arg = tuple(arg)
+                arg = tuple(arg)  # noqa: PLW2901
             constant_value = constant_farm.get((arg, dtype))
             if constant_value is None:
                 constant_tensor = ir.tensor(value=arg, dtype=dtype)
@@ -436,7 +436,7 @@ class OpRecorder(evaluator.Evaluator):
             # NOTE: signature is written to function in the registration process
             # TODO: Upstream signature to ONNX Function
             if hasattr(function, "signature"):
-                op_signature = getattr(function, "signature")
+                op_signature = function.signature
             else:
                 op_signature = _schemas.OpSignature.from_function(
                     function, function.function_ir.domain, function.name

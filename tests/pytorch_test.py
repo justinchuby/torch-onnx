@@ -399,7 +399,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x_in):
                 x_out = {}
                 x_out["test_key_out"] = torch.add(
-                    x_in[list(x_in.keys())[0]],
+                    x_in[list(x_in.keys())[0]],  # noqa: RUF015
                     list(x_in.keys())[0],  # noqa: RUF015
                 )
                 return x_out
@@ -523,8 +523,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(
                 self,
                 x,
-                y: Optional[Tensor] = torch.ones(2, 3),
-                z: Optional[Tensor] = torch.zeros(2, 3),
+                y: Optional[Tensor] = torch.ones(2, 3),  # noqa: B008
+                z: Optional[Tensor] = torch.zeros(2, 3),  # noqa: B008
             ):
                 if y is not None:
                     return x + y
@@ -547,8 +547,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(
                 self,
                 x,
-                y: Optional[Tensor] = torch.ones(2, 3),
-                z: Optional[Tensor] = torch.zeros(2, 3),
+                y: Optional[Tensor] = torch.ones(2, 3),  # noqa: B008
+                z: Optional[Tensor] = torch.zeros(2, 3),  # noqa: B008
             ):
                 if y is not None:
                     return x + y
@@ -607,8 +607,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class Model(torch.nn.Module):
             def forward(
                 self,
-                x: Optional[Tensor] = torch.ones(2, 3),
-                y: Optional[Tensor] = torch.zeros(2, 3),
+                x: Optional[Tensor] = torch.ones(2, 3),  # noqa: B008
+                y: Optional[Tensor] = torch.zeros(2, 3),  # noqa: B008
             ):
                 if x is not None:
                     return x
@@ -633,8 +633,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class Model(torch.nn.Module):
             def forward(
                 self,
-                x: Optional[Tensor] = torch.ones(2, 3),
-                y: Optional[Tensor] = torch.zeros(2, 3),
+                x: Optional[Tensor] = torch.ones(2, 3),  # noqa: B008
+                y: Optional[Tensor] = torch.zeros(2, 3),  # noqa: B008
             ):
                 if x is not None:
                     return x
@@ -1985,7 +1985,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x):
                 results = []
                 for i in range(4):
-                    results.append(x[: x.size(0) - i, i : x.size(2), i:3])
+                    results.append(x[: x.size(0) - i, i : x.size(2), i:3])  # noqa: PERF401
                 return tuple(results)
 
         x = torch.rand(5, 5, 5)
@@ -2028,7 +2028,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x):
                 results = []
                 for i in range(4):
-                    results.append(x[:, i:, x.size(2) - 5])
+                    results.append(x[:, i:, x.size(2) - 5])  # noqa: PERF401
                 return tuple(results)
 
         x = torch.rand(5, 5, 5)
@@ -2851,7 +2851,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
     def _interpolate(self, x, mode, use_size, is_upsample, align_corners=False):
         class MyModel(torch.nn.Module):
-            __constants__ = [
+            __constants__ = [  # noqa: RUF012
                 "mode",
                 "use_size",
                 "is_upsample",
@@ -5927,7 +5927,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class NestedLoopsModel(torch.jit.ScriptModule):
             @torch.jit.script_method
             def forward(self, x):
-                for i in range(5):
+                for i in range(5):  # noqa: B007
                     a = 0
                     while a < 4:
                         a += 1
@@ -5953,7 +5953,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                     res.append(arr[i].sum(0, False))
                     res1.append(arr[-1 - i].sum(0, False))
                     res2 += 1
-                    res3 = res3 + [arr[i].sum(0, False)]
+                    res3 = res3 + [arr[i].sum(0, False)]  # noqa: RUF005
                     res4 += [arr[-1 - i].sum(0, False)]
                 return res, res1, res2, torch.stack(res3), torch.stack(res4)
 
@@ -5966,7 +5966,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class LoopModel(torch.nn.Module):
             def forward(self, x):
                 res = torch.zeros_like(x[0])
-                for i in range(x.size(0)):
+                for i in range(x.size(0)):  # noqa: B007
                     res += x[0].transpose(0, 1)
                 return res
 
@@ -6002,7 +6002,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 res.insert(0, tensors[1])
                 res.append(tensors[2])
                 res += [tensors[3], tensors[4]]
-                res = res + [tensors[5]]
+                res = res + [tensors[5]]  # noqa: RUF005
                 return torch.ones(len(res))
 
         model = ListModel()
@@ -6047,7 +6047,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 for i in range(x.size(0)):
                     if len(res) > 2:
                         for j in range(x.size(1)):
-                            res.append(x[i][j])
+                            res.append(x[i][j])  # noqa: PERF401
                         res_replicate.append(res[-1])
                         res.append(res_replicate[-1])
                 return res, res_replicate
@@ -6144,7 +6144,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x, y):
                 res = []
                 for i in range(x.size(0)):
-                    res.append(x[i])
+                    res.append(x[i])  # noqa: PERF401
                 res[y] = x[y]
                 return res
 
@@ -6160,7 +6160,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 indices = torch.arange(x.size(0))
                 res = []
                 for i in range(x.size(0)):
-                    res.append(x[i])
+                    res.append(x[i])  # noqa: PERF401
                 return res[torch.sum(indices[:y])]
 
         model = torch.jit.script(ListModel())
@@ -6601,7 +6601,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 a = torch.ones(
                     12,
                 )
-                for i in range(10):
+                for i in range(10):  # noqa: B007
                     a.add_(
                         torch.ones(
                             12,
@@ -6630,7 +6630,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 b_ref = b  # not used in loop, should not be altered.
                 for i in range(10):
                     if i == 3:
-                        for j in range(5):
+                        for j in range(5):  # noqa: B007
                             a += _bias
                             _bias.add_(
                                 torch.ones(
@@ -6675,7 +6675,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 )
                 for i in range(10):
                     if i == 3:
-                        for j in range(5):
+                        for j in range(5):  # noqa: B007
                             self._bias += torch.arange(
                                 12,
                             )
@@ -6702,7 +6702,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 )
                 for i in range(10):
                     if i == 3:
-                        for j in range(5):
+                        for j in range(5):  # noqa: B007
                             self._bias.copy_(
                                 torch.arange(
                                     12,
@@ -6741,7 +6741,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                     beam_idx = 0
                     for _, token in enumerate(x[i]):
                         beam_hyps.append(token)
-                        beam_idx += 1
+                        beam_idx += 1  # noqa: SIM113
 
                         if beam_idx == 6:
                             break
@@ -6772,7 +6772,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x):
                 out = []
                 for i in range(-2, 2):
-                    out.append(torch.sort(x, dim=i, descending=True))
+                    out.append(torch.sort(x, dim=i, descending=True))  # noqa: PERF401
                 return out
 
         x = torch.randn(3, 4)
@@ -6785,7 +6785,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x):
                 out = []
                 for i in range(-2, 2):
-                    out.append(torch.sort(x, dim=i, descending=False))
+                    out.append(torch.sort(x, dim=i, descending=False))  # noqa: PERF401
                 return out
 
         x = torch.randn(3, 4)
@@ -8163,7 +8163,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         class IfFoldModel(torch.nn.Module):
             def forward(self, y):
-                if y.numel() > 1:
+                if y.numel() > 1:  # noqa: SIM108
                     y = y + 4
                 else:
                     y = y + 2
@@ -8186,7 +8186,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         class IfFoldModel(torch.nn.Module):
             def forward(self, y):
-                if y.dim() >= 1:
+                if y.dim() >= 1:  # noqa: SIM108
                     y = y + 4
                 else:
                     y = y - 1
@@ -8197,7 +8197,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         class IfFoldModel(torch.nn.Module):
             def forward(self, y):
-                if y.dim() <= 1:
+                if y.dim() <= 1:  # noqa: SIM108
                     y = y + 4
                 else:
                     y = y + 2
@@ -8244,7 +8244,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         class IfFoldModel(torch.nn.Module):
             def forward(self, x, y):
-                if x.numel() == y.numel():
+                if x.numel() == y.numel():  # noqa: SIM108
                     y = x + y
                 else:
                     y = y - x
@@ -8256,7 +8256,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         class IfFoldModel(torch.nn.Module):
             def forward(self, x, y):
-                if x.numel() != y.numel():
+                if x.numel() != y.numel():  # noqa: SIM108
                     y = x + y
                 else:
                     y = y - x
@@ -8388,7 +8388,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class SequanceLoopModel(torch.nn.Module):
             def forward(self, x):
                 outputs = []
-                for i in range(3):
+                for i in range(3):  # noqa: B007
                     outputs += [x]
                 return torch.stack(outputs).transpose(0, 1)
 
@@ -8624,7 +8624,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 boxes = torch.zeros([poses.shape[0], 2, 4])
                 batch_boxes = []
                 for kp_boxes in boxes:
-                    kp_boxes = torchvision.ops.clip_boxes_to_image(kp_boxes, (2, 3))
+                    kp_boxes = torchvision.ops.clip_boxes_to_image(kp_boxes, (2, 3))  # noqa: PLW2901
                     batch_boxes.append(kp_boxes)
                 return batch_boxes
 
@@ -9555,9 +9555,9 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 a = (input1, input2)
                 b = a
                 c = (input1, input2, input3)
-                for i in range(5):
+                for i in range(5):  # noqa: B007
                     d = a[0]
-                    for j in range(2):
+                    for j in range(2):  # noqa: B007
                         e, f = a
                         a = (d, f)
                         f = c[2]
@@ -9581,7 +9581,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class TupleModule(torch.nn.Module):
             def forward(self, input1: Tensor, input2: Tensor) -> Tuple[Tensor, Tensor]:
                 a = (input1, input2)
-                for x in range(5):
+                for x in range(5):  # noqa: B007
                     c, d = a
                     a = (c, d)
                 return a
@@ -9599,7 +9599,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             ) -> Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]:
                 a = input1
                 b = input2
-                for x in range(5):
+                for x in range(5):  # noqa: B007
                     c, d = a
                     e, f = b
                     if c.shape[0] == e.shape[0]:
@@ -9789,10 +9789,10 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class IfModel(torch.nn.Module):
             def forward(self, x, y, cond):
                 res = []
-                if cond:
-                    res = res + [x]
+                if cond:  # noqa: SIM108
+                    res = res + [x]  # noqa: RUF005
                 else:
-                    res = res + [y]
+                    res = res + [y]  # noqa: RUF005
                 return res
 
         x = torch.randn(2, 3)
@@ -9805,7 +9805,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         class IfModel(torch.nn.Module):
             def forward(self, x, y, cond):
                 bs, seq = y.shape[:2]
-                if cond:
+                if cond:  # noqa: SIM108
                     res = x.view(bs, seq, -1)
                 else:
                     res = y
@@ -10858,7 +10858,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 self.conv.weight = torch.arange(10)
                 for i in range(10):
                     if i == 3:
-                        for j in range(10):
+                        for j in range(10):  # noqa: B007
                             w = self.conv.weight
                             self.conv.weight = torch.arange(10) + w
 
@@ -10920,7 +10920,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def set_cell_anchors(self, anchors):
                 self.conv.weight = torch.randn(3, 10)
                 for i in range(self.conv.weight.size(0)):
-                    for j in range(10):
+                    for j in range(10):  # noqa: B007
                         self.conv.bias = torch.randn(3, 10, 3)
                         self.conv.weight = anchors * i
                         self.boxes.append(torch.ones(3, 3))
@@ -11204,7 +11204,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x, y):
                 res = []
                 for i in range(x.size(0)):
-                    res.append(torch.matmul(x[i], y))
+                    res.append(torch.matmul(x[i], y))  # noqa: PERF401
                 return res
 
         model = torch.jit.script(ListModel())
@@ -11219,7 +11219,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 res = []
                 for i in range(x.size(0)):
                     for j in range(x.size(1)):
-                        res.append(torch.matmul(x[i][j], y))
+                        res.append(torch.matmul(x[i][j], y))  # noqa: PERF401
                 return res
 
         model = torch.jit.script(ListModel())
@@ -11234,8 +11234,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 res = []
                 elem = torch.matmul(x[0], y)
                 for i in range(x.size(0)):
-                    res.append(torch.matmul(x[i], y))
-                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))  # noqa: PERF401
+                for i in range(x.size(0)):  # noqa: B007
                     elem = res.pop()
                 for i in range(x.size(0)):
                     res.append(torch.matmul(x[i], y))
@@ -11254,8 +11254,8 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 res = []
                 elem = torch.matmul(x[0], y)
                 for i in range(x.size(0)):
-                    res.append(torch.matmul(x[i], y))
-                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))  # noqa: PERF401
+                for i in range(x.size(0)):  # noqa: B007
                     del res[0]
                 for i in range(x.size(0)):
                     res.append(torch.matmul(x[i], y))
@@ -11274,7 +11274,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 res = []
                 elem = torch.matmul(x[0], y)  # noqa: F841
                 for i in range(x.size(0)):
-                    res.append(torch.matmul(x[i], y))
+                    res.append(torch.matmul(x[i], y))  # noqa: PERF401
                 a, b, c = res
                 return a, b
 
@@ -11892,7 +11892,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 self.loop_count = loop_count
 
             def forward(self, x):
-                for i in range(self.loop_count):
+                for i in range(self.loop_count):  # noqa: B007
                     x.index_add_(self.dim, self.index, self.updates)
                 return x
 
@@ -13159,7 +13159,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
     def test_uninitialized_optional(self):
         class Module(torch.nn.Module):
             def forward(self, y: Optional[Tensor]) -> Optional[Tensor]:
-                if y is not None:
+                if y is not None:  # noqa: SIM102
                     if y.shape[1] < 5:
                         if y.size(0) == 1:
                             y = y + 4

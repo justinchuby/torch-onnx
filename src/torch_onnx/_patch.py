@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import io
 import logging
-from typing import Any, Mapping, Sequence, Union
+from typing import Any, Mapping, Sequence
 import warnings
 
 import onnx
@@ -19,7 +19,7 @@ from torch_onnx import _ir_passes
 _BLUE = "\033[96m"
 _END = "\033[0m"
 
-logger = logging.Logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _signature(model) -> inspect.Signature:
@@ -49,10 +49,7 @@ def _from_dynamic_axes_to_dynamic_shapes(
     if dynamic_axes is None:
         return None
 
-    if input_names is None:
-        input_names_set = set()
-    else:
-        input_names_set = set(input_names)
+    input_names_set = set() if input_names is None else set(input_names)
 
     dynamic_shapes = {}
     for input_name, axes in dynamic_axes.items():
@@ -77,9 +74,11 @@ def _from_dynamic_axes_to_dynamic_shapes(
     try:
         sig = _signature(model)
     except ValueError as e:
-        warnings.warn(f"{e}, skipping auto filling None on static axes...")
+        warnings.warn(
+            f"{e}, skipping auto filling None on static axes...", stacklevel=1
+        )
         return dynamic_shapes
-    for input_name in sig.parameters.keys():
+    for input_name in sig.parameters:
         if input_name not in dynamic_shapes:
             dynamic_shapes[input_name] = None
     return dynamic_shapes
@@ -88,7 +87,7 @@ def _from_dynamic_axes_to_dynamic_shapes(
 def torch_onnx_export_adaptor(
     model: torch.nn.Module,
     args: tuple[Any, ...],
-    f: Union[str, io.BytesIO],
+    f: str | io.BytesIO,
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,

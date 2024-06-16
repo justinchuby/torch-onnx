@@ -102,8 +102,9 @@ def _format_model_info(model_info: ModelInfo) -> str:
 
     if model_info.dispatch_failures:
         lines.append(
-            "The model contains operators the dispatcher could not find ONNX equivalents for. "
-            "This may be due to missing implementations or a bug in the dispatcher."
+            "The model contains operators the dispatcher could not find registered ONNX decompositions for. "
+            "This may be due to missing implementations, decompositions not registered "
+            "correctly, or a bug in the dispatcher."
         )
         lines.append("")
         lines.append("Errors grouped by operator:\n")
@@ -124,7 +125,7 @@ def _format_model_info(model_info: ModelInfo) -> str:
                 f"- `{target}`: {target_to_messages[target]}. Example node: `{nodes[0].format_node()}`. All nodes: {nodes}"
             )
     else:
-        lines.append("All operators in the model have ONNX equivalents.")
+        lines.append("All operators in the model have registered ONNX decompositions.")
 
     return "\n".join(lines)
 

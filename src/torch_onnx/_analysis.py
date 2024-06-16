@@ -73,13 +73,13 @@ def _format_model_info(model_info: ModelInfo) -> str:
 
             The model has {sum(model_info.parameter_count.values())} parameters and {sum(model_info.buffer_count.values())} buffers (non-trainable parameters).
             Number of parameters per dtype:
-                ```python
-                {model_info.parameter_count}
-                ```
+            ```python
+            {model_info.parameter_count}
+            ```
             Number of buffers per dtype:
-                ```python
-                {model_info.buffer_count}
-                ```
+            ```python
+            {model_info.buffer_count}
+            ```
             """
         ),
         "Inputs:",

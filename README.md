@@ -9,7 +9,7 @@ Experimental torch ONNX exporter.
 ## Installation
 
 ```bash
-pip install torch-onnx
+pip install --upgrade torch-onnx
 ```
 
 ## Usage

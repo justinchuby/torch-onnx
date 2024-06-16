@@ -197,11 +197,11 @@ def _torch_onnx_export_adapter_with_error_report(
         with open(f"torch_onnx_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("Error message:\n\n")
-            f.write("```\n")
+            f.write("```pytb\n")
             f.write(traceback.format_exc())
             f.write("```\n\n")
             f.write("Exported program:\n\n")
-            f.write("```\n")
+            f.write("```python\n")
             f.write(str(program))
             f.write("```\n\n")
             f.write("## Analysis\n\n")
@@ -212,7 +212,7 @@ def _torch_onnx_export_adapter_with_error_report(
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("torch.export.export error\n\n")
             f.write("Error message:\n\n")
-            f.write("```\n")
+            f.write("```pytb\n")
             f.write(traceback.format_exc())
             f.write("```\n")
         raise

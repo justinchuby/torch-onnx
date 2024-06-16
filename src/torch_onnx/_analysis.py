@@ -201,7 +201,9 @@ def analyze(
                 onnx_function, message = _dispatching.dispatch(node, registry)
             except Exception:
                 message = "Critical Error in dispatcher:\n"
-                message += textwrap.indent(traceback.format_exc(), "    ")
+                message += textwrap.indent(
+                    f"```pytb\n{traceback.format_exc()}\n```", "    "
+                )
                 onnx_function = None
             if onnx_function is None:
                 model_info.dispatch_failures.append((node, message))

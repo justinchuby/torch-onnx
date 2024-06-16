@@ -51,7 +51,7 @@ class OnnxDecompMeta:
     fx_target: TorchOp
     is_custom: bool = False
     is_complex: bool = False
-    device: Literal["cuda", "cpu"] | str | None = None
+    device: Literal["cuda", "cpu"] | str | None = None  # noqa: PYI051
 
 
 def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
@@ -80,7 +80,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
 
         return getattr(op_packet, overload)
     except AttributeError:
-        logger.warning(f"{qualified_name} is not found in this version of PyTorch.")
+        logger.warning("%s is not found in this version of PyTorch.", qualified_name)
         return None
 
 
@@ -128,7 +128,8 @@ class OnnxRegistry:
             target = _get_overload(qualified_name)
             if target is None:
                 warnings.warn(
-                    f"{qualified_name} does not have a default overload or is not found. Ignoring."
+                    f"{qualified_name} does not have a default overload or is not found. Ignoring.",
+                    stacklevel=1,
                 )
                 continue
             for overload_func in aten_overloads_func.overloads:

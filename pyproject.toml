@@ -37,7 +37,6 @@ target-version = "py38"
 select = [
     "B",
     "B904", # Re-raised error without specifying the cause via the from keyword
-    "C4",
     "E",
     "EXE",
     "F",
@@ -67,3 +66,14 @@ select = [
     "UP",
     "W",
 ]
+
+ignore = [
+  "E501", # line too long
+  "PYI041",
+  "NPY002",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/onnx_test_common.py" = ["UP006", "UP007"]
+"tests/pytorch_test.py" = ["UP006", "UP007"]
+"tests/pytorch_test_common.py" = ["UP006", "UP007"]

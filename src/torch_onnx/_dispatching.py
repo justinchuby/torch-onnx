@@ -80,46 +80,43 @@ def _param_type_compatible_with_arg(
     assigned_types: dict[str, ir.TypeProtocol],
 ) -> bool:
     # Handle Python types first
-    if isinstance(value, bool):
+    if isinstance(value, bool):  # noqa: SIM102
         if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.BOOL)}:
             return True
-    if isinstance(value, int):
-        if param.type_constraint.allowed_types & {
-            ir.TensorType(ir.DataType.INT4),
-            ir.TensorType(ir.DataType.INT8),
-            ir.TensorType(ir.DataType.INT16),
-            ir.TensorType(ir.DataType.INT32),
-            ir.TensorType(ir.DataType.INT64),
-            # Int inputs can be casted to a float too
-            ir.TensorType(ir.DataType.FLOAT8E4M3FN),
-            ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
-            ir.TensorType(ir.DataType.FLOAT8E5M2),
-            ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
-            ir.TensorType(ir.DataType.FLOAT16),
-            ir.TensorType(ir.DataType.FLOAT),
-            ir.TensorType(ir.DataType.DOUBLE),
-        }:
-            return True
-    if isinstance(value, float):
-        if param.type_constraint.allowed_types & {
-            ir.TensorType(ir.DataType.FLOAT8E4M3FN),
-            ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
-            ir.TensorType(ir.DataType.FLOAT8E5M2),
-            ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
-            ir.TensorType(ir.DataType.FLOAT16),
-            ir.TensorType(ir.DataType.FLOAT),
-            ir.TensorType(ir.DataType.DOUBLE),
-        }:
-            return True
-    if isinstance(value, complex):
-        if param.type_constraint.allowed_types & {
-            ir.TensorType(ir.DataType.FLOAT),
-            ir.TensorType(ir.DataType.DOUBLE),
-            ir.TensorType(ir.DataType.COMPLEX64),
-            ir.TensorType(ir.DataType.COMPLEX128),
-        }:
-            return True
-    if isinstance(value, str):
+    if isinstance(value, int) and param.type_constraint.allowed_types & {
+        ir.TensorType(ir.DataType.INT4),
+        ir.TensorType(ir.DataType.INT8),
+        ir.TensorType(ir.DataType.INT16),
+        ir.TensorType(ir.DataType.INT32),
+        ir.TensorType(ir.DataType.INT64),
+        # Int inputs can be casted to a float too
+        ir.TensorType(ir.DataType.FLOAT8E4M3FN),
+        ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
+        ir.TensorType(ir.DataType.FLOAT8E5M2),
+        ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
+        ir.TensorType(ir.DataType.FLOAT16),
+        ir.TensorType(ir.DataType.FLOAT),
+        ir.TensorType(ir.DataType.DOUBLE),
+    }:
+        return True
+    if isinstance(value, float) and param.type_constraint.allowed_types & {
+        ir.TensorType(ir.DataType.FLOAT8E4M3FN),
+        ir.TensorType(ir.DataType.FLOAT8E4M3FNUZ),
+        ir.TensorType(ir.DataType.FLOAT8E5M2),
+        ir.TensorType(ir.DataType.FLOAT8E5M2FNUZ),
+        ir.TensorType(ir.DataType.FLOAT16),
+        ir.TensorType(ir.DataType.FLOAT),
+        ir.TensorType(ir.DataType.DOUBLE),
+    }:
+        return True
+    if isinstance(value, complex) and param.type_constraint.allowed_types & {
+        ir.TensorType(ir.DataType.FLOAT),
+        ir.TensorType(ir.DataType.DOUBLE),
+        ir.TensorType(ir.DataType.COMPLEX64),
+        ir.TensorType(ir.DataType.COMPLEX128),
+    }:
+        return True
+    if isinstance(value, str):  # noqa: SIM102
         if param.type_constraint.allowed_types & {ir.TensorType(ir.DataType.STRING)}:
             return True
     if isinstance(value, (list, tuple)):
@@ -132,19 +129,17 @@ def _param_type_compatible_with_arg(
             ir.SequenceType(ir.TensorType(ir.DataType.INT64)),
             ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
-        }:
-            if all(isinstance(i, (int)) for i in value):
-                # We will just allow any fx node and trust that the overload handles it
-                return True
+        } and all(isinstance(i, (int)) for i in value):
+            # We will just allow any fx node and trust that the overload handles it
+            return True
         if param.type_constraint.allowed_types & {
             ir.TensorType(ir.DataType.FLOAT),
             ir.TensorType(ir.DataType.DOUBLE),
             ir.SequenceType(ir.TensorType(ir.DataType.FLOAT)),
             ir.SequenceType(ir.TensorType(ir.DataType.DOUBLE)),
-        }:
-            if all(isinstance(i, (int, float)) for i in value):
-                # We will just allow any fx node and trust that the overload handles it
-                return True
+        } and all(isinstance(i, (int, float)) for i in value):
+            # We will just allow any fx node and trust that the overload handles it
+            return True
     if value is None and not param.required:
         # An optional parameter is not supplied
         return True

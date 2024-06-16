@@ -323,13 +323,13 @@ def xfail(error_message: str, reason: Optional[str] = None):
             except Exception as e:
                 if isinstance(e, torch.onnx.OnnxExporterError):
                     # diagnostic message is in the cause of the exception
-                    assert (
-                        error_message in str(e.__cause__)
-                    ), f"Expected error message: {error_message} NOT in {str(e.__cause__)}"
+                    assert error_message in str(
+                        e.__cause__
+                    ), f"Expected error message: {error_message} NOT in {e.__cause__!s}"
                 else:
                     assert error_message in str(
                         e
-                    ), f"Expected error message: {error_message} NOT in {str(e)}"
+                    ), f"Expected error message: {error_message} NOT in {e!s}"
                 pytest.xfail(reason if reason else f"Expected failure: {error_message}")
             else:
                 pytest.fail("Unexpected success!")
@@ -401,7 +401,7 @@ def xfail_if_model_type_is_exportedprogram(
 
 
 def xfail_if_model_type_is_not_exportedprogram(
-    error_message: str, reason: Optional[str] = None
+    error_message: str, reason: str | None = None
 ):
     """xfail test without models using ExportedProgram as input.
 

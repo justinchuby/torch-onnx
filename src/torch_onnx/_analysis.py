@@ -202,7 +202,7 @@ def analyze(
             except Exception:
                 message = "Critical Error in dispatcher:\n"
                 message += textwrap.indent(
-                    f"```pytb\n{traceback.format_exc()}\n```", "    "
+                    f"```pytb\n{traceback.format_exc()}\n```\n", "    "
                 )
                 onnx_function = None
             if onnx_function is None:

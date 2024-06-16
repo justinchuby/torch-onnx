@@ -150,6 +150,7 @@ def _get_io_specs(exported_program: torch.export.ExportedProgram) -> tuple[dict,
     outputs: dict[str, torch._export.serde.schema.TensorMeta] = {}
     for spec in user_inputs:
         name = spec.arg.name
+        # FIXME: tensor_meta is None sometimes when the exported program still knows the shape/type
         inputs[name] = nodes[name].meta["tensor_meta"]
     for spec in user_outputs:
         name = spec.arg.name

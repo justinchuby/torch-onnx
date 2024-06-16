@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import io
 import logging
+import traceback
 from typing import Any, Mapping, Sequence
 import warnings
 
@@ -152,6 +153,7 @@ def torch_onnx_export_adaptor(
             )
             onnx.save_model(proto, f, save_as_external_data=True)
         else:
+            onnx.checker.check_model(proto, full_check=True)
             onnx.save_model(proto, f)
 
     except Exception as e:
@@ -168,7 +170,7 @@ def torch_onnx_export_adaptor(
     return ir_model
 
 
-def torch_onnx_utils_export_adaptor(
+def _torch_onnx_utils_export_adaptor(
     *args,
     **kwargs,
 ) -> ir.Model:
@@ -176,16 +178,17 @@ def torch_onnx_utils_export_adaptor(
     error_report_name = f"torch_onnx_report_{timestamp}.md"
     try:
         torch_onnx_export_adaptor(*args, **kwargs)
-    except TorchExportError as e:
+    except TorchExportError:
         with open(error_report_name, "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("torch.export.export error\n\n")
             f.write("Error message:\n\n")
-            f.write("```")
-            f.write(str(e))
-            f.write("```")
+            f.write("```\n")
+            f.write(traceback.format_exc())
+            f.write("```\n")
+        raise
 
-    except OnnxConversionError as e:
+    except OnnxConversionError:
         # Run the analysis to get the error report
         model = args[0]
         arg_args = args[1]
@@ -204,17 +207,18 @@ def torch_onnx_utils_export_adaptor(
         with open(error_report_name, "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("Error message:\n\n")
-            f.write("```")
-            f.write(str(e))
+            f.write("```\n")
+            f.write(traceback.format_exc())
             f.write("```\n\n")
             f.write("Exported program:\n\n")
-            f.write("```")
+            f.write("```\n")
             f.write(str(program))
             f.write("```\n\n")
             f.write("## Analysis\n\n")
             _analysis.analyze(program, file=f)
+        raise
 
 
 def patch_torch():
     torch.onnx.export = torch_onnx_export_adaptor
-    torch.onnx.utils._export = torch_onnx_export_adaptor
+    torch.onnx.utils._export = _torch_onnx_utils_export_adaptor

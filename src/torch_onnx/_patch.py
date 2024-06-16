@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
+import datetime
 import inspect
 import io
 import logging
 import traceback
-from typing import Any, Mapping, Sequence
 import warnings
+from typing import Any, Mapping, Sequence
 
 import onnx
 import torch
 import torch.export
 from onnxscript import ir
-import datetime
 
 import torch_onnx
-from torch_onnx import _ir_passes, _analysis
+from torch_onnx import _analysis, _ir_passes
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -170,7 +170,7 @@ def torch_onnx_export_adaptor(
     return ir_model
 
 
-def _torch_onnx_utils_export_adaptor(
+def _torch_onnx_export_adapter_with_error_report(
     *args,
     **kwargs,
 ) -> ir.Model:
@@ -218,6 +218,19 @@ def _torch_onnx_utils_export_adaptor(
         raise
 
 
-def patch_torch():
-    torch.onnx.export = torch_onnx_export_adaptor
-    torch.onnx.utils._export = _torch_onnx_utils_export_adaptor
+_original_torch_onnx_export = torch.onnx.export
+_original_torch_onnx_utils_export = torch.onnx.utils._export
+
+
+def patch_torch(error_report: bool = False):
+    if error_report:
+        torch.onnx.export = _torch_onnx_export_adapter_with_error_report
+        torch.onnx.utils._export = _torch_onnx_export_adapter_with_error_report
+    else:
+        torch.onnx.export = torch_onnx_export_adaptor
+        torch.onnx.utils._export = torch_onnx_export_adaptor
+
+
+def unpatch_torch():
+    torch.onnx.export = _original_torch_onnx_export
+    torch.onnx.utils._export = _original_torch_onnx_utils_export

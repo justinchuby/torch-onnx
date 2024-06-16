@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import textwrap
+import traceback
 import typing
 from collections import defaultdict
 
@@ -86,7 +87,7 @@ def _format_model_info(model_info: ModelInfo) -> str:
         f"The FX graph has {model_info.fx_node_count} nodes in total. Number of FX nodes per op:",
     ]
     for op, count in model_info.fx_node_op_count.items():
-        lines.append(f"- {op}: {count}")
+        lines.append(f"- `{op}`: {count}")
     lines.append("\n")
     lines.append("Of the call_function nodes, the counts of operators used are:\n")
     sorted_targets = sorted(
@@ -198,8 +199,9 @@ def analyze(
         if node.op == "call_function":
             try:
                 onnx_function, message = _dispatching.dispatch(node, registry)
-            except Exception as e:
-                message = f"Critical Error in dispatcher: {e}"
+            except Exception:
+                message = "Critical Error in dispatcher:\n"
+                message += textwrap.indent(traceback.format_exc(), "    ")
                 onnx_function = None
             if onnx_function is None:
                 model_info.dispatch_failures.append((node, message))

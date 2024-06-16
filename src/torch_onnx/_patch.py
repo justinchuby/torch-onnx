@@ -24,6 +24,7 @@ _END = "\033[0m"
 logger = logging.getLogger(__name__)
 
 WRITE_ERROR_REPORT = False
+WRITE_PROFILE_REPORT = False
 
 
 class TorchExportError(RuntimeError):
@@ -213,6 +214,7 @@ def _torch_onnx_export_adapter_with_error_report(
     **kwargs,
 ) -> ir.Model:
     error_report = WRITE_ERROR_REPORT or error_report
+    profile = WRITE_PROFILE_REPORT or profile
     if not error_report:
         ir_model, _ = _torch_onnx_export_adaptor(*args, **kwargs)
         return ir_model
@@ -322,11 +324,10 @@ _original_torch_onnx_utils_export = torch.onnx.utils._export
 
 
 def patch_torch(error_report: bool = False, profile: bool = False):
-    global WRITE_ERROR_REPORT
-    if error_report:
-        WRITE_ERROR_REPORT = True
-    else:
-        WRITE_ERROR_REPORT = False
+    global WRITE_ERROR_REPORT  # noqa: PLW0603
+    WRITE_ERROR_REPORT = error_report
+    global WRITE_PROFILE_REPORT  # noqa: PLW0603
+    WRITE_PROFILE_REPORT = profile
     torch.onnx.export = _torch_onnx_export_adapter_with_error_report
     torch.onnx.utils._export = _torch_onnx_export_adapter_with_error_report
 

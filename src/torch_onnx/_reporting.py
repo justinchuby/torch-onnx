@@ -32,8 +32,8 @@ def create_torch_export_error_report(
         f.write("```pytb\n")
         f.write(formatted_traceback)
         f.write("```\n\n")
-        f.write("## Profile result\n\n")
         if profile_result is not None:
+            f.write("## Profile result\n\n")
             f.write("```\n")
             f.write(profile_result)
             f.write("```\n")

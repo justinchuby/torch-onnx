@@ -39,7 +39,7 @@ from torch.testing._internal.common_utils import skipIfNoLapack
 
 import torch_onnx
 
-torch_onnx.patch_torch(error_report=True)
+torch_onnx.patch_torch(error_report=True, profile=True)
 
 
 def _init_test_generalized_rcnn_transform():

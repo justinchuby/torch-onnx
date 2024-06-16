@@ -319,6 +319,11 @@ def _torch_onnx_export_adapter_with_error_report(
     #         "attach the full error stack as well as reproduction scripts. "
     #     ) from e
 
+    if profile:
+        _reporting.crete_onnx_export_profile_report(
+            f"onnx_export_{timestamp}_profile.md", program, profile_result, step=4
+        )
+
     return ir_model
 
 

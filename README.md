@@ -28,8 +28,12 @@ proto = ir.to_proto(model)
 onnx.save(proto, "model.onnx")
 
 # Or patch the torch.onnx export API
-torch_onnx.patch_torch()
+# Set error_report=True to get a detailed error report if the export fails
+torch_onnx.patch_torch(error_report=True)
 torch.onnx.export(...)
+
+# Use the analysis API to print an analysis report for unsupported ops
+torch_onnx.analyze(exported)
 ```
 
 ## Design

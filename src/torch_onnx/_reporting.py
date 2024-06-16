@@ -70,6 +70,14 @@ def create_onnx_export_error_report(
 def crete_onnx_export_profile_report(
     filename: str, program: torch.export.ExportedProgram, profile_result: str, step: int
 ):
+    """Create a report for the ONNX export profiling result.
+
+    Args:
+        filename: The file to write the report to.
+        program: The exported program.
+        profile_result: The profiling result.
+        step: The current step in the conversion process.
+    """
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(step, False))

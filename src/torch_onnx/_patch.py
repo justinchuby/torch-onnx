@@ -198,6 +198,7 @@ def _torch_onnx_export_adapter_with_error_report(
         )
         with open(f"torch_onnx_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
+            f.write("**Step 2/2 error: ONNX translation error.**\n\n")
             f.write("Error message:\n\n")
             f.write("```pytb\n")
             f.write(traceback.format_exc())
@@ -212,7 +213,7 @@ def _torch_onnx_export_adapter_with_error_report(
     except (TorchExportError, Exception):
         with open(f"torch_export_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
-            f.write("torch.export.export error\n\n")
+            f.write("**Step 1/2 error: `torch.export.export` error.**\n\n")
             f.write("Error message:\n\n")
             f.write("```pytb\n")
             f.write(traceback.format_exc())

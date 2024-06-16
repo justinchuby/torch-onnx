@@ -178,16 +178,6 @@ def _torch_onnx_utils_export_adaptor(
     error_report_name = f"{timestamp}.md"
     try:
         torch_onnx_export_adaptor(*args, **kwargs)
-    except TorchExportError:
-        with open(f"torch_export_error_{error_report_name}", "w") as f:
-            f.write("# PyTorch ONNX Conversion Error report\n\n")
-            f.write("torch.export.export error\n\n")
-            f.write("Error message:\n\n")
-            f.write("```\n")
-            f.write(traceback.format_exc())
-            f.write("```\n")
-        raise
-
     except OnnxConversionError:
         # Run the analysis to get the error report
         model = args[0]
@@ -202,7 +192,7 @@ def _torch_onnx_utils_export_adaptor(
         else:
             dynamic_shapes = None
         program = torch.export.export(
-            model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            model, arg_args, kwargs=arg_kwargs, dynamic_shapes=dynamic_shapes
         )
         with open(f"torch_onnx_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
@@ -216,6 +206,15 @@ def _torch_onnx_utils_export_adaptor(
             f.write("```\n\n")
             f.write("## Analysis\n\n")
             _analysis.analyze(program, file=f)
+        raise
+    except (TorchExportError, Exception):
+        with open(f"torch_export_error_{error_report_name}", "w") as f:
+            f.write("# PyTorch ONNX Conversion Error report\n\n")
+            f.write("torch.export.export error\n\n")
+            f.write("Error message:\n\n")
+            f.write("```\n")
+            f.write(traceback.format_exc())
+            f.write("```\n")
         raise
 
 

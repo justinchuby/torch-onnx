@@ -175,11 +175,11 @@ def _torch_onnx_utils_export_adaptor(
     **kwargs,
 ) -> ir.Model:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    error_report_name = f"torch_onnx_report_{timestamp}.md"
+    error_report_name = f"{timestamp}.md"
     try:
         torch_onnx_export_adaptor(*args, **kwargs)
     except TorchExportError:
-        with open(error_report_name, "w") as f:
+        with open(f"torch_export_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("torch.export.export error\n\n")
             f.write("Error message:\n\n")
@@ -204,7 +204,7 @@ def _torch_onnx_utils_export_adaptor(
         program = torch.export.export(
             model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
         )
-        with open(error_report_name, "w") as f:
+        with open(f"torch_onnx_error_{error_report_name}", "w") as f:
             f.write("# PyTorch ONNX Conversion Error report\n\n")
             f.write("Error message:\n\n")
             f.write("```\n")

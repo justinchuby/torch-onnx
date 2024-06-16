@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import dataclasses
+import textwrap
+import typing
 from collections import defaultdict
 
 import onnxscript
 import torch
+import torch._export.serde.schema
 import torch.fx
-from _typeshed import SupportsWrite
+from torch.export import graph_signature
 
 from torch_onnx import _dispatching, _registration
+
+if typing.TYPE_CHECKING:
+    from _typeshed import SupportsWrite
 
 
 @dataclasses.dataclass
@@ -27,8 +33,17 @@ class ModelInfo:
     fx_node_op_count: defaultdict[str, int] = dataclasses.field(
         default_factory=lambda: defaultdict(int)
     )
+    fx_node_target_count: defaultdict[str, int] = dataclasses.field(
+        default_factory=lambda: defaultdict(int)
+    )
     dispatch_failures: list[tuple[torch.fx.Node, str]] = dataclasses.field(
         default_factory=list
+    )
+    inputs: dict[str, torch._export.serde.schema.TensorMeta] = dataclasses.field(
+        default_factory=dict
+    )
+    outputs: dict[str, torch._export.serde.schema.TensorMeta] = dataclasses.field(
+        default_factory=dict
     )
 
 
@@ -53,20 +68,98 @@ def _count_weights(
 def _format_model_info(model_info: ModelInfo) -> str:
     """Format the information about the model."""
     lines = [
-        f"Number of parameters: {sum(model_info.parameter_count.values())}",
-        f"Number of buffers: {sum(model_info.buffer_count.values())}",
-        f"Number of FX nodes: {model_info.fx_node_count}",
-        "Number of FX nodes per op:",
+        textwrap.dedent(
+            f"""\
+            # PyTorch ONNX Conversion Analysis
+
+            ## Model information
+            The model has {sum(model_info.parameter_count.values())} parameters and
+            {sum(model_info.buffer_count.values())} buffers (non-trainable parameters).
+
+            The FX graph has {model_info.fx_node_count} nodes in total. Number of FX nodes per op:
+            """
+        )
     ]
     for op, count in model_info.fx_node_op_count.items():
-        lines.append(f"  {op}: {count}")
+        lines.append(f"    {op}: {count}")
+
+    lines.append("\nOf the call_function nodes, the number of targets per function is:")
+    sorted_targets = sorted(
+        model_info.fx_node_target_count.items(), key=lambda x: x[1], reverse=True
+    )
+    for target, count in sorted_targets:
+        lines.append(f"    - {target}: {count}")
+
+    lines.append("")
+    lines.append("## ONNX conversion information")
+    lines.append("")
 
     if model_info.dispatch_failures:
-        lines.append("Dispatch failures:")
+        lines.append(
+            "The model contains operators the dispatcher could not find ONNX equivalents for."
+        )
+        lines.append(
+            "This may be due to missing implementations or a bug in the dispatcher."
+        )
+        lines.append("Error grouped by operator:")
+
+        target_to_nodes = defaultdict(list)
+        for node, _ in model_info.dispatch_failures:
+            target_to_nodes[str(node.target)].append(node)
+
+        target_to_messages = {}
         for node, message in model_info.dispatch_failures:
-            lines.append(f"  {node}: {message}")
+            if str(node.target) not in target_to_messages:
+                target_to_messages[str(node.target)] = message
+
+        for target, nodes in sorted(
+            target_to_nodes.items(), key=lambda x: x[0], reverse=True
+        ):
+            lines.append(
+                f"    - {target}: {target_to_messages[target]}. Example node: {nodes[0].format_node()}. All nodes: {nodes}"
+            )
+    else:
+        lines.append("All operators in the model have ONNX equivalents.")
 
     return "\n".join(lines)
+
+
+def _get_io_specs(exported_program: torch.export.ExportedProgram) -> tuple[dict, dict]:
+    """Get the input and output specs of the exported program."""
+
+    nodes: dict[str, torch.fx.Node] = {
+        node.name: node for node in exported_program.graph.nodes
+    }
+    user_inputs = [
+        spec
+        for spec in exported_program.graph_signature.input_specs
+        if spec.kind == graph_signature.InputKind.USER_INPUT
+    ]
+    user_outputs = [
+        spec
+        for spec in exported_program.graph_signature.output_specs
+        if spec.kind == graph_signature.OutputKind.USER_OUTPUT
+    ]
+    inputs: dict[str, torch._export.serde.schema.TensorMeta] = {}
+    outputs: dict[str, torch._export.serde.schema.TensorMeta] = {}
+    for spec in user_inputs:
+        name = spec.arg.name
+        inputs[name] = nodes[name].meta["tensor_meta"]
+    for spec in user_outputs:
+        name = spec.arg.name
+        outputs[name] = nodes[name].meta["tensor_meta"]
+    return inputs, outputs
+
+
+def _count_fx_targets(
+    exported_program: torch.export.ExportedProgram,
+) -> defaultdict[str, int]:
+    """Count the number of targets for each node in the exported program."""
+    fx_node_target_count = defaultdict(int)
+    for node in exported_program.graph.nodes:
+        if node.op == "call_function":
+            fx_node_target_count[str(node.target)] += 1
+    return fx_node_target_count
 
 
 def analyze(
@@ -75,6 +168,17 @@ def analyze(
     file: SupportsWrite[str] | None = None,
 ) -> None:
     """Analyze the compatibility of the exported program."""
+    # Get basic information about the model
+    model_info = ModelInfo()
+    model_info.parameter_count, model_info.buffer_count = _count_weights(
+        exported_program
+    )
+    model_info.fx_node_count = len(exported_program.graph.nodes)
+    model_info.fx_node_target_count = _count_fx_targets(exported_program)
+    inputs, outputs = _get_io_specs(exported_program)
+    model_info.inputs = inputs
+    model_info.outputs = outputs
+
     if registry is None:
         # Trigger op registration
         from onnxscript.function_libs.torch_lib import ops
@@ -83,13 +187,6 @@ def analyze(
         registry = _registration.OnnxRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )
-
-    # Get basic information about the model
-    model_info = ModelInfo()
-    model_info.parameter_count, model_info.buffer_count = _count_weights(
-        exported_program
-    )
-    model_info.fx_node_count = len(exported_program.graph.nodes)
 
     # Try to find ops for every node in the graph
     for node in exported_program.graph.nodes:

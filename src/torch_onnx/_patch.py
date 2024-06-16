@@ -306,6 +306,7 @@ def _torch_onnx_export_adapter_with_error_report(
                 program,
                 step=2,
                 profile_result=profile_result,
+                ir_model=ir_model,
             )
 
     # try:

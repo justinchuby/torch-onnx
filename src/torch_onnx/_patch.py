@@ -212,7 +212,7 @@ def _torch_onnx_export_adapter_with_error_report(
     error_report: bool = False,
     **kwargs,
 ) -> ir.Model:
-    error_report = (WRITE_ERROR_REPORT or error_report)
+    error_report = WRITE_ERROR_REPORT or error_report
     if not error_report:
         ir_model, _ = _torch_onnx_export_adaptor(*args, **kwargs)
         return ir_model

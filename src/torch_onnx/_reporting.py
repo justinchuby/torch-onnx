@@ -22,7 +22,9 @@ def _format_export_status(step: int, error: bool):
     )
 
 
-def create_torch_export_error_report(filename: str, formatted_traceback: str, *, profile_result: str | None):
+def create_torch_export_error_report(
+    filename: str, formatted_traceback: str, *, profile_result: str | None
+):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
         f.write(_format_export_status(0, True))

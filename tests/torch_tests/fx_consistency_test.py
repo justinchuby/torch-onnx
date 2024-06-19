@@ -65,7 +65,7 @@ from torch.testing._internal import (
     common_methods_invocations,
     common_utils,
 )
-from torch.testing._internal.opinfo import core as opinfo_core  # noqa: TCH001
+from torch.testing._internal.opinfo import core as opinfo_core
 
 
 # NOTE: For ATen signature modifications that will break ONNX export,
@@ -77,9 +77,9 @@ def xfail_torchlib_forward_compatibility(
     *,
     reason: str,
     github_issue: str,
-    opsets: Optional[Collection[Union[int, Callable[[int], bool]]]] = None,
-    dtypes: Optional[Collection[torch.dtype]] = None,
-    matcher: Optional[Callable[[Any], bool]] = None,
+    opsets: Collection[int | Callable[[int], bool]] | None = None,
+    dtypes: Collection[torch.dtype] | None = None,
+    matcher: Callable[[Any], bool] | None = None,
     enabled_if: bool = True,
 ):
     """Prefer using this (xfail) over skip when possible.

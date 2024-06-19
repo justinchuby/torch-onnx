@@ -13,7 +13,6 @@ from typing import Any, Mapping, Sequence
 import onnx
 import torch
 import torch.export
-from onnxscript import ir
 
 import torch_onnx
 from torch_onnx import _ir_passes, _reporting, _onnx_program

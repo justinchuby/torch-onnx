@@ -207,9 +207,12 @@ def analyze(
         if node.op == "call_function":
             try:
                 onnx_function, message = _dispatching.dispatch(node, registry)
-            except Exception:
+            except Exception as e:
                 message = "Critical Error in dispatcher:\n"
-                message += f"```pytb\n{traceback.format_exc()}\n```\n"
+                formatted_exception = traceback.format_exception(
+                    type(e), e, e.__traceback__
+                )
+                message += f"```pytb\n{formatted_exception}\n```\n"
                 onnx_function = None
             if onnx_function is None:
                 model_info.dispatch_failures.append((node, message))

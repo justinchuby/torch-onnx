@@ -153,7 +153,7 @@ def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
     return profiler.output_text(unicode=True)
 
 
-def _torch_onnx_export_adaptor(
+def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
     f: str | io.BytesIO | None = None,
@@ -335,8 +335,25 @@ def _torch_onnx_export_adaptor(
     return onnx_program
 
 
+def _torch_onnx_dynamo_export(
+    model: torch.nn.Module | torch.export.ExportedProgram,
+    /,
+    *model_args,
+    export_options: torch.onnx.ExportOptions | None = None,
+    **model_kwargs,
+) -> _onnx_program.ONNXProgram:
+    if export_options and export_options.dynamic_shapes:
+        raise NotImplementedError("Dynamic shapes are not implemented yet.")
+    return _torch_onnx_export(
+        model,
+        model_args,
+        kwargs=model_kwargs,
+    )
+
+
 _original_torch_onnx_export = torch.onnx.export
 _original_torch_onnx_utils_export = torch.onnx.utils._export
+_original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
 
 
 def patch_torch(error_report: bool = False, profile: bool = False):
@@ -344,10 +361,12 @@ def patch_torch(error_report: bool = False, profile: bool = False):
     WRITE_ERROR_REPORT = error_report
     global WRITE_PROFILE_REPORT  # noqa: PLW0603
     WRITE_PROFILE_REPORT = profile
-    torch.onnx.export = _torch_onnx_export_adaptor
-    torch.onnx.utils._export = _torch_onnx_export_adaptor
+    torch.onnx.export = _torch_onnx_export
+    torch.onnx.utils._export = _torch_onnx_export
+    torch.onnx.dynamo_export = _torch_onnx_dynamo_export
 
 
 def unpatch_torch():
     torch.onnx.export = _original_torch_onnx_export
     torch.onnx.utils._export = _original_torch_onnx_utils_export
+    torch.onnx.dynamo_export = _original_torch_onnx_dynamo_export

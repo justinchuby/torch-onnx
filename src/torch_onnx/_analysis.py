@@ -209,8 +209,8 @@ def analyze(
                 onnx_function, message = _dispatching.dispatch(node, registry)
             except Exception as e:
                 message = "Critical Error in dispatcher:\n"
-                formatted_exception = traceback.format_exception(
-                    type(e), e, e.__traceback__
+                formatted_exception = "\n".join(
+                    traceback.format_exception(type(e), e, e.__traceback__)
                 )
                 message += f"```pytb\n{formatted_exception}\n```\n"
                 onnx_function = None

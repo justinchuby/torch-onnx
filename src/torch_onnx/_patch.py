@@ -169,7 +169,7 @@ def _torch_onnx_export(
                 error_report_path = f"onnx_export_{timestamp}_pt_export.md"
                 _reporting.create_torch_export_error_report(
                     error_report_path,
-                    "\n".join(_format_exception(e)),
+                    _format_exception(e),
                     profile_result=profile_result,
                 )
             else:
@@ -217,7 +217,7 @@ def _torch_onnx_export(
             # Run the analysis to get the error report
             _reporting.create_onnx_export_error_report(
                 error_report_path,
-                "\n".join(_format_exception(e)),
+                _format_exception(e),
                 program,
                 step=1,
                 profile_result=profile_result,
@@ -268,7 +268,7 @@ def _torch_onnx_export(
         if error_report:
             _reporting.create_onnx_export_error_report(
                 f"onnx_export_{timestamp}_checker.md",
-                "\n".join(_format_exception(e)),
+                _format_exception(e),
                 onnx_program.exported_program,
                 step=2,
                 profile_result=profile_result,

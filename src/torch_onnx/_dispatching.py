@@ -305,7 +305,6 @@ def dispatch(
     """
     # TODO: Handle when node does not have a target
     decomp_metas = registry.get_decomps(node.target)
-    print(decomp_metas)
     # Determine if the node has complex inputs.
     is_complex = any(_arg_has_complex_dtype(arg) for arg in node.args) or any(
         _arg_has_complex_dtype(arg) for arg in node.kwargs.values()

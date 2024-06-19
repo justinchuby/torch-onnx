@@ -113,7 +113,9 @@ class OnnxRegistry:
 
     @classmethod
     def from_torchlib(
-        cls, torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
+        cls,
+        torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
+        | None = None,
     ):
         """Populates the registry with ATen functions from torchlib.
 
@@ -121,6 +123,8 @@ class OnnxRegistry:
             torchlib_registry: The torchlib registry to use for populating the registry.
         """
         registry = cls()
+        if torchlib_registry is None:
+            torchlib_registry = torchlib_registration.default_registry
         for qualified_name, aten_overloads_func in torchlib_registry.items():
             if qualified_name.startswith("internal::"):
                 # Skip the custom defined internal functions
@@ -209,8 +213,8 @@ class OnnxRegistry:
     def get_decomps(self, target: TorchOp) -> list[OnnxDecompMeta]:
         """Returns a list of OnnxDecompMeta for the given op: torch.ops.<namespace>.<op_name>.<overload>.
 
-        The list is ordered by the time of registration. The custom operators should be
-        in the second half of the list.
+        The list is ordered by the time of registration. The custom operators should come
+        first in the list.
 
         Args:
             namespace: The namespace of the operator to get.
@@ -227,7 +231,8 @@ class OnnxRegistry:
             target_or_name: str | TorchOp = target.name()
         else:
             target_or_name: str | TorchOp = target
-        return self.functions.get(target_or_name, [])
+        decomps = self.functions.get(target_or_name, [])
+        return sorted(decomps, key=lambda x: x.is_custom, reverse=True)
 
     def is_registered(self, target: TorchOp) -> bool:
         """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.

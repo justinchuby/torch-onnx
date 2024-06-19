@@ -8,6 +8,7 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Mapping, Sequence
 
@@ -207,15 +208,23 @@ def _process_python_constants(
     #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
     #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
-        # FIXME: Handle when arg is list[ir.Value]
+        param = signature.params_map[name]
+        assert isinstance(
+            param, _schemas.Parameter
+        ), f"Expected Parameter, got {type(param)}"
+
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
         if isinstance(arg, Sequence) and all(isinstance(val, ir.Value) for val in arg):
             # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
-            continue
+            # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
+            # like `Max(0, ir.Value())`
+            # We need to convert the Python constants to Constant nodes
+            if param.variadic:
+                # FXIME: Handle variadic inputs and sequence inputs differently
+                raise NotImplementedError
 
-        param = signature.params_map[name]
         assert isinstance(
             param, _schemas.Parameter
         ), f"Expected Parameter, got {type(param)}"
@@ -459,6 +468,14 @@ class OpRecorder(evaluator.Evaluator):
                 return outputs[0]
             return outputs
         except Exception as e:
+            try:
+                source_file = inspect.getsourcefile(function.function)
+                _, lineno = inspect.getsourcelines(function.function)
+            except Exception:
+                source_file = lineno = None
             raise RuntimeError(
                 f"Error calling function '{function.name}' with args {args} and kwargs {kwargs}."
+                + f" The function is defined at '{source_file}:{lineno}'."
+                if source_file
+                else ""
             ) from e

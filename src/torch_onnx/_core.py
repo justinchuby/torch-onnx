@@ -27,6 +27,7 @@ from torch_onnx import (
     _registration,
     _decomp,
     errors,
+    _tensors,
 )
 
 logger = logging.getLogger(__name__)
@@ -372,6 +373,7 @@ def _handle_call_function_node_with_lowering(
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
+    # TODO: Log the message here to expose false positives
     onnx_function, message = _dispatching.dispatch(node, registry)
 
     if onnx_function is None:
@@ -464,13 +466,17 @@ def _handle_call_function_node_with_lowering(
 
 
 def _handle_placeholder_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value], lower: str
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value],
+    *,
+    lower: str,
+    opset: onnxscript.values.Opset,
 ) -> None:
     # Placeholder nodes are user inputs
     # We need to create a new tensor for each user input
     # and add it to the graph's inputs
     name = node.name
-    input_ = ir.Input(name)
+    input_ = _tensors.SymbolicTensor(opset, name=name)
     input_.meta["node"] = node
     _set_shape_type(input_, node.meta["val"], complex_to_float=lower != "none")
     node_name_to_values[name] = input_
@@ -491,7 +497,12 @@ def _add_nodes(
         )
         try:
             if node.op == "placeholder":
-                _handle_placeholder_node(node, node_name_to_values, lower=lower)
+                _handle_placeholder_node(
+                    node,
+                    node_name_to_values,
+                    lower=lower,
+                    opset=_get_onnxscript_opset(registry.opset_version),
+                )
             elif node.op == "call_function":
                 if lower == "at_conversion":
                     _handle_call_function_node_with_lowering(
@@ -685,6 +696,12 @@ def exported_program_to_ir(
         value_name = spec.arg.name
         output_kind = spec.kind
         value = values[value_name]
+
+        if not isinstance(value, ir.Value):
+            raise TypeError(
+                f"Output '{value_name}' should be an ir.Value. Actual type is '{type(value)}': {value!r}. "
+                "This may be due to an incorrect implementation of the ONNX function that produced this output."
+            )
 
         value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
             output_kind.name

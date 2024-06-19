@@ -213,7 +213,11 @@ class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
         rtol: float | None = 1e-3,
         atol: float | None = 1e-7,
         has_mutation: bool = False,
-        additional_test_inputs: list[tuple[Sequence[_InputArgsType], Mapping[str, _InputArgsType]] | tuple[Sequence[_InputArgsType]]] | None = None,
+        additional_test_inputs: list[
+            tuple[Sequence[_InputArgsType], Mapping[str, _InputArgsType]]
+            | tuple[Sequence[_InputArgsType]]
+        ]
+        | None = None,
         skip_dynamic_shapes_check: bool = False,
     ):
         """Compare the results of PyTorch model with exported ONNX model
@@ -277,35 +281,17 @@ class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
         # Feed args and kwargs into exporter.
         # Note that exporter should flatten kwargs into positional args the exported model;
         # since ONNX doesn't represent kwargs.
-        export_error: torch.onnx.OnnxExporterError | None = None
-        try:
-            onnx_program = torch.onnx.dynamo_export(
-                ref_model,
-                *ref_input_args,
-                **ref_input_kwargs,
-                export_options=torch.onnx.ExportOptions(
-                    op_level_debug=self.op_level_debug,
-                    dynamic_shapes=self.dynamic_shapes,
-                    diagnostic_options=torch.onnx.DiagnosticOptions(
-                        verbosity_level=logging.DEBUG
-                    ),
+        onnx_program = torch.onnx.dynamo_export(
+            ref_model,
+            *ref_input_args,
+            **ref_input_kwargs,
+            export_options=torch.onnx.ExportOptions(
+                dynamic_shapes=self.dynamic_shapes,
+                diagnostic_options=torch.onnx.DiagnosticOptions(
+                    verbosity_level=logging.DEBUG
                 ),
-            )
-        except torch.onnx.OnnxExporterError as e:
-            export_error = e
-            onnx_program = e.onnx_program
-
-        if diagnostics.is_onnx_diagnostics_log_artifact_enabled():
-            onnx_program.save_diagnostics(
-                f"test_report_{self._testMethodName}"
-                f"_op_level_debug_{self.op_level_debug}"
-                f"_dynamic_axes_{self.dynamic_shapes}"
-                f"_model_type_{self.model_type}"
-                ".sarif"
-            )
-
-        if export_error is not None:
-            raise export_error
+            ),
+        )
 
         if not skip_dynamic_shapes_check:
             assert_dynamic_shapes(onnx_program, self.dynamic_shapes)

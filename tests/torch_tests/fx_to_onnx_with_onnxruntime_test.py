@@ -24,7 +24,6 @@ from torch import nn
 from torch._subclasses import fake_tensor
 from torch.onnx._internal import _beartype, exporter
 from torch.onnx._internal.fx import (
-    diagnostics,
     fx_symbolic_graph_extractor,
     patcher,
     serialization as fx_serialization,

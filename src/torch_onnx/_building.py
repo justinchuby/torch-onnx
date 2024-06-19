@@ -221,9 +221,10 @@ def _process_python_constants(
             # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
             # like `Max(0, ir.Value())`
             # We need to convert the Python constants to Constant nodes
-            if param.variadic:
-                # FXIME: Handle variadic inputs and sequence inputs differently
-                raise NotImplementedError
+            continue
+            # if param.variadic:
+            #     # FXIME: Handle variadic inputs and sequence inputs differently
+            #     raise NotImplementedError
 
         assert isinstance(
             param, _schemas.Parameter
@@ -357,7 +358,7 @@ class OpRecorder(evaluator.Evaluator):
         except Exception as e:
             raise errors.GraphConstructionError(
                 f"Error processing Python constants for operator '{op_signature.domain}::{op_signature.name}'. "
-                f"named_inputs={named_inputs}, named_attrs={named_attrs}, opset={self.opset}."
+                f"named_inputs={named_inputs}, named_attrs={named_attrs}, opset={self.opset}, op_signature={op_signature}."
             ) from e
 
         try:
@@ -370,7 +371,7 @@ class OpRecorder(evaluator.Evaluator):
             raise errors.GraphConstructionError(
                 f"Error constructing node for operator '{op_signature.domain}::{op_signature.name}'. "
                 f"named_inputs={named_inputs}, converted_named_inputs={converted_named_inputs}, "
-                f"named_attrs={named_attrs}, opset={self.opset}."
+                f"named_attrs={named_attrs}, opset={self.opset}, op_signature={op_signature}."
             ) from e
         return node.outputs  # type: ignore
 
@@ -411,7 +412,7 @@ class OpRecorder(evaluator.Evaluator):
                 return outputs[0]
             return outputs
         except Exception as e:
-            raise RuntimeError(
+            raise errors.GraphConstructionError(
                 f"Error calling operator '{schema.name}' with args {args} and kwargs {kwargs}."
             ) from e
 
@@ -491,7 +492,7 @@ class OpRecorder(evaluator.Evaluator):
                 _, lineno = inspect.getsourcelines(function.function)
             except Exception:
                 source_file = lineno = None
-            raise RuntimeError(
+            raise errors.GraphConstructionError(
                 f"Error calling function '{function.name}' with args {args} and kwargs {kwargs}."
                 + f" The function is defined at '{source_file}:{lineno}'."
                 if source_file

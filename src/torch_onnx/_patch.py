@@ -154,7 +154,7 @@ def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
 
 
 def _torch_onnx_export_adaptor(
-    model: torch.nn.Module,
+    model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
     f: str | io.BytesIO | None = None,
     *,
@@ -170,47 +170,52 @@ def _torch_onnx_export_adaptor(
     error_report: bool = False,
     **_,
 ) -> _onnx_program.ONNXProgram:
-    # Obtain error report option from the global variable
+    # Set up the error reporting facilities
     error_report = WRITE_ERROR_REPORT or error_report
     profile = WRITE_PROFILE_REPORT or profile
-
-    args, kwargs, dynamic_shapes = _get_torch_export_args(
-        model, args, kwargs, dynamic_axes, input_names
-    )
-
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
     profiler = _maybe_start_profiler(profile)
 
-    # Stage 1: Export the model with torch.export.export
-    try:
-        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
-        program = torch.export.export(
-            model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+    # Stage 1: Export the model with torch.export.export if the model is not already an ExportedProgram
+    if not isinstance(model, torch.export.ExportedProgram):
+        args, kwargs, dynamic_shapes = _get_torch_export_args(
+            model, args, kwargs, dynamic_axes, input_names
         )
-        print("✅")
-    except Exception as e:
-        profile_result = _maybe_stop_profiler_and_get_result(profiler)
-
-        if error_report:
-            error_report_path = f"onnx_export_{timestamp}_pt_export.md"
-            _reporting.create_torch_export_error_report(
-                error_report_path,
-                traceback.format_exc(),
-                profile_result=profile_result,
+        try:
+            print(
+                "Obtain model graph with `torch.export.export`... ", end="", flush=True
             )
-        else:
-            error_report_path = None
+            program = torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            )
+            print("✅")
+        except Exception as e:
+            profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-        raise TorchExportError(
-            "Failed to export the model with torch.export. "
-            f"{_BLUE}This is step 1/2{_END} "
-            "of exporting the model to ONNX. Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
-            "attach the full error stack as well as reproduction scripts."
-            + f" Error report has been saved to '{error_report_path}'."
-            if error_report
-            else ""
-        ) from e
+            if error_report:
+                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                _reporting.create_torch_export_error_report(
+                    error_report_path,
+                    traceback.format_exc(),
+                    profile_result=profile_result,
+                )
+            else:
+                error_report_path = None
+
+            raise TorchExportError(
+                "Failed to export the model with torch.export. "
+                f"{_BLUE}This is step 1/2{_END} "
+                "of exporting the model to ONNX. Please create an issue "
+                f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
+                "attach the full error stack as well as reproduction scripts."
+                + f" Error report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            ) from e
+    else:
+        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
+        program = model
+        print("✅")
 
     # Stage 2: Convert the exported program to an ONNX model
     try:

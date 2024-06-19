@@ -686,6 +686,12 @@ def exported_program_to_ir(
         output_kind = spec.kind
         value = values[value_name]
 
+        if not isinstance(value, ir.Value):
+            raise TypeError(
+                f"Output '{value_name}' should be an ir.Value. Actual type is '{type(value)}': {value!r}. "
+                "This may be due to an incorrect implementation of the ONNX function that produced this output."
+            )
+
         value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
             output_kind.name
         )

@@ -40,13 +40,9 @@ import os
 from typing import (
     Any,
     Callable,
+    ClassVar,
     Collection,
-    List,
     Mapping,
-    Optional,
-    Tuple,
-    Type,
-    Union,
 )
 
 import error_reproduction
@@ -103,9 +99,9 @@ def skip_torchlib_forward_compatibility(
     *,
     reason: str,
     github_issue: str,
-    opsets: Optional[Collection[Union[int, Callable[[int], bool]]]] = None,
-    dtypes: Optional[Collection[torch.dtype]] = None,
-    matcher: Optional[Callable[[Any], Any]] = None,
+    opsets: Collection[int | Callable[[int], bool]] | None = None,
+    dtypes: Collection[torch.dtype] | None = None,
+    matcher: Callable[[Any], Any] | None = None,
     enabled_if: bool = True,
 ):
     """Prefer using xfail_torchlib_forward_compatibility over this (skip) when possible.
@@ -135,7 +131,7 @@ def skip_torchlib_forward_compatibility(
 #     2b. If a test is not failing consistently, use skip.
 # NOTE: EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES only supports dtypes. If a matcher or model_type
 # is needed, use the SKIP_XFAIL_SUBTESTS_WITH_MATCHER_AND_MODEL_TYPE list further down below.
-EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] = (
+EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: tuple[onnx_test_common.DecorateMeta, ...] = (
     xfail(
         "__getitem__",
         reason="io_adaper doesn't support __getitem__ input slice(0, 3, None)",
@@ -409,7 +405,7 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
         ),
     ),
     xfail(
-        "cumsum", dtypes=onnx_test_common.BOOL_TYPES + (torch.uint8, torch.int8, torch.int16,),
+        "cumsum", dtypes=(*onnx_test_common.BOOL_TYPES, torch.uint8, torch.int8, torch.int16),
         reason=onnx_test_common.reason_onnx_does_not_support("Cumsum", "bool, uint8, int8, int16")
     ),
     xfail(
@@ -555,7 +551,7 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
     ),
     xfail(
         "index_put",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.float16,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.float16),
         reason=onnx_test_common.reason_onnx_script_does_not_support("index_put", "bool"),
     ),
     xfail(
@@ -751,7 +747,7 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
     xfail(
         "min",
         variant_name="reduction_with_dim",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.int64,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.int64),
         reason=onnx_test_common.reason_onnx_runtime_does_not_support("ReduceMin", "bool"),
     ),
     skip(
@@ -973,7 +969,7 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
     ),
     xfail(
         "nn.functional.pixel_shuffle",
-        dtypes=(torch.int32, torch.int64) + onnx_test_common.BOOL_TYPES,
+        dtypes=(torch.int32, torch.int64, *onnx_test_common.BOOL_TYPES),
         reason="fixme: ONNX Runtime does not support int32/64 inputs",
     ),
     xfail(
@@ -1110,13 +1106,13 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
     xfail(
         "scatter_reduce",
         variant_name="amin",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.float16,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.float16),
         reason=onnx_test_common.reason_onnx_runtime_does_not_support("ScatterElements reduction=amin", "float16"),
     ),
     xfail(
         "scatter_reduce",
         variant_name="amax",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.float16,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.float16),
         reason=onnx_test_common.reason_onnx_runtime_does_not_support("ScatterElements reduction=amax", "float16"),
     ),
     xfail(
@@ -1212,12 +1208,12 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
     ),
     xfail(
         "tril",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.int32,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.int32),
         reason=onnx_test_common.reason_onnx_runtime_does_not_support("trilu", "bool, int32"),
     ),
     xfail(
         "triu",
-        dtypes=onnx_test_common.BOOL_TYPES + (torch.int32,),
+        dtypes=(*onnx_test_common.BOOL_TYPES, torch.int32),
         reason=onnx_test_common.reason_onnx_runtime_does_not_support("trilu", "bool, int32"),
     ),
     xfail(
@@ -1661,7 +1657,7 @@ OP_WITH_SKIPPED_XFAIL_SUBTESTS = frozenset(
 ALL_OPS_IN_DB = frozenset(op_info.name for op_info in OPS_DB)
 
 
-def _torch_size_flatten_spec(d: List[Any], spec: Any) -> List[Any]:
+def _torch_size_flatten_spec(d: list[Any], spec: Any) -> list[Any]:
     return [d[i] for i in range(spec.num_children)]
 
 
@@ -1688,7 +1684,7 @@ def _should_skip_xfail_test_sample(
     variant_test_name: str,
     sample,
     model_type: pytorch_test_common.TorchModelType,
-) -> Tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Check if the test sample should be skipped or xfailed.
 
     If the xfail/skip decorator meta is matched with its op_name and model_type,
@@ -1928,7 +1924,7 @@ def _parameterized_class_attrs_and_values():
     }
 
 
-def _parameterize_class_name(cls: Type, idx: int, input_dicts: Mapping[Any, Any]):
+def _parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any]):
     """Combine class name with the parameterized arguments.
 
     This function is passed to `parameterized.parameterized_class` as the
@@ -1958,19 +1954,19 @@ class TestOnnxModelOutputConsistency(onnx_test_common._TestONNXRuntime):
     )
 
     # NOTE: Follow torchlib settings in ops_test_data.py
-    only_shape_check_list = [
+    only_shape_check_list = (
         "empty",
         "empty_like",
         "empty_strided",
         "new_empty",
         "new_empty_strided",
-    ]
+    )
 
-    fp32_low_precision_dict = {
+    fp32_low_precision_dict: ClassVar[dict[str, list[float]]] = {
         "native_layer_norm": [2e-4, 7e-4],
     }
 
-    fp16_low_precision_dict = {
+    fp16_low_precision_dict: ClassVar[dict[str, list[float]]] = {
         "addbmm": [2e-1, 2e-2],
         "addcdiv": [3e-2, 1e-3],
         "addcmul": [3e-2, 1e-3],
@@ -2018,7 +2014,7 @@ class TestOnnxModelOutputConsistency(onnx_test_common._TestONNXRuntime):
         "vdot": [1e-3, 1e-2],
     }
 
-    fp16_low_precision_variant_dict = {
+    fp16_low_precision_variant_dict: ClassVar[dict[tuple[str, str], list[float]]] = {
         ("nn.functional.interpolate", "trilinear"): [3e-2, 3e-3],
         ("nn.functional.interpolate", "linear"): [3e-2, 3e-3],
     }

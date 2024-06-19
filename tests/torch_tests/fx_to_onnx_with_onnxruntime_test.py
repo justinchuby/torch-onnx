@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Type
+from typing import Any, Callable, Mapping
 
 import onnx_test_common
 import onnxruntime  # type: ignore[import]
@@ -59,7 +59,7 @@ def _parameterized_class_attrs_and_values():
     }
 
 
-def _parameterize_class_name(cls: Type, idx: int, input_dicts: Mapping[Any, Any]):
+def _parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any]):
     """Combine class name with the parameterized arguments.
 
     This function is passed to `parameterized.parameterized_class` as the
@@ -124,7 +124,7 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
         # `DynamoOptimizeExporter` applies a workaround by binding args and kwargs to
         # model signature and fill in the default values of unprovided optional arguments.
         class Foo(torch.nn.Module):
-            def forward(self, x, b=torch.tensor(1.0)):
+            def forward(self, x, b=torch.tensor(1.0)):  # noqa: B008
                 y = x + b
                 z = y.relu()
                 return (y, z)
@@ -223,9 +223,9 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
         class Foo(torch.nn.Module):
             def forward(
                 self,
-                x_dict: Dict[str, torch.Tensor],
-                y_tuple: Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-                z_list: List[List[torch.Tensor]],
+                x_dict: dict[str, torch.Tensor],
+                y_tuple: tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]],
+                z_list: list[list[torch.Tensor]],
             ):
                 if "a" in x_dict:
                     x = x_dict["a"]
@@ -460,7 +460,7 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
             def forward(self, x):
                 results = []
                 for i in range(4):
-                    results.append(x[: x.size(0) - i, i : x.size(2), i:3])
+                    results.append(x[: x.size(0) - i, i : x.size(2), i:3])  # noqa: PERF401
                 return tuple(results)
 
         x = torch.rand(5, 5, 5)
@@ -609,9 +609,7 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
 
     def test_none_input(self):
         class NoneInputModel(torch.nn.Module):
-            def forward(
-                self, x: torch.Tensor, y: Optional[torch.Tensor], z: torch.Tensor
-            ):
+            def forward(self, x: torch.Tensor, y: torch.Tensor | None, z: torch.Tensor):
                 if y is None:
                     return x + z
                 return x + y + z

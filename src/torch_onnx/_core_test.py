@@ -61,10 +61,25 @@ class ExportedProgramToIrTest(unittest.TestCase):
         exported_program = torch.export.export(
             GraphModule(), (torch.rand(1), torch.rand(1))
         )
-        print(exported_program)
         registry = torch_onnx.OnnxRegistry.from_torchlib()
         registry.register_op(torch.ops.aten.add.Tensor, add)
         assert _core.exported_program_to_ir(exported_program, registry=registry)
+
+    def test_process_python_constants_supports_tuple_input_with_mixed_tensor_and_python_constants(
+        self,
+    ):
+        class GraphModule(torch.nn.Module):
+            def forward(self, arg0_1: "f32[3, 5, 5]"):
+                diagonal: "f32[3, 5]" = torch.ops.aten.diagonal.default(arg0_1, 0, 1, 2)
+                arg0_1 = None
+                permute: "f32[3, 5]" = torch.ops.aten.permute.default(diagonal, [0, 1])
+                diagonal = None
+                permute_1: "f32[3, 5]" = torch.ops.aten.permute.default(permute, [0, 1])
+                permute = None
+                return (permute_1,)
+
+        exported_program = torch.export.export(GraphModule(), (torch.rand(3, 5, 5),))
+        assert _core.exported_program_to_ir(exported_program)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Mapping, Sequence
 
@@ -459,6 +460,14 @@ class OpRecorder(evaluator.Evaluator):
                 return outputs[0]
             return outputs
         except Exception as e:
+            try:
+                source_file = inspect.getsourcefile(function.function)
+                _, lineno = inspect.getsourcelines(function.function)
+            except Exception:
+                source_file = lineno = None
             raise RuntimeError(
                 f"Error calling function '{function.name}' with args {args} and kwargs {kwargs}."
+                + f" The function is defined at '{source_file}:{lineno}'."
+                if source_file
+                else ""
             ) from e

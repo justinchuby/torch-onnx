@@ -15,7 +15,7 @@ import torch
 import torch.export
 
 import torch_onnx
-from torch_onnx import _ir_passes, _reporting, _onnx_program
+from torch_onnx import _ir_passes, _reporting, _onnx_program, errors
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -24,36 +24,6 @@ logger = logging.getLogger(__name__)
 
 WRITE_ERROR_REPORT = False
 WRITE_PROFILE_REPORT = False
-
-
-class TorchExportError(RuntimeError):
-    """Error during torch.export.export."""
-
-    pass
-
-
-class OnnxConversionError(RuntimeError):
-    """Error during ONNX conversion."""
-
-    pass
-
-
-class OnnxCheckerError(RuntimeError):
-    """Error during ONNX model checking."""
-
-    pass
-
-
-class OnnxRuntimeError(RuntimeError):
-    """Error during ONNX Runtime execution."""
-
-    pass
-
-
-class OnnxValidationError(RuntimeError):
-    """Output value mismatch."""
-
-    pass
 
 
 def _signature(model) -> inspect.Signature:
@@ -152,6 +122,10 @@ def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
     return profiler.output_text(unicode=True)
 
 
+def _format_exception(e: Exception) -> str:
+    return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
+
+
 def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
@@ -195,13 +169,13 @@ def _torch_onnx_export(
                 error_report_path = f"onnx_export_{timestamp}_pt_export.md"
                 _reporting.create_torch_export_error_report(
                     error_report_path,
-                    traceback.format_exc(),
+                    _format_exception(e),
                     profile_result=profile_result,
                 )
             else:
                 error_report_path = None
 
-            raise TorchExportError(
+            raise errors.TorchExportError(
                 "Failed to export the model with torch.export. "
                 f"{_BLUE}This is step 1/2{_END} "
                 "of exporting the model to ONNX. Please create an issue "
@@ -243,7 +217,7 @@ def _torch_onnx_export(
             # Run the analysis to get the error report
             _reporting.create_onnx_export_error_report(
                 error_report_path,
-                traceback.format_exc(),
+                _format_exception(e),
                 program,
                 step=1,
                 profile_result=profile_result,
@@ -251,7 +225,7 @@ def _torch_onnx_export(
         else:
             error_report_path = None
 
-        raise OnnxConversionError(
+        raise errors.OnnxConversionError(
             "Failed to convert the exported program to an ONNX model. "
             f"{_BLUE}This is step 2/2{_END} "
             "of exporting the model to ONNX. Please create an issue "
@@ -294,13 +268,13 @@ def _torch_onnx_export(
         if error_report:
             _reporting.create_onnx_export_error_report(
                 f"onnx_export_{timestamp}_checker.md",
-                traceback.format_exc(),
+                _format_exception(e),
                 onnx_program.exported_program,
                 step=2,
                 profile_result=profile_result,
                 ir_model=onnx_program.model,
             )
-        raise OnnxCheckerError(
+        raise errors.OnnxCheckerError(
             "Conversion successful but the ONNX model fails ONNX checker. "
             "Please create an issue "
             f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
@@ -312,7 +286,7 @@ def _torch_onnx_export(
     #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
     #     print("✅")
     # except Exception as e:
-    #     raise OnnxConversionError(
+    #     raise errors.OnnxConversionError(
     #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
     #         "Please create an issue "
     #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "

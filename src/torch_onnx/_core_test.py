@@ -2,11 +2,11 @@
 
 import unittest
 
+import torch_onnx
 from torch_onnx import _core
 import torch
 
-
-
+from onnxscript import FLOAT
 
 
 bf16 = torch.bfloat16
@@ -27,19 +27,45 @@ u32 = torch.uint32
 u64 = torch.uint64
 
 
-
 class ExportedProgramToIrTest(unittest.TestCase):
     def test_output_metadata_with_tuple_outputs(self):
         class GraphModule(torch.nn.Module):
-            def forward(self, arg0_1: "f32[4, 3]", arg1_1: "f32[4, 3]", arg2_1: "i64[4]"):
-                # File: /Users/justinc/Documents/GitHub/torch-onnx/tests/torch_tests/torch_onnx_test.py:9519 in forward, code: return self.emb(input), self.emb2(input)
-                embedding: "f32[4, 3]" = torch.ops.aten.embedding.default(arg0_1, arg2_1, 1);  arg0_1 = None
-                embedding_1: "f32[4, 3]" = torch.ops.aten.embedding.default(arg1_1, arg2_1, 1);  arg1_1 = arg2_1 = None
+            def forward(
+                self, arg0_1: "f32[4, 3]", arg1_1: "f32[4, 3]", arg2_1: "i64[4]"
+            ):
+                embedding: "f32[4, 3]" = torch.ops.aten.embedding.default(
+                    arg0_1, arg2_1, 1
+                )
+                arg0_1 = None
+                embedding_1: "f32[4, 3]" = torch.ops.aten.embedding.default(
+                    arg1_1, arg2_1, 1
+                )
+                arg1_1 = arg2_1 = None
                 return (embedding, embedding_1)
 
-        exported_program = torch.export.export(GraphModule(), (torch.rand(4, 3), torch.rand(4, 3), torch.rand(4)))
+        exported_program = torch.export.export(
+            GraphModule(), (torch.rand(4, 3), torch.rand(4, 3), torch.rand(4))
+        )
         assert _core.exported_program_to_ir(exported_program)
 
+    def test_inputs_are_wrapped_as_symbolic_tensors_to_support_arithmetic_ops(self):
+        class GraphModule(torch.nn.Module):
+            def forward(self, arg0_1: "f32[1]", arg1_1: "f32[1]"):
+                add: "f32[1]" = torch.ops.aten.add.Tensor(arg0_1, arg1_1)
+                return add
 
-if __name__ == '__main__':
+        def add(a: FLOAT, b: FLOAT, alpha: float = 1) -> FLOAT:
+            # Construct model and the ONNX decomposition such that two inputs are added with Python operator
+            return a + b
+
+        exported_program = torch.export.export(
+            GraphModule(), (torch.rand(1), torch.rand(1))
+        )
+        print(exported_program)
+        registry = torch_onnx.OnnxRegistry.from_torchlib()
+        registry.register_op(torch.ops.aten.add.Tensor, add)
+        assert _core.exported_program_to_ir(exported_program, registry=registry)
+
+
+if __name__ == "__main__":
     unittest.main()

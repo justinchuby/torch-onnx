@@ -215,7 +215,10 @@ def get_matching_overload(
         fail_reason = ""
         if not hasattr(overload, "signature"):
             # When an overload does not have a signature, we assume it is a custom op and should be matched
-            return overload
+            return (
+                overload,
+                "The overload does not have a signature. Assuming it is a custom op and matching it.",
+            )
         for param in overload.signature:
             if param.name not in schema_args and param.required:
                 # We don't need to handle variadic inputs as there is none.
@@ -302,6 +305,7 @@ def dispatch(
     """
     # TODO: Handle when node does not have a target
     decomp_metas = registry.get_decomps(node.target)
+    print(decomp_metas)
     # Determine if the node has complex inputs.
     is_complex = any(_arg_has_complex_dtype(arg) for arg in node.args) or any(
         _arg_has_complex_dtype(arg) for arg in node.kwargs.values()

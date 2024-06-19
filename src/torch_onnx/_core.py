@@ -27,6 +27,7 @@ from torch_onnx import (
     _registration,
     _decomp,
     errors,
+    _tensors,
 )
 
 logger = logging.getLogger(__name__)
@@ -464,13 +465,17 @@ def _handle_call_function_node_with_lowering(
 
 
 def _handle_placeholder_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value], lower: str
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value],
+    *,
+    lower: str,
+    opset: onnxscript.values.Opset,
 ) -> None:
     # Placeholder nodes are user inputs
     # We need to create a new tensor for each user input
     # and add it to the graph's inputs
     name = node.name
-    input_ = ir.Input(name)
+    input_ = _tensors.SymbolicTensor(opset, name=name)
     input_.meta["node"] = node
     _set_shape_type(input_, node.meta["val"], complex_to_float=lower != "none")
     node_name_to_values[name] = input_
@@ -491,7 +496,12 @@ def _add_nodes(
         )
         try:
             if node.op == "placeholder":
-                _handle_placeholder_node(node, node_name_to_values, lower=lower)
+                _handle_placeholder_node(
+                    node,
+                    node_name_to_values,
+                    lower=lower,
+                    opset=_get_onnxscript_opset(registry.opset_version),
+                )
             elif node.op == "call_function":
                 if lower == "at_conversion":
                     _handle_call_function_node_with_lowering(

@@ -18,7 +18,7 @@ import torch
 from onnxscript import evaluator, ir
 from onnxscript.ir import convenience as ir_convenience
 
-from torch_onnx import _schemas, _tensors
+from torch_onnx import _schemas, _tensors, errors
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +294,11 @@ def _construct_node(
 
     Args:
         signature: The OpSignature for the node.
-        named_inputs: The mapping of parameter names to their arguments.
+        named_inputs: The mapping of parameter names to their arguments. When we
+            do not have the schema of an operator, we do not know the names of
+            the inputs, in which case the names can be anything because they
+            are not used in this function. The data structure is passed in for
+            consistency with the other functions.
         named_attrs: The mapping of attribute names to their values.
     """
     inputs = []
@@ -346,14 +350,28 @@ class OpRecorder(evaluator.Evaluator):
             named_attrs: The mapping of attribute names to their values.
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
-        converted_named_inputs = _process_python_constants(
-            op_signature, named_inputs, type_binding, self.constant_farm, self.opset
-        )
-        self.nodes.append(
-            node := _construct_node(
-                op_signature, converted_named_inputs, named_attrs, self.opset
+        try:
+            converted_named_inputs = _process_python_constants(
+                op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
-        )
+        except Exception as e:
+            raise errors.GraphConstructionError(
+                f"Error processing Python constants for operator '{op_signature.domain}::{op_signature.name}'. "
+                f"named_inputs={named_inputs}, named_attrs={named_attrs}, opset={self.opset}."
+            ) from e
+
+        try:
+            self.nodes.append(
+                node := _construct_node(
+                    op_signature, converted_named_inputs, named_attrs, self.opset
+                )
+            )
+        except Exception as e:
+            raise errors.GraphConstructionError(
+                f"Error constructing node for operator '{op_signature.domain}::{op_signature.name}'. "
+                f"named_inputs={named_inputs}, converted_named_inputs={converted_named_inputs}, "
+                f"named_attrs={named_attrs}, opset={self.opset}."
+            ) from e
         return node.outputs  # type: ignore
 
     def eval(

@@ -1357,14 +1357,12 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             output_names=["output_0"],
         )
 
-
     def test_maxpool_1d_ceil_corner(self):
         model = torch.nn.MaxPool1d(
             kernel_size=1, dilation=1, stride=2, ceil_mode=True, return_indices=False
         )
         x = torch.randn(1, 3, 32)
         self.run_test(model, x)
-
 
     def test_maxpool_2d_ceil_corner(self):
         model = torch.nn.MaxPool2d(
@@ -1376,7 +1374,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         )
         x = torch.randn(1, 3, 32, 32)
         self.run_test(model, x)
-
 
     def test_maxpool_3d_ceil_corner(self):
         model = torch.nn.MaxPool3d(
@@ -1390,14 +1387,12 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.randn(1, 3, 51, 52, 45)
         self.run_test(model, x)
 
-
     def test_maxpool_1d_ceil_corner_with_indices(self):
         model = torch.nn.MaxPool1d(
             kernel_size=1, dilation=1, stride=2, ceil_mode=True, return_indices=True
         )
         x = torch.randn(1, 3, 32)
         self.run_test(model, x)
-
 
     def test_maxpool_2d_ceil_corner_with_indices(self):
         model = torch.nn.MaxPool2d(
@@ -1409,7 +1404,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         )
         x = torch.randn(1, 3, 32, 32)
         self.run_test(model, x)
-
 
     def test_maxpool_3d_ceil_corner_with_indices(self):
         model = torch.nn.MaxPool3d(
@@ -2874,7 +2868,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
     def test_interpolate_upsample(self):
         self._interpolate_tests(True)
 
-
     @skipScriptTest()  # Scripting supported for opsets > 8. See test_interpolate_upsample
     def test_interpolate_upsample_trace(self):
         self._interpolate_tests(True)
@@ -3775,7 +3768,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
 
         self.run_test(MyMaxnInt(), torch.randn(3, 3).to(torch.int32))
 
-
     def test_normalize(self):
         class Model(torch.nn.Module):
             def forward(self, x):
@@ -3858,8 +3850,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         model = torch.nn.BatchNorm3d(3, affine=False)
         self.run_test(model, x)
 
-        9
-    )  # Because ConstantOfShape op is not supported for opset < 9
     def test_instancenorm1d_runningstats(self):
         x = torch.randn(10, 5, 128)
         model = torch.nn.InstanceNorm1d(5, affine=True, track_running_stats=True)
@@ -3876,8 +3866,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         model = torch.nn.InstanceNorm1d(5, affine=False, track_running_stats=False)
         self.run_test(model, x)
 
-        9
-    )  # Because ConstantOfShape op is not supported for opset < 9
     def test_instancenorm2d_runningstats(self):
         x = torch.randn(10, 3, 128, 128)
         model = torch.nn.InstanceNorm2d(3, affine=True, track_running_stats=True)
@@ -3894,8 +3882,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         model = torch.nn.InstanceNorm2d(3, affine=False, track_running_stats=False)
         self.run_test(model, x)
 
-        9
-    )  # Because ConstantOfShape op is not supported for opset < 9
     def test_instancenorm3d_runningstats(self):
         x = torch.randn(10, 3, 64, 64, 64)
         model = torch.nn.InstanceNorm3d(3, affine=True, track_running_stats=True)
@@ -4195,7 +4181,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             input_names=["input"],
             output_names=["output"],
         )
-
 
     def test_expand(self):
         class ExpandModel(torch.nn.Module):
@@ -6236,7 +6221,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.tensor([2])
         self.run_test(ZeroAndOnes(), (x,))
 
-    @skipShapeChecking
     def test_tolist(self):
         class List(torch.jit.ScriptModule):
             @torch.jit.script_method
@@ -7845,7 +7829,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             dynamic_axes={"input_1": [0, 1, 2, 3]},
         )
 
-
     @skipScriptTest()  # TODO: the logic in symbolic_opset9 doesn't handle script
     def test_unsupported_pad(self):
         class Pad(torch.nn.Module):
@@ -8971,8 +8954,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         mat2 = torch.randn(3, 3)
         self.run_test(M(), input_args=(mat1, mat2))
 
-        9
-    )  # Because where op is not supported for opset < 9.
     def test_where_with_bool_tensor(self):
         class M(torch.nn.Module):
             def forward(self, mat1, mat2):
@@ -8983,8 +8964,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         mat2 = torch.ones(2, 3)
         self.run_test(M(), input_args=(mat1, mat2))
 
-        9
-    )  # Because where op is not supported for opset < 9.
     def test_where_with_byte_tensor(self):
         class M(torch.nn.Module):
             def forward(self, cond, mat1, mat2):
@@ -9021,8 +9000,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.tensor([[1, 2, float("inf")], [2, float("nan"), float("inf")]])
         self.run_test(M(), (x,))
 
-        10
-    )  # ONNX IsNaN, IsInf op is added in opset 9, 10 respectively.
     def test_nan_to_num(self):
         class NoParams(torch.nn.Module):
             def forward(self, x):
@@ -9306,7 +9283,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.randint(0, 1, (2, 3, 4), dtype=bool)
         y = torch.randint(1, 2, (2, 3, 4), dtype=bool)
         self.run_test(Model2(), (x, y))
-
 
     def test_where_condition_script(self):
         class Model1(torch.nn.Module):
@@ -10215,7 +10191,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
             additional_test_inputs=[(images, features), (images2, test_features)],
             # dict_check=False,
         )
-
 
     @skipScriptTest()
     def test_multi_scale_roi_align(self):
@@ -11579,7 +11554,6 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         x = torch.ones(12, 3)
         self.run_test(M(), (x,), input_names=["x"], dynamic_axes={"x": [0]})
 
-    @skipShapeChecking
     def test_sum_empty_tensor(self):
         class M(torch.nn.Module):
             def forward(self, x):

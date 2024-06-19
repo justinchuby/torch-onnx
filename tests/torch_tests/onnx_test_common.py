@@ -32,7 +32,6 @@ import torch
 from torch import export as torch_export
 from torch.onnx import _constants, verification
 from torch.onnx._internal import _beartype
-from torch.onnx._internal.fx import diagnostics
 from torch.testing._internal import common_utils
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.types import Number

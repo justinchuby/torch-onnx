@@ -175,7 +175,7 @@ def _torch_onnx_export(
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
     profiler = _maybe_start_profiler(profile)
 
-    # Stage 1: Export the model with torch.export.export if the model is not already an ExportedProgram
+    # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
         args, kwargs, dynamic_shapes = _get_torch_export_args(
             model, args, kwargs, dynamic_axes, input_names
@@ -216,7 +216,7 @@ def _torch_onnx_export(
         program = model
         print("✅")
 
-    # Stage 2: Convert the exported program to an ONNX model
+    # Step 1: Convert the exported program to an ONNX model
     try:
         print("Translate the graph into ONNX... ", end="", flush=True)
         ir_model = torch_onnx.exported_program_to_ir(program)
@@ -277,7 +277,7 @@ def _torch_onnx_export(
             )
         return onnx_program
 
-    # Stage 3: (When error report is requested) Check the ONNX model with ONNX checker
+    # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
     try:
         print("Run `onnx.checker` on the ONNX model... ", end="", flush=True)
         if f is None:
@@ -307,7 +307,7 @@ def _torch_onnx_export(
             "attach the full error stack as well as reproduction scripts. "
         ) from e
 
-    # Stage 4: (When error report is requested) Execute the model with ONNX Runtime
+    # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:
     #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
     #     print("✅")
@@ -319,7 +319,7 @@ def _torch_onnx_export(
     #         "attach the full error stack as well as reproduction scripts. "
     #     ) from e
 
-    # Stage 5: (When error report is requested) Validate the output values
+    # Step 4: (When error report is requested) Validate the output values
     # TODO
 
     if profile:
@@ -328,7 +328,7 @@ def _torch_onnx_export(
             f"onnx_export_{timestamp}_profile.md",
             onnx_program.exported_program,
             profile_result,
-            step=4,
+            step=2,  # TODO: Update the step number to 4 when validation is implemented
         )
 
     return onnx_program

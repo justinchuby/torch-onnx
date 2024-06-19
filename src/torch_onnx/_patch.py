@@ -15,7 +15,7 @@ import torch
 import torch.export
 
 import torch_onnx
-from torch_onnx import _ir_passes, _reporting, _onnx_program
+from torch_onnx import _ir_passes, _reporting, _onnx_program, errors
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -24,36 +24,6 @@ logger = logging.getLogger(__name__)
 
 WRITE_ERROR_REPORT = False
 WRITE_PROFILE_REPORT = False
-
-
-class TorchExportError(RuntimeError):
-    """Error during torch.export.export."""
-
-    pass
-
-
-class OnnxConversionError(RuntimeError):
-    """Error during ONNX conversion."""
-
-    pass
-
-
-class OnnxCheckerError(RuntimeError):
-    """Error during ONNX model checking."""
-
-    pass
-
-
-class OnnxRuntimeError(RuntimeError):
-    """Error during ONNX Runtime execution."""
-
-    pass
-
-
-class OnnxValidationError(RuntimeError):
-    """Output value mismatch."""
-
-    pass
 
 
 def _signature(model) -> inspect.Signature:
@@ -201,7 +171,7 @@ def _torch_onnx_export(
             else:
                 error_report_path = None
 
-            raise TorchExportError(
+            raise errors.TorchExportError(
                 "Failed to export the model with torch.export. "
                 f"{_BLUE}This is step 1/2{_END} "
                 "of exporting the model to ONNX. Please create an issue "
@@ -251,7 +221,7 @@ def _torch_onnx_export(
         else:
             error_report_path = None
 
-        raise OnnxConversionError(
+        raise errors.OnnxConversionError(
             "Failed to convert the exported program to an ONNX model. "
             f"{_BLUE}This is step 2/2{_END} "
             "of exporting the model to ONNX. Please create an issue "
@@ -300,7 +270,7 @@ def _torch_onnx_export(
                 profile_result=profile_result,
                 ir_model=onnx_program.model,
             )
-        raise OnnxCheckerError(
+        raise errors.OnnxCheckerError(
             "Conversion successful but the ONNX model fails ONNX checker. "
             "Please create an issue "
             f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
@@ -312,7 +282,7 @@ def _torch_onnx_export(
     #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
     #     print("✅")
     # except Exception as e:
-    #     raise OnnxConversionError(
+    #     raise errors.OnnxConversionError(
     #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
     #         "Please create an issue "
     #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "

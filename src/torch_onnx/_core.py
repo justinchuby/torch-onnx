@@ -20,7 +20,14 @@ from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 
-from torch_onnx import _building, _dispatching, _fx_passes, _registration, _decomp
+from torch_onnx import (
+    _building,
+    _dispatching,
+    _fx_passes,
+    _registration,
+    _decomp,
+    errors,
+)
 
 logger = logging.getLogger(__name__)
 # Define utilities to convert PyTorch data types so users do not need to specify manually
@@ -369,7 +376,7 @@ def _handle_call_function_node_with_lowering(
 
     if onnx_function is None:
         # TODO(justinchuby): Fall back to ATen op or do something else?
-        raise RuntimeError(
+        raise errors.DispatchError(
             f"No ONNX function found for {node.target!r}. Failure message: {message}"
         )
 
@@ -397,7 +404,7 @@ def _handle_call_function_node_with_lowering(
         try:
             outputs = onnx_function(*onnx_args, **onnx_kwargs)
         except Exception as e:
-            raise RuntimeError(
+            raise errors.GraphConstructionError(
                 f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
             ) from e
 
@@ -498,7 +505,7 @@ def _add_nodes(
                     # No lowering
                     _handle_call_function_node(model.graph, node, node_name_to_values)
         except Exception as e:
-            raise RuntimeError(
+            raise errors.OnnxConversionError(
                 f"Error when translating node {node.format_node()}. See the stack trace for more information."
             ) from e
     return node_name_to_values

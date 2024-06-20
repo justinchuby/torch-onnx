@@ -16,6 +16,7 @@ import torch.export
 
 import torch_onnx
 from torch_onnx import _ir_passes, _reporting, _onnx_program, errors
+import yaspin
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -155,13 +156,13 @@ def _torch_onnx_export(
             model, args, kwargs, dynamic_axes, input_names
         )
         try:
-            print(
-                "Obtain model graph with `torch.export.export`... ", end="", flush=True
-            )
-            program = torch.export.export(
-                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
-            )
-            print("✅")
+            with yaspin.yaspin(
+                text="Obtain model graph with `torch.export.export`...", timer=True
+            ) as sp:
+                program = torch.export.export(
+                    model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+                )
+                sp.ok()
         except Exception as e:
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -186,27 +187,31 @@ def _torch_onnx_export(
                 else ""
             ) from e
     else:
-        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
-        program = model
-        print("✅")
+        with yaspin.yaspin(
+            text="Obtain model graph with `torch.export.export`...", timer=True
+        ) as sp:
+            program = model
+            sp.ok()
 
     # Step 1: Convert the exported program to an ONNX model
     try:
-        print("Translate the graph into ONNX... ", end="", flush=True)
-        ir_model = torch_onnx.exported_program_to_ir(program)
+        with yaspin.yaspin(text="Translate the graph into ONNX...") as sp:
+            ir_model = torch_onnx.exported_program_to_ir(program)
+            ir_model = torch_onnx.exported_program_to_ir(program)
 
-        if input_names:
-            _ir_passes.rename_inputs(ir_model, input_names)
-        if output_names:
-            _ir_passes.rename_outputs(ir_model, output_names)
+            if input_names:
+                _ir_passes.rename_inputs(ir_model, input_names)
+            if output_names:
+                _ir_passes.rename_outputs(ir_model, output_names)
 
-        if not export_params:
-            ir_model.graph.initializers.clear()
+            if not export_params:
+                ir_model.graph.initializers.clear()
 
-        onnx_program = _onnx_program.ONNXProgram(ir_model, program)
-        if f is not None:
-            onnx_program.save(f)
-        print("✅")
+            onnx_program = _onnx_program.ONNXProgram(ir_model, program)
+            if f is not None:
+                onnx_program.save(f)
+
+            sp.ok()
 
     except Exception as e:
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -253,17 +258,18 @@ def _torch_onnx_export(
 
     # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
     try:
-        print("Run `onnx.checker` on the ONNX model... ", end="", flush=True)
-        if f is None:
-            onnx.checker.check_model(onnx_program.model_proto, full_check=True)
-        elif not isinstance(f, io.BytesIO):
-            onnx.checker.check_model(f, full_check=True)
-        else:
-            # Reset the file pointer to the beginning
-            f.seek(0)
-            proto = onnx.load_model(f)
-            onnx.checker.check_model(proto, full_check=True)
-        print("✅")
+        with yaspin.yaspin(text="Check the ONNX model with ONNX checker...") as sp:
+            if f is None:
+                onnx.checker.check_model(onnx_program.model_proto, full_check=True)
+            elif not isinstance(f, io.BytesIO):
+                onnx.checker.check_model(f, full_check=True)
+            else:
+                # Reset the file pointer to the beginning
+                f.seek(0)
+                proto = onnx.load_model(f)
+                onnx.checker.check_model(proto, full_check=True)
+
+            sp.ok()
     except Exception as e:
         if error_report:
             _reporting.create_onnx_export_error_report(

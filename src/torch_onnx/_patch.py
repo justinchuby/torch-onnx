@@ -162,7 +162,6 @@ def _torch_onnx_export(
                 program = torch.export.export(
                     model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
                 )
-                sp.ok()
         except Exception as e:
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -186,6 +185,8 @@ def _torch_onnx_export(
                 if error_report
                 else ""
             ) from e
+        finally:
+            sp.ok()
     else:
         with yaspin.yaspin(
             text="Obtain model graph with `torch.export.export`...", timer=True
@@ -210,8 +211,6 @@ def _torch_onnx_export(
             onnx_program = _onnx_program.ONNXProgram(ir_model, program)
             if f is not None:
                 onnx_program.save(f)
-
-            sp.ok()
 
     except Exception as e:
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -242,6 +241,8 @@ def _torch_onnx_export(
             if error_report
             else ""
         ) from e
+    finally:
+        sp.ok()
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
     if not error_report:
@@ -268,8 +269,6 @@ def _torch_onnx_export(
                 f.seek(0)
                 proto = onnx.load_model(f)
                 onnx.checker.check_model(proto, full_check=True)
-
-            sp.ok()
     except Exception as e:
         if error_report:
             _reporting.create_onnx_export_error_report(
@@ -286,7 +285,8 @@ def _torch_onnx_export(
             f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
             "attach the full error stack as well as reproduction scripts. "
         ) from e
-
+    finally:
+        sp.ok()
     # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:
     #     print("Execute the model with ONNX Runtime... ", end="", flush=True)

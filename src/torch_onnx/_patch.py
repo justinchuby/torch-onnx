@@ -316,7 +316,7 @@ def _torch_onnx_dynamo_export(
     **model_kwargs,
 ) -> _onnx_program.ONNXProgram:
     if export_options and export_options.dynamic_shapes:
-        raise NotImplementedError("Dynamic shapes are not implemented yet.")
+        warnings.warn("Dynamic shapes are not implemented yet.")
     return _torch_onnx_export(
         model,
         model_args,

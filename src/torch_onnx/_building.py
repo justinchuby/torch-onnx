@@ -172,7 +172,7 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
-def _process_python_constants(
+def _process_python_constants_and_sequences(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
@@ -185,7 +185,7 @@ def _process_python_constants(
     ],
     opset: onnxscript.values.Opset,
 ) -> dict[str, ir.Value | None]:
-    """Convert Python constants to Constant nodes based on the dtype information.
+    """Convert Python constants to Constant nodes and list to Sequence nodes based on the dtype information.
 
     The added constants will be replacing values in named_inputs in place.
 
@@ -225,6 +225,8 @@ def _process_python_constants(
             # if param.variadic:
             #     # FXIME: Handle variadic inputs and sequence inputs differently
             #     raise NotImplementedError
+            # TODO: Find a way to recursively build constants. Maybe extract the logic out.
+            # FIXME: I am here
 
         assert isinstance(
             param, _schemas.Parameter
@@ -352,7 +354,7 @@ class OpRecorder(evaluator.Evaluator):
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
         try:
-            converted_named_inputs = _process_python_constants(
+            converted_named_inputs = _process_python_constants_and_sequences(
                 op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
         except Exception as e:

@@ -214,8 +214,6 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
 
 def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
     """Adds namespace and other node metadata to the ONNX node."""
-    nn_module_stack = fx_node.meta.get("nn_module_stack")
-    fx_node.meta["nn_module_stack"] = nn_module_stack
     namespace, class_hierarchy, name_scopes = _get_node_namespace(fx_node)
     ir_node.metadata_props["namespace"] = namespace
     ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)

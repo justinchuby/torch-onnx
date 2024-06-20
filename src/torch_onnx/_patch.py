@@ -15,7 +15,7 @@ import torch
 import torch.export
 
 import torch_onnx
-from torch_onnx import _ir_passes, _reporting, _onnx_program, errors
+from torch_onnx import _ir_passes, _onnx_program, _reporting, errors
 
 _BLUE = "\033[96m"
 _END = "\033[0m"
@@ -274,12 +274,14 @@ def _torch_onnx_export(
                 profile_result=profile_result,
                 ir_model=onnx_program.model,
             )
-        raise errors.OnnxCheckerError(
-            "Conversion successful but the ONNX model fails ONNX checker. "
+        logger.warning(
+            "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
             "Please create an issue "
             f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. "
-        ) from e
+            "attach the full error stack as well as reproduction scripts. ",
+            exc_info=e,
+        )
+        return onnx_program
 
     # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:
@@ -316,7 +318,7 @@ def _torch_onnx_dynamo_export(
     **model_kwargs,
 ) -> _onnx_program.ONNXProgram:
     if export_options and export_options.dynamic_shapes:
-        raise NotImplementedError("Dynamic shapes are not implemented yet.")
+        warnings.warn("Dynamic shapes are not implemented yet.", stacklevel=1)
     return _torch_onnx_export(
         model,
         model_args,

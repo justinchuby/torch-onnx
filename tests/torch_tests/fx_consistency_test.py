@@ -63,6 +63,10 @@ from torch.testing._internal import (
 )
 from torch.testing._internal.opinfo import core as opinfo_core
 
+import torch_onnx
+
+torch_onnx.patch_torch(error_report=True, profile=False)
+
 
 # NOTE: For ATen signature modifications that will break ONNX export,
 # use **xfail_torchlib_forward_compatibility** and **skip_torchlib_forward_compatibility** instead of xfail or skip
@@ -156,11 +160,6 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: tuple[onnx_test_common.DecorateMeta, ...] =
         reason=onnx_test_common.reason_onnx_script_does_not_support("cpu is not supported: \
             https://github.com/microsoft/onnxscript/pull/1289")
     ),
-    skip(
-        "_batch_norm_with_update",
-        dtypes=(torch.float16,),
-        reason="fixme: Assertion error: result mismatch and type error",
-    ),
     xfail(
         "_softmax_backward_data",
         dtypes=(torch.float16,),
@@ -213,10 +212,6 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: tuple[onnx_test_common.DecorateMeta, ...] =
         "addr",
         dtypes=onnx_test_common.COMPLEX_TYPES,
         reason=onnx_test_common.reason_dynamo_does_not_support("Addr", "complex64")
-    ),
-    xfail(
-        "alias_copy",
-        reason="OnnxExporterError: Failed to export model",
     ),
     xfail(
         "allclose",
@@ -1349,20 +1344,6 @@ SKIP_XFAIL_SUBTESTS_WITH_MATCHER_AND_MODEL_TYPE: tuple[
         "_native_batch_norm_legit",
         model_type=pytorch_test_common.TorchModelType.TORCH_EXPORT_EXPORTEDPROGRAM,
         reason="https://github.com/pytorch/pytorch/issues/115106",
-    ),
-    skip(
-        "_batch_norm_with_update",
-        model_type=pytorch_test_common.TorchModelType.TORCH_EXPORT_EXPORTEDPROGRAM,
-        reason="https://github.com/pytorch/pytorch/issues/115106",
-    ),
-    # TODO: This test currently fails only for certain inputs, e.g. shape([3, 1]).
-    # Numerically the ONNX program is correct, but the output shapes for `save_mean`
-    # and `save_var` were tensor(-2.1268) instead of the correct tensor([-2.1268])
-    # for example.
-    skip(
-        "_batch_norm_with_update",
-        model_type=pytorch_test_common.TorchModelType.TORCH_NN_MODULE,
-        reason="not supported yet",
     ),
     xfail(
         "addmm",  # xfail can't only use dtypes to catch all cases

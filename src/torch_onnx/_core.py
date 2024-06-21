@@ -616,6 +616,7 @@ def exported_program_to_ir(
 
         # Include explicit type promotion nodes
         _fx_passes.insert_type_promotion_nodes(exported_program)
+        _fx_passes.remove_assertion_nodes(exported_program)
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.

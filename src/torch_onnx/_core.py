@@ -299,7 +299,6 @@ def _fill_in_default_kwargs(
 ) -> tuple[list[Any], dict[str, Any]]:
     """Find and Fill in the not provided kwargs with default values."""
     assert not isinstance(node.target, str)
-    node_schema = node.target._schema
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.
     complete_args = []
@@ -308,6 +307,10 @@ def _fill_in_default_kwargs(
     if inspect.isbuiltin(node.target):
         complete_args = list(node.args)
     else:
+        assert hasattr(
+            node.target, "_schema"
+        ), f"The target should be an ATen operator now, but node target {node.target} has no schema"
+        node_schema = node.target._schema
         for i, expected_arg in enumerate(node_schema.arguments):
             # TODO: Fix this bugggg
             if i < len(node.args):
@@ -537,6 +540,9 @@ def _get_inputs_and_attributes(
         return inputs, {}, [], [node.name]
 
     # The target should be an ATen operator now
+    assert hasattr(
+        node.target, "_schema"
+    ), f"The target should be an ATen operator now, but node target {node.target} has no schema"
     node_schema: torch.FunctionSchema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the

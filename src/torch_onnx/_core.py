@@ -294,33 +294,6 @@ def _handle_call_function_node(
     graph.append(ir_node)
 
 
-def _fill_in_default_kwargs(
-    node: torch.fx.Node,
-) -> tuple[list[Any], dict[str, Any]]:
-    """Find and Fill in the not provided kwargs with default values."""
-    assert not isinstance(node.target, str)
-    node_schema = node.target._schema
-    # This function assumes the order of arguments in FX op is the
-    # same as the order of arguments in TorchScript op.
-    complete_args = []
-    complete_kwargs = {}
-
-    if inspect.isbuiltin(node.target):
-        complete_args = list(node.args)
-    else:
-        for i, expected_arg in enumerate(node_schema.arguments):
-            # TODO: Fix this bugggg
-            if i < len(node.args):
-                complete_args.append(node.args[i])
-            elif expected_arg.name in node.kwargs:
-                complete_kwargs[expected_arg.name] = node.kwargs[expected_arg.name]
-            else:
-                # Get default from schema.
-                complete_kwargs[expected_arg.name] = expected_arg.default_value
-
-    return complete_args, complete_kwargs
-
-
 def _convert_fx_arg_to_onnx_arg(
     arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
 ):
@@ -380,9 +353,10 @@ def _handle_call_function_node_with_lowering(
             f"No ONNX function found for {node.target!r}. Failure message: {message}"
         )
 
-    # Map FX inputs to ONNX inputs and fill optional inputs with default values.
+    # Map FX inputs to ONNX inputs and fill optional inputs.
     # torch_args and torch_kwargs are for op-level validation
-    fx_args, fx_kwargs = _fill_in_default_kwargs(node)
+    fx_args = node.args
+    fx_kwargs = node.kwargs
 
     # Replace the input FX nodes with ONNX values
     onnx_args = [
@@ -537,6 +511,9 @@ def _get_inputs_and_attributes(
         return inputs, {}, [], [node.name]
 
     # The target should be an ATen operator now
+    assert hasattr(
+        node.target, "_schema"
+    ), f"The target should be an ATen operator now, but node target {node.target} has no schema"
     node_schema: torch.FunctionSchema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the

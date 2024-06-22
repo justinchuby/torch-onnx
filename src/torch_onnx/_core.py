@@ -753,10 +753,10 @@ def export(
     args: tuple[Any, ...],
     kwargs: dict[str, Any] | None = None,
     *,
+    registry: _registration.OnnxRegistry | None = None,
+    dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
-    opset_version: int | None = None,
-    dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     profile: bool = False,
     error_report: bool = False,
 ) -> _onnx_program.ONNXProgram:
@@ -766,15 +766,15 @@ def export(
         model: The model to export. This can be a PyTorch nn.Module or an ExportedProgram.
         args: The arguments to pass to the model.
         kwargs: The keyword arguments to pass to the model.
+        registry: The registry of all ONNX decompositions.
+        dynamic_shapes: Dynamic shapes in the graph.
         input_names: If provided, rename the inputs.
         output_names: If provided, rename the outputs.
-        opset_version: The ONNX opset version to use.
-        dynamic_shapes: Dynamic shapes in the graph.
         profile: Whether to profile the export process.
         error_report: Whether to generate an error report if the export fails.
 
     Returns:
-        The ONNXProgram.
+        The ONNXProgram with the exported IR graph.
 
     Raises:
         TorchExportError: If the export process fails with torch.export.
@@ -825,7 +825,7 @@ def export(
     # Step 1: Convert the exported program to an ONNX model
     try:
         print("Translate the graph into ONNX... ", end="", flush=True)
-        ir_model = exported_program_to_ir(program)
+        ir_model = exported_program_to_ir(program, registry=registry)
 
         if input_names:
             _ir_passes.rename_inputs(ir_model, input_names)

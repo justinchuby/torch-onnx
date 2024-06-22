@@ -251,11 +251,13 @@ def get_matching_overload(
                 ):
                     first_tensor = _get_first_tensor_in_node_list(arg)
                     assert first_tensor is not None
+                    # FIXME: Handle symfloat here
                     arg = ir.SequenceType(_get_type_from_tensor(first_tensor))
                 elif isinstance(arg, torch.fx.Node):
                     meta_val = arg.meta["val"]
                     arg = _get_type_from_tensor(meta_val)
                 # TODO: Handle None attributes
+                # FIXME: Handle symfloat etc.
                 # Handle tensors and Python values
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
                     fail_reason = f"Parameter type not compatible with argument: param=`{param}`, assigned_types=`{assigned_types}`, arg=`{arg}`"

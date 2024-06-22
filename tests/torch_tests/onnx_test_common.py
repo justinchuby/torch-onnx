@@ -36,6 +36,9 @@ from torch.testing._internal import common_utils
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.types import Number
 
+import torch_onnx
+import torch_onnx.errors
+
 _NumericType = Union[Number, torch.Tensor, np.ndarray]
 _ModelType = Union[torch.nn.Module, Callable, torch_export.ExportedProgram]
 _InputArgsType = Optional[
@@ -160,25 +163,28 @@ class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
         verbose=False,
     ):
         def _run_test(m, remained_onnx_input_idx, flatten=True, ignore_none=True):
-            return run_model_test(
-                self,
-                m,
-                input_args=input_args,
-                input_kwargs=input_kwargs,
-                rtol=rtol,
-                atol=atol,
-                do_constant_folding=do_constant_folding,
-                dynamic_axes=dynamic_axes,
-                additional_test_inputs=additional_test_inputs,
-                input_names=input_names,
-                output_names=output_names,
-                fixed_batch_size=fixed_batch_size,
-                training=training,
-                remained_onnx_input_idx=remained_onnx_input_idx,
-                flatten=flatten,
-                ignore_none=ignore_none,
-                verbose=verbose,
-            )
+            try:
+                return run_model_test(
+                    self,
+                    m,
+                    input_args=input_args,
+                    input_kwargs=input_kwargs,
+                    rtol=rtol,
+                    atol=atol,
+                    do_constant_folding=do_constant_folding,
+                    dynamic_axes=dynamic_axes,
+                    additional_test_inputs=additional_test_inputs,
+                    input_names=input_names,
+                    output_names=output_names,
+                    fixed_batch_size=fixed_batch_size,
+                    training=training,
+                    remained_onnx_input_idx=remained_onnx_input_idx,
+                    flatten=flatten,
+                    ignore_none=ignore_none,
+                    verbose=verbose,
+                )
+            except torch_onnx.errors.TorchExportError:
+                self.skipTest("torch.export errors are skipped")
 
         if isinstance(remained_onnx_input_idx, dict):
             scripting_remained_onnx_input_idx = remained_onnx_input_idx["scripting"]

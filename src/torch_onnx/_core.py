@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import ctypes
+import datetime
 import inspect
 import itertools
 import logging
 import operator
+import textwrap
+import traceback
 import typing
 from typing import Any, Literal, Sequence
 
 import numpy as np
+import onnx
 import onnxscript
 import onnxscript.evaluator
 import onnxscript.function_libs
@@ -28,9 +32,12 @@ from torch_onnx import (
     _decomp,
     errors,
     _tensors,
+    _onnx_program,
+    _reporting,
+    _ir_passes,
 )
 
-logger = logging.getLogger(__name__)
+
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.bfloat16: ir.DataType.BFLOAT16,
@@ -50,6 +57,10 @@ _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.int8: ir.DataType.INT8,
     torch.uint8: ir.DataType.UINT8,
 }
+_BLUE = "\033[96m"
+_END = "\033[0m"
+
+logger = logging.getLogger(__name__)
 
 
 def _torch_dtype_to_onnx_dtype(dtype: torch.dtype) -> ir.DataType:
@@ -564,6 +575,27 @@ def _get_inputs_and_attributes(
     return inputs, attributes, input_names, output_names
 
 
+def _maybe_start_profiler(should_profile: bool) -> Any:
+    if should_profile:
+        import pyinstrument
+
+        profiler = pyinstrument.Profiler(async_mode="disabled")
+        profiler.start()
+        return profiler
+    return None
+
+
+def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
+    if profiler is None:
+        return None
+    profiler.stop()
+    return profiler.output_text(unicode=True)
+
+
+def _format_exception(e: Exception) -> str:
+    return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
+
+
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
@@ -616,6 +648,7 @@ def exported_program_to_ir(
 
         # Include explicit type promotion nodes
         _fx_passes.insert_type_promotion_nodes(exported_program)
+        _fx_passes.remove_assertion_nodes(exported_program)
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
@@ -714,3 +747,187 @@ def exported_program_to_ir(
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 
     return model
+
+
+def export(
+    model: torch.nn.Module | torch.export.ExportedProgram,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any] | None = None,
+    *,
+    registry: _registration.OnnxRegistry | None = None,
+    dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
+    profile: bool = False,
+    error_report: bool = False,
+) -> _onnx_program.ONNXProgram:
+    """Export a PyTorch model to ONNXProgram.
+
+    Args:
+        model: The model to export. This can be a PyTorch nn.Module or an ExportedProgram.
+        args: The arguments to pass to the model.
+        kwargs: The keyword arguments to pass to the model.
+        registry: The registry of all ONNX decompositions.
+        dynamic_shapes: Dynamic shapes in the graph.
+        input_names: If provided, rename the inputs.
+        output_names: If provided, rename the outputs.
+        profile: Whether to profile the export process.
+        error_report: Whether to generate an error report if the export fails.
+
+    Returns:
+        The ONNXProgram with the exported IR graph.
+
+    Raises:
+        TorchExportError: If the export process fails with torch.export.
+        OnnxConversionError: If the ExportedProgram to ONNX translation fails.
+    """
+    # Set up the error reporting facilities
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    profiler = _maybe_start_profiler(profile)
+
+    # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
+    if not isinstance(model, torch.export.ExportedProgram):
+        try:
+            print(
+                "Obtain model graph with `torch.export.export`... ", end="", flush=True
+            )
+            program = torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            )
+            print("✅")
+        except Exception as e:
+            profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+            if error_report:
+                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                _reporting.create_torch_export_error_report(
+                    error_report_path,
+                    _format_exception(e),
+                    profile_result=profile_result,
+                )
+            else:
+                error_report_path = None
+
+            raise errors.TorchExportError(
+                textwrap.dedent(f"""\
+                    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
+                    - Modify the model code for `torch.export.export` to succeed.
+                    - Debug `torch.export.export` and summit a PR to PyTorch.
+                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.
+                    """)
+                + f"Error report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            ) from e
+    else:
+        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
+        program = model
+        print("✅")
+
+    # Step 1: Convert the exported program to an ONNX model
+    try:
+        print("Translate the graph into ONNX... ", end="", flush=True)
+        ir_model = exported_program_to_ir(program, registry=registry)
+
+        if input_names:
+            _ir_passes.rename_inputs(ir_model, input_names)
+        if output_names:
+            _ir_passes.rename_outputs(ir_model, output_names)
+
+        onnx_program = _onnx_program.ONNXProgram(ir_model, program)
+        print("✅")
+
+    except Exception as e:
+        profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+        if error_report:
+            error_report_path = f"onnx_export_{timestamp}_conversion.md"
+
+            # Run the analysis to get the error report
+            _reporting.create_onnx_export_error_report(
+                error_report_path,
+                _format_exception(e),
+                program,
+                step=1,
+                profile_result=profile_result,
+                registry=registry,
+            )
+        else:
+            error_report_path = None
+
+        raise errors.OnnxConversionError(
+            textwrap.dedent(f"""\
+                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
+                - If there is a missing ONNX function, implement it and register it to the registry.
+                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
+                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.
+                """)
+            + f"Error report has been saved to '{error_report_path}'."
+            if error_report
+            else ""
+        ) from e
+
+    profile_result = _maybe_stop_profiler_and_get_result(profiler)
+    if not error_report:
+        # Return if error report is not requested
+        if profile:
+            assert profile_result is not None
+            _reporting.crete_onnx_export_profile_report(
+                f"onnx_export_{timestamp}_profile.md",
+                onnx_program.exported_program,
+                profile_result,
+                step=1,
+            )
+        return onnx_program
+
+    # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
+    try:
+        print("Run `onnx.checker` on the ONNX model... ", end="", flush=True)
+        # TODO: Handle when model is >2GB
+        onnx.checker.check_model(onnx_program.model_proto, full_check=True)
+        print("✅")
+    except Exception as e:
+        if error_report:
+            _reporting.create_onnx_export_error_report(
+                f"onnx_export_{timestamp}_checker.md",
+                _format_exception(e),
+                onnx_program.exported_program,
+                step=2,
+                profile_result=profile_result,
+                model=onnx_program.model,
+                registry=registry,
+            )
+        logger.warning(
+            "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
+            "Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. ",
+            exc_info=e,
+        )
+        return onnx_program
+
+    # Step 3: (When error report is requested) Execute the model with ONNX Runtime
+    # try:
+    #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
+    #     print("✅")
+    # except Exception as e:
+    #     raise errors.OnnxConversionError(
+    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
+    #         "Please create an issue "
+    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+    #         "attach the full error stack as well as reproduction scripts. "
+    #     ) from e
+
+    # Step 4: (When error report is requested) Validate the output values
+    # TODO
+
+    if profile:
+        assert profile_result is not None
+        _reporting.crete_onnx_export_profile_report(
+            f"onnx_export_{timestamp}_profile.md",
+            onnx_program.exported_program,
+            profile_result,
+            step=2,  # TODO: Update the step number to 4 when validation is implemented
+        )
+
+    return onnx_program

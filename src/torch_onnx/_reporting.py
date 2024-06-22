@@ -1,6 +1,6 @@
 import torch
 
-from torch_onnx import _analysis
+from torch_onnx import _analysis, _registration
 from onnxscript import ir
 
 
@@ -47,7 +47,8 @@ def create_onnx_export_error_report(
     *,
     step: int,
     profile_result: str | None,
-    ir_model: ir.Model | None = None,
+    model: ir.Model | None = None,
+    registry: _registration.OnnxRegistry | None = None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
@@ -60,13 +61,13 @@ def create_onnx_export_error_report(
         f.write("```python\n")
         f.write(str(program))
         f.write("```\n\n")
-        if ir_model is not None:
+        if model is not None:
             f.write("ONNX model:\n\n")
             f.write("```python\n")
-            f.write(str(ir_model))
+            f.write(str(model))
             f.write("\n```\n\n")
         f.write("## Analysis\n\n")
-        _analysis.analyze(program, file=f)
+        _analysis.analyze(program, file=f, registry=registry)
         if profile_result is not None:
             f.write("\n## Profiling result\n\n")
             f.write("```\n")

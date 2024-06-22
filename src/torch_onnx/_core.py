@@ -848,6 +848,7 @@ def export(
                 program,
                 step=1,
                 profile_result=profile_result,
+                registry=registry,
             )
         else:
             error_report_path = None
@@ -892,7 +893,8 @@ def export(
                 onnx_program.exported_program,
                 step=2,
                 profile_result=profile_result,
-                ir_model=onnx_program.model,
+                model=onnx_program.model,
+                registry=registry,
             )
         logger.warning(
             "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004

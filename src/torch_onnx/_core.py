@@ -6,6 +6,7 @@ import inspect
 import itertools
 import logging
 import operator
+import textwrap
 import traceback
 import typing
 from typing import Any, Literal, Sequence
@@ -808,12 +809,13 @@ def export(
                 error_report_path = None
 
             raise errors.TorchExportError(
-                "Failed to export the model with torch.export. "
-                f"{_BLUE}This is step 1/2{_END} "
-                "of exporting the model to ONNX. Please create an issue "
-                f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
-                "attach the full error stack as well as reproduction scripts."
-                + f" Error report has been saved to '{error_report_path}'."
+                textwrap.dedent(f"""\
+                    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
+                    - Modify the model code for `torch.export.export` to succeed.
+                    - Debug `torch.export.export` and summit a PR to PyTorch.
+                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.
+                    """)
+                + f"Error report has been saved to '{error_report_path}'."
                 if error_report
                 else ""
             ) from e
@@ -854,14 +856,14 @@ def export(
             error_report_path = None
 
         raise errors.OnnxConversionError(
-            "Failed to convert the exported program to an ONNX model. "
-            f"{_BLUE}This is step 2/2{_END} "
-            "of exporting the model to ONNX. Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. "
-            "You can run `torch_onnx.analyze()` to produce an error report after obtaining "
-            "an ExportedProgram with `torch.export.export()`."
-            + f" Error report has been saved to '{error_report_path}'."
+            textwrap.dedent(f"""\
+                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
+                - If there is a missing ONNX function, implement it and register it to the registry.
+                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
+                - You can run `torch_onnx.analyze()` to produce an error report after obtaining the ExportedProgram with `torch.export.export()`.
+                - Run export with `error_report=True` and create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and attach error report as well as reproduction scripts.
+                """)
+            + f"Error report has been saved to '{error_report_path}'."
             if error_report
             else ""
         ) from e

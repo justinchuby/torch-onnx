@@ -30,6 +30,10 @@ from torch.onnx._internal.fx import (
 )
 from torch.testing._internal import common_utils
 
+import torch_onnx
+
+torch_onnx.patch_torch(error_report=True)
+
 try:
     import torchvision  # type: ignore[import]
 

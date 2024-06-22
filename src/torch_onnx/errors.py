@@ -1,4 +1,7 @@
-class ExporterError(RuntimeError):
+import torch.onnx
+
+
+class ExporterError(torch.onnx.OnnxExporterError):
     """Error during export."""
 
     pass

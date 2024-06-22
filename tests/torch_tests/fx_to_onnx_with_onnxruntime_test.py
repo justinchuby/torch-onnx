@@ -21,6 +21,7 @@ import torch
 import torch.onnx
 from torch import nn
 
+import torchvision
 from torch._subclasses import fake_tensor
 from torch.onnx._internal import _beartype, exporter
 from torch.onnx._internal.fx import (
@@ -33,16 +34,6 @@ from torch.testing._internal import common_utils
 import torch_onnx
 
 torch_onnx.patch_torch(error_report=True)
-
-try:
-    import torchvision  # type: ignore[import]
-
-    HAS_TORCHVISION = True
-except ImportError:
-    HAS_TORCHVISION = False
-except RuntimeError:
-    HAS_TORCHVISION = False
-skip_if_no_torchvision = unittest.skipIf(not HAS_TORCHVISION, "no torchvision")
 
 
 def _parameterized_class_attrs_and_values():
@@ -317,7 +308,6 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
         input = torch.randn(2)
         self.run_test_with_fx_to_onnx_exporter_and_onnx_runtime(Model(), (input,))
 
-    @skip_if_no_torchvision
     def test_resnet18(self):
         # TODO(bowbao): Note [training vs eval in dynamo_export]
         # So we are effectively exporting all models in traning mode by
@@ -338,7 +328,6 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
     @pytorch_test_common.xfail_dynamic_fx_test(
         error_message="[ONNXRuntimeError] : 2 : INVALID_ARGUMENT : Got invalid dimensions for input"
     )
-    @skip_if_no_torchvision
     def test_shufflenet_v2(self):
         # TODO(bowbao): see Note [training vs eval in dynamo_export]
         model = torchvision.models.shufflenet_v2_x0_5(weights=None).eval()

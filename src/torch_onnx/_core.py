@@ -860,8 +860,7 @@ def export(
                 Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
                 - If there is a missing ONNX function, implement it and register it to the registry.
                 - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-                - You can run `torch_onnx.analyze()` to produce an error report after obtaining the ExportedProgram with `torch.export.export()`.
-                - Run export with `error_report=True` and create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and attach error report as well as reproduction scripts.
+                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.
                 """)
             + f"Error report has been saved to '{error_report_path}'."
             if error_report

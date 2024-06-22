@@ -38,19 +38,20 @@ torch_onnx.analyze(exported)
 
 ## Design
 
-{ExportedProgram, jit} -> {ONNX IR} -> {torchlib} -> {ONNX}
+({jit}) -> {ExportedProgram} -> {torchlib} -> {ONNX IR} -> {ONNX}
 
+- Use ExportedProgram
+  - Rely on robustness of the torch.export implementation
+  - Reduce complexity in the exporter
+  - This does not solve dynamo limitations, but it avoids introducing additional breakage by running fx passes
 - Flat graph; Scope info as metadata, not functions
   - Because existing tools are not good at handling them
 - Eager optimization where appropriate
   - Because exsiting tools are not good at optimizing
 - Drop in replacement for torch.onnx.export
   - Minimum migration effort
-- Use ExportedProgram
-  - Rely on robustness of the torch.export implementation
-  - This does not solve dynamo limitations, but it avoids introducing additional breakage by running fx passes
-- Build graph eagerly, in place
-  - Expose shape and dtype information to the op functions; build with IR
+- Build graph eagerly in the exporter
+  - Give the exporter full control over the graph being built
 
 ## Why is this doable?
 

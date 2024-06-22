@@ -38,7 +38,7 @@ torch_onnx.analyze(exported)
 
 ## Design
 
-({jit}) -> {ExportedProgram} -> {torchlib} -> {ONNX IR} -> {ONNX}
+{dynamo/jit} -> {ExportedProgram} -> {torchlib} -> {ONNX IR} -> {ONNX}
 
 - Use ExportedProgram
   - Rely on robustness of the torch.export implementation

@@ -17,8 +17,6 @@ import torch.export
 import torch_onnx
 from torch_onnx import _ir_passes, _onnx_program, _reporting, errors
 
-_BLUE = "\033[96m"
-_END = "\033[0m"
 
 logger = logging.getLogger(__name__)
 
@@ -105,25 +103,6 @@ def _get_torch_export_args(
     return args, kwargs, dynamic_shapes
 
 
-def _maybe_start_profiler(should_profile: bool) -> Any:
-    if should_profile:
-        import pyinstrument
-
-        profiler = pyinstrument.Profiler(async_mode="disabled")
-        profiler.start()
-        return profiler
-    return None
-
-
-def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
-    if profiler is None:
-        return None
-    profiler.stop()
-    return profiler.output_text(unicode=True)
-
-
-def _format_exception(e: Exception) -> str:
-    return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
 
 
 def _torch_onnx_export(
@@ -146,8 +125,7 @@ def _torch_onnx_export(
     # Set up the error reporting facilities
     error_report = WRITE_ERROR_REPORT or error_report
     profile = WRITE_PROFILE_REPORT or profile
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
-    profiler = _maybe_start_profiler(profile)
+
 
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):

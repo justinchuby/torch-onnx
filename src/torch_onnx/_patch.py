@@ -155,38 +155,38 @@ def _torch_onnx_export(
         args, kwargs, dynamic_shapes = _get_torch_export_args(
             model, args, kwargs, dynamic_axes, input_names
         )
-        try:
-            with yaspin.yaspin(
-                text="Obtain model graph with `torch.export.export`...", timer=True
-            ) as sp:
+        with yaspin.yaspin(
+            text="Obtain model graph with `torch.export.export`...", timer=True
+        ) as sp:
+            try:
                 program = torch.export.export(
                     model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
                 )
                 sp.ok()
-        except Exception as e:
-            sp.fail()
-            profile_result = _maybe_stop_profiler_and_get_result(profiler)
+            except Exception as e:
+                sp.fail()
+                profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-            if error_report:
-                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
-                _reporting.create_torch_export_error_report(
-                    error_report_path,
-                    _format_exception(e),
-                    profile_result=profile_result,
-                )
-            else:
-                error_report_path = None
+                if error_report:
+                    error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                    _reporting.create_torch_export_error_report(
+                        error_report_path,
+                        _format_exception(e),
+                        profile_result=profile_result,
+                    )
+                else:
+                    error_report_path = None
 
-            raise errors.TorchExportError(
-                "Failed to export the model with torch.export. "
-                f"{_BLUE}This is step 1/2{_END} "
-                "of exporting the model to ONNX. Please create an issue "
-                f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
-                "attach the full error stack as well as reproduction scripts."
-                + f" Error report has been saved to '{error_report_path}'."
-                if error_report
-                else ""
-            ) from e
+                raise errors.TorchExportError(
+                    "Failed to export the model with torch.export. "
+                    f"{_BLUE}This is step 1/2{_END} "
+                    "of exporting the model to ONNX. Please create an issue "
+                    f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
+                    "attach the full error stack as well as reproduction scripts."
+                    + f" Error report has been saved to '{error_report_path}'."
+                    if error_report
+                    else ""
+                ) from e
     else:
         with yaspin.yaspin(
             text="Obtain model graph with `torch.export.export`...", timer=True
@@ -195,8 +195,9 @@ def _torch_onnx_export(
             sp.ok()
 
     # Step 1: Convert the exported program to an ONNX model
-    try:
-        with yaspin.yaspin(text="Translate the graph into ONNX...") as sp:
+    with yaspin.yaspin(text="Translate the graph into ONNX...") as sp:
+        try:
+
             ir_model = torch_onnx.exported_program_to_ir(program)
             ir_model = torch_onnx.exported_program_to_ir(program)
 
@@ -213,36 +214,36 @@ def _torch_onnx_export(
                 onnx_program.save(f)
             sp.ok()
 
-    except Exception as e:
-        sp.fail()
-        profile_result = _maybe_stop_profiler_and_get_result(profiler)
+        except Exception as e:
+            sp.fail()
+            profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-        if error_report:
-            error_report_path = f"onnx_export_{timestamp}_conversion.md"
+            if error_report:
+                error_report_path = f"onnx_export_{timestamp}_conversion.md"
 
-            # Run the analysis to get the error report
-            _reporting.create_onnx_export_error_report(
-                error_report_path,
-                _format_exception(e),
-                program,
-                step=1,
-                profile_result=profile_result,
-            )
-        else:
-            error_report_path = None
+                # Run the analysis to get the error report
+                _reporting.create_onnx_export_error_report(
+                    error_report_path,
+                    _format_exception(e),
+                    program,
+                    step=1,
+                    profile_result=profile_result,
+                )
+            else:
+                error_report_path = None
 
-        raise errors.OnnxConversionError(
-            "Failed to convert the exported program to an ONNX model. "
-            f"{_BLUE}This is step 2/2{_END} "
-            "of exporting the model to ONNX. Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. "
-            "You can run `torch_onnx.analyze()` to produce an error report after obtaining "
-            "an ExportedProgram with `torch.export.export()`."
-            + f" Error report has been saved to '{error_report_path}'."
-            if error_report
-            else ""
-        ) from e
+            raise errors.OnnxConversionError(
+                "Failed to convert the exported program to an ONNX model. "
+                f"{_BLUE}This is step 2/2{_END} "
+                "of exporting the model to ONNX. Please create an issue "
+                f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+                "attach the full error stack as well as reproduction scripts. "
+                "You can run `torch_onnx.analyze()` to produce an error report after obtaining "
+                "an ExportedProgram with `torch.export.export()`."
+                + f" Error report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            ) from e
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
     if not error_report:
@@ -258,8 +259,8 @@ def _torch_onnx_export(
         return onnx_program
 
     # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
-    try:
-        with yaspin.yaspin(text="Check the ONNX model with ONNX checker...") as sp:
+    with yaspin.yaspin(text="Check the ONNX model with ONNX checker...") as sp:
+        try:
             if f is None:
                 onnx.checker.check_model(onnx_program.model_proto, full_check=True)
             elif not isinstance(f, io.BytesIO):
@@ -270,23 +271,23 @@ def _torch_onnx_export(
                 proto = onnx.load_model(f)
                 onnx.checker.check_model(proto, full_check=True)
             sp.ok()
-    except Exception as e:
-        sp.fail()
-        if error_report:
-            _reporting.create_onnx_export_error_report(
-                f"onnx_export_{timestamp}_checker.md",
-                _format_exception(e),
-                onnx_program.exported_program,
-                step=2,
-                profile_result=profile_result,
-                ir_model=onnx_program.model,
-            )
-        raise errors.OnnxCheckerError(
-            "Conversion successful but the ONNX model fails ONNX checker. "
-            "Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. "
-        ) from e
+        except Exception as e:
+            sp.fail()
+            if error_report:
+                _reporting.create_onnx_export_error_report(
+                    f"onnx_export_{timestamp}_checker.md",
+                    _format_exception(e),
+                    onnx_program.exported_program,
+                    step=2,
+                    profile_result=profile_result,
+                    ir_model=onnx_program.model,
+                )
+            raise errors.OnnxCheckerError(
+                "Conversion successful but the ONNX model fails ONNX checker. "
+                "Please create an issue "
+                f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+                "attach the full error stack as well as reproduction scripts. "
+            ) from e
 
     # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:

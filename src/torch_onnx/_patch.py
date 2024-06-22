@@ -155,6 +155,7 @@ def _torch_onnx_export(
         args, kwargs, dynamic_shapes = _get_torch_export_args(
             model, args, kwargs, dynamic_axes, input_names
         )
+        error = None
         with yaspin.yaspin(
             text="Obtain model graph with `torch.export.export`...", timer=True
         ) as sp:
@@ -164,6 +165,7 @@ def _torch_onnx_export(
                 )
                 sp.ok()
             except Exception as e:
+                error = e
                 sp.fail()
                 profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -177,16 +179,17 @@ def _torch_onnx_export(
                 else:
                     error_report_path = None
 
-                raise errors.TorchExportError(
-                    "Failed to export the model with torch.export. "
-                    f"{_BLUE}This is step 1/2{_END} "
-                    "of exporting the model to ONNX. Please create an issue "
-                    f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
-                    "attach the full error stack as well as reproduction scripts."
-                    + f" Error report has been saved to '{error_report_path}'."
-                    if error_report
-                    else ""
-                ) from e
+        if error:
+            raise errors.TorchExportError(
+                "Failed to export the model with torch.export. "
+                f"{_BLUE}This is step 1/2{_END} "
+                "of exporting the model to ONNX. Please create an issue "
+                f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
+                "attach the full error stack as well as reproduction scripts."
+                + f" Error report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            ) from error
     else:
         with yaspin.yaspin(
             text="Obtain model graph with `torch.export.export`...", timer=True
@@ -195,6 +198,7 @@ def _torch_onnx_export(
             sp.ok()
 
     # Step 1: Convert the exported program to an ONNX model
+    error = None
     with yaspin.yaspin(text="Translate the graph into ONNX...") as sp:
         try:
 
@@ -215,6 +219,7 @@ def _torch_onnx_export(
             sp.ok()
 
         except Exception as e:
+            error = e
             sp.fail()
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -232,18 +237,19 @@ def _torch_onnx_export(
             else:
                 error_report_path = None
 
-            raise errors.OnnxConversionError(
-                "Failed to convert the exported program to an ONNX model. "
-                f"{_BLUE}This is step 2/2{_END} "
-                "of exporting the model to ONNX. Please create an issue "
-                f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-                "attach the full error stack as well as reproduction scripts. "
-                "You can run `torch_onnx.analyze()` to produce an error report after obtaining "
-                "an ExportedProgram with `torch.export.export()`."
-                + f" Error report has been saved to '{error_report_path}'."
-                if error_report
-                else ""
-            ) from e
+    if error:
+        raise errors.OnnxConversionError(
+            "Failed to convert the exported program to an ONNX model. "
+            f"{_BLUE}This is step 2/2{_END} "
+            "of exporting the model to ONNX. Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. "
+            "You can run `torch_onnx.analyze()` to produce an error report after obtaining "
+            "an ExportedProgram with `torch.export.export()`."
+            + f" Error report has been saved to '{error_report_path}'."
+            if error_report
+            else ""
+        ) from error
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
     if not error_report:

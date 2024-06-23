@@ -241,6 +241,11 @@ def _handle_getitem_node(
     """Handle a getitem node.
 
     Add the input value it is getting to the mapping, then return the value.
+
+    There are two cases for this node:
+    1. The output is a Sequence (traced), we can simply get the value from the sequence
+    2. The output is produced by a SplitToSequence node, we need to get the value from the sequence value
+    This function only handles the first case
     """
     assert len(node.all_input_nodes) == 1
     source = node.all_input_nodes[0]
@@ -265,7 +270,6 @@ def _handle_call_function_node(
 ):
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
-        return
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
@@ -338,7 +342,7 @@ def _convert_fx_arg_to_onnx_arg(
     return arg
 
 
-def _get_onnxscript_opset(opset_version: int) -> onnxscript.Opset:
+def _get_onnxscript_opset(opset_version: int) -> onnxscript.values.Opset:
     return onnxscript.values.Opset("", opset_version)
 
 
@@ -348,10 +352,18 @@ def _handle_call_function_node_with_lowering(
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
     registry: _registration.OnnxRegistry,
+    opset: onnxscript.values.Opset,
 ):
     if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values)
-        return
+        source = node.all_input_nodes[0]
+        source_outputs = node_name_to_values[source.name]
+        if isinstance(source_outputs, Sequence):
+            _handle_getitem_node(node, node_name_to_values)
+            return
+        else:
+            # `source_outputs` is a sequence(tensor()) value and we need to
+            # use SequenceAt to get the value. This is handled by torchlib
+            pass
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
@@ -382,9 +394,7 @@ def _handle_call_function_node_with_lowering(
             onnx_kwargs[key] = -1
 
     with onnxscript.evaluator.default_as(
-        tracer := _building.OpRecorder(
-            _get_onnxscript_opset(registry.opset_version), constant_farm
-        )
+        tracer := _building.OpRecorder(opset, constant_farm)
     ):
         try:
             outputs = onnx_function(*onnx_args, **onnx_kwargs)
@@ -450,7 +460,7 @@ def _handle_call_function_node_with_lowering(
 
 def _handle_placeholder_node(
     node: torch.fx.Node,
-    node_name_to_values: dict[str, ir.Value],
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     *,
     lower: str,
     opset: onnxscript.values.Opset,
@@ -471,9 +481,10 @@ def _add_nodes(
     model: ir.Model,
     lower: Literal["at_conversion", "post_conversion", "none"],
     registry: _registration.OnnxRegistry,
-) -> dict[str, ir.Value]:
+) -> dict[str, ir.Value | Sequence[ir.Value]]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
+    opset = _get_onnxscript_opset(registry.opset_version)
     for node in exported_program.graph.nodes:
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
@@ -484,7 +495,7 @@ def _add_nodes(
                     node,
                     node_name_to_values,
                     lower=lower,
-                    opset=_get_onnxscript_opset(registry.opset_version),
+                    opset=opset,
                 )
             elif node.op == "call_function":
                 if lower == "at_conversion":
@@ -494,6 +505,7 @@ def _add_nodes(
                         node_name_to_values,
                         constant_farm,
                         registry=registry,
+                        opset=opset,
                     )
                 else:
                     # No lowering
@@ -734,6 +746,8 @@ def exported_program_to_ir(
     for name, value in model.graph.initializers.items():
         torch_tensor = exported_program.state_dict.get(name)
         if torch_tensor is None:
+            # FIXME(justinchuby/torch-onnx#60): Figure out a way to get value when
+            # the input is InputKind.CONSTANT_TENSOR because they are not in the state_dict
             logger.warning("Tensor '%s' not found in state_dict", name)
             continue
         ir_tensor = TorchTensor(torch_tensor, name=name)
@@ -788,13 +802,16 @@ def export(
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
         try:
+            model_repr = repr(model)
             print(
-                "Obtain model graph with `torch.export.export`... ", end="", flush=True
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
             )
             program = torch.export.export(
                 model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
             )
-            print("✅")
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
+            )
         except Exception as e:
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -820,13 +837,13 @@ def export(
                 else ""
             ) from e
     else:
-        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
+        print("Obtain model graph with `torch.export.export`...")
         program = model
-        print("✅")
+        print("Obtain model graph with `torch.export.export`... ✅")
 
     # Step 1: Convert the exported program to an ONNX model
     try:
-        print("Translate the graph into ONNX... ", end="", flush=True)
+        print("Translate the graph into ONNX...")
         ir_model = exported_program_to_ir(program, registry=registry)
 
         if input_names:
@@ -835,7 +852,7 @@ def export(
             _ir_passes.rename_outputs(ir_model, output_names)
 
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
-        print("✅")
+        print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -882,10 +899,10 @@ def export(
 
     # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
     try:
-        print("Run `onnx.checker` on the ONNX model... ", end="", flush=True)
+        print("Run `onnx.checker` on the ONNX model...")
         # TODO: Handle when model is >2GB
         onnx.checker.check_model(onnx_program.model_proto, full_check=True)
-        print("✅")
+        print("Run `onnx.checker` on the ONNX model... ✅")
     except Exception as e:
         if error_report:
             _reporting.create_onnx_export_error_report(
@@ -908,7 +925,7 @@ def export(
 
     # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:
-    #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
+    #     print("Execute the model with ONNX Runtime... ")
     #     print("✅")
     # except Exception as e:
     #     raise errors.OnnxConversionError(

@@ -788,13 +788,11 @@ def export(
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
         try:
-            print(
-                "Obtain model graph with `torch.export.export`... ", end="", flush=True
-            )
+            print("Obtain model graph with `torch.export.export`...")
             program = torch.export.export(
                 model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
             )
-            print("✅")
+            print("Obtain model graph with `torch.export.export`... ✅")
         except Exception as e:
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -820,13 +818,13 @@ def export(
                 else ""
             ) from e
     else:
-        print("Obtain model graph with `torch.export.export`... ", end="", flush=True)
+        print("Obtain model graph with `torch.export.export`...")
         program = model
-        print("✅")
+        print("Obtain model graph with `torch.export.export`... ✅")
 
     # Step 1: Convert the exported program to an ONNX model
     try:
-        print("Translate the graph into ONNX... ", end="", flush=True)
+        print("Translate the graph into ONNX...")
         ir_model = exported_program_to_ir(program, registry=registry)
 
         if input_names:
@@ -835,7 +833,7 @@ def export(
             _ir_passes.rename_outputs(ir_model, output_names)
 
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
-        print("✅")
+        print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -882,10 +880,10 @@ def export(
 
     # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
     try:
-        print("Run `onnx.checker` on the ONNX model... ", end="", flush=True)
+        print("Run `onnx.checker` on the ONNX model...")
         # TODO: Handle when model is >2GB
         onnx.checker.check_model(onnx_program.model_proto, full_check=True)
-        print("✅")
+        print("Run `onnx.checker` on the ONNX model... ✅")
     except Exception as e:
         if error_report:
             _reporting.create_onnx_export_error_report(
@@ -908,7 +906,7 @@ def export(
 
     # Step 3: (When error report is requested) Execute the model with ONNX Runtime
     # try:
-    #     print("Execute the model with ONNX Runtime... ", end="", flush=True)
+    #     print("Execute the model with ONNX Runtime... ")
     #     print("✅")
     # except Exception as e:
     #     raise errors.OnnxConversionError(

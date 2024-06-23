@@ -174,10 +174,10 @@ def _get_type_from_tensor(
 
 
 def _get_first_tensor_in_node_list(
-    nodes: Sequence[torch.fx.Node],
+    nodes: Sequence[torch.fx.Node | None],
 ) -> torch.Tensor | None:
     for node in nodes:
-        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+        if node is not None and "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
             return node.meta["val"]
     return None
 

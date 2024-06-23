@@ -734,6 +734,8 @@ def exported_program_to_ir(
     for name, value in model.graph.initializers.items():
         torch_tensor = exported_program.state_dict.get(name)
         if torch_tensor is None:
+            # FIXME(justinchuby/torch-onnx#60): Figure out a way to get value when
+            # the input is InputKind.CONSTANT_TENSOR because they are not in the state_dict
             logger.warning("Tensor '%s' not found in state_dict", name)
             continue
         ir_tensor = TorchTensor(torch_tensor, name=name)

@@ -788,11 +788,16 @@ def export(
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
         try:
-            print("Obtain model graph with `torch.export.export`...")
+            model_repr = repr(model)
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
+            )
             program = torch.export.export(
                 model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
             )
-            print("Obtain model graph with `torch.export.export`... ✅")
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
+            )
         except Exception as e:
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 

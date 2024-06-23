@@ -8,6 +8,7 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 
 from __future__ import annotations
 
+import copy
 import inspect
 import logging
 from typing import Any, Mapping, Sequence
@@ -70,6 +71,7 @@ def _construct_named_inputs_and_attrs(
     reversed_args_stack = list(reversed(args))
     for param in signature.params:
         if isinstance(param, _schemas.Parameter):
+            # Handle inputs
             if reversed_args_stack:
                 # First exhaust the positional arguments
                 if param.variadic:
@@ -93,6 +95,7 @@ def _construct_named_inputs_and_attrs(
                 )
                 named_inputs[param.name] = None
         else:
+            # Handle attributes
             attribute: ValidAttributeType | ir.Attr
             assert isinstance(
                 param, _schemas.AttributeParameter
@@ -106,6 +109,13 @@ def _construct_named_inputs_and_attrs(
                 attribute = param.default
             else:
                 attribute = None
+
+            if isinstance(attribute, ir.Attr):
+                # Turn the attribute from an default value into an actual parameter for the node
+                default_copied = copy.copy(attribute)
+                # Make sure the name is the same as the parameter name and not the name of the default parameter
+                default_copied.name = param.name
+                attribute = default_copied
 
             if param.required and attribute is None:
                 raise ValueError(

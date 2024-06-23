@@ -110,26 +110,26 @@ def _construct_named_inputs_and_attrs(
             else:
                 attribute = None
 
+            if attribute is None:
+                if param.required:
+                    raise ValueError(
+                        f"Required attribute '{param.name}' is not provided. "
+                        f"Signature: {signature}. Args: {args}. Kwargs: {kwargs}."
+                    )
+                else:
+                    logger.debug(
+                        "Optional attribute '%s' is None. Dropped. Signature: %s",
+                        param.name,
+                        signature,
+                    )
+                    continue
+
             if isinstance(attribute, ir.Attr):
                 # Turn the attribute from an default value into an actual parameter for the node
                 attr_copied = copy.copy(attribute)
                 # Make sure the name is the same as the parameter name and not the name of the default parameter
                 attr_copied.name = param.name
                 attribute = attr_copied
-
-            if param.required and attribute is None:
-                raise ValueError(
-                    f"Required attribute '{param.name}' is not provided. "
-                    f"Signature: {signature}. Args: {args}. Kwargs: {kwargs}."
-                )
-
-            if attribute is None:
-                logger.debug(
-                    "Optional attribute '%s' is None. Dropped. Signature: %s",
-                    param.name,
-                    signature,
-                )
-                continue
 
             if isinstance(attribute, int) and param.type == ir.AttributeType.FLOAT:
                 # Convert the attribute to float if needed. This happens in PyTorch

@@ -112,10 +112,10 @@ def _construct_named_inputs_and_attrs(
 
             if isinstance(attribute, ir.Attr):
                 # Turn the attribute from an default value into an actual parameter for the node
-                default_copied = copy.copy(attribute)
+                attr_copied = copy.copy(attribute)
                 # Make sure the name is the same as the parameter name and not the name of the default parameter
-                default_copied.name = param.name
-                attribute = default_copied
+                attr_copied.name = param.name
+                attribute = attr_copied
 
             if param.required and attribute is None:
                 raise ValueError(

@@ -236,7 +236,9 @@ def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
 
 
 def _handle_getitem_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    opset: onnxscript.values.Opset,
 ) -> ir.Value:
     """Handle a getitem node.
 
@@ -245,26 +247,45 @@ def _handle_getitem_node(
     assert len(node.all_input_nodes) == 1
     source = node.all_input_nodes[0]
     source_outputs = node_name_to_values[source.name]
-    assert isinstance(
-        source_outputs, Sequence
-    ), f"Expected {source.name} to output sequence, got {node_name_to_values[source.name]}"
+
+    # There are two cases for this node:
+    # 1. The output is a Sequence (traced), we can simply get the value from the sequence
+    # 2. The output is produced by a SplitToSequence node, we need to get the value from the sequence value
     index = typing.cast(int, node.args[1])
-    value = source_outputs[index]
-    # Save the getitem value to the values mapping to in case
-    # it is one of the graph outputs
-    node_name_to_values[node.name] = value
-    # Rename the name of value with the getitem name.
-    value.name = node.name
-    return value
+    if isinstance(source_outputs, Sequence):
+        # Case 1: The output is a Python Sequence
+        value = source_outputs[index]
+        # Save the getitem value to the values mapping to in case
+        # it is one of the graph outputs
+        node_name_to_values[node.name] = value
+        # Rename the name of value with the getitem name.
+        value.name = node.name
+        return value
+    elif isinstance(source_outputs, ir.Value):
+        # Case 2: The output is produced by a SplitToSequence node
+        # Get the value from the sequence value
+        value = typing.cast(
+            _tensors.SymbolicTensor, opset.SequenceAt(source_outputs, index)
+        )
+        # Save the getitem value to the values mapping to in case
+        # it is one of the graph outputs
+        node_name_to_values[node.name] = value
+        # Rename the name of value with the getitem name.
+        value.name = node.name
+        return value
+    raise TypeError(
+        f"Type of source_outputs can only be Sequence or ir.Value, but got '{type(source_outputs)}'."
+    )
 
 
 def _handle_call_function_node(
     graph: ir.Graph,
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    opset: onnxscript.values.Opset,
 ):
     if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values)
+        _handle_getitem_node(node, node_name_to_values, opset=opset)
         return
     # Add op to the graph
     op = str(node.target)
@@ -275,7 +296,9 @@ def _handle_call_function_node(
             inputs.append(None)
         elif hasattr(input_, "name"):
             if isinstance(input_, torch.fx.Node) and input_.target == operator.getitem:
-                actual_input = _handle_getitem_node(input_, node_name_to_values)
+                actual_input = _handle_getitem_node(
+                    input_, node_name_to_values, opset=opset
+                )
                 inputs.append(actual_input)
             else:
                 inputs.append(node_name_to_values[input_.name])
@@ -306,7 +329,9 @@ def _handle_call_function_node(
 
 
 def _convert_fx_arg_to_onnx_arg(
-    arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
+    arg,
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    opset: onnxscript.values.Opset,
 ):
     """Convert an FX argument to an ONNX compatible argument.
 
@@ -325,11 +350,14 @@ def _convert_fx_arg_to_onnx_arg(
     if hasattr(arg, "name"):
         if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
             # If the node is getting an input from another node, get the actual value the node is retrieving
-            return _handle_getitem_node(arg, node_name_to_values)
+            return _handle_getitem_node(arg, node_name_to_values, opset=opset)
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
     if isinstance(arg, (list, tuple)):
-        return [_convert_fx_arg_to_onnx_arg(elem, node_name_to_values) for elem in arg]
+        return [
+            _convert_fx_arg_to_onnx_arg(elem, node_name_to_values, opset=opset)
+            for elem in arg
+        ]
     if isinstance(arg, (torch.device, torch.memory_format, torch.layout)):
         return str(arg)
     if isinstance(arg, torch.dtype):
@@ -338,7 +366,7 @@ def _convert_fx_arg_to_onnx_arg(
     return arg
 
 
-def _get_onnxscript_opset(opset_version: int) -> onnxscript.Opset:
+def _get_onnxscript_opset(opset_version: int) -> onnxscript.values.Opset:
     return onnxscript.values.Opset("", opset_version)
 
 
@@ -349,8 +377,9 @@ def _handle_call_function_node_with_lowering(
     constant_farm: dict[Any, ir.Value],
     registry: _registration.OnnxRegistry,
 ):
+    opset = _get_onnxscript_opset(registry.opset_version)
     if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values)
+        _handle_getitem_node(node, node_name_to_values, opset=opset)
         return
 
     # Find the matching ONNX overload for the node
@@ -371,12 +400,15 @@ def _handle_call_function_node_with_lowering(
 
     # Replace the input FX nodes with ONNX values
     onnx_args = [
-        _convert_fx_arg_to_onnx_arg(input_, node_name_to_values) for input_ in fx_args
+        _convert_fx_arg_to_onnx_arg(input_, node_name_to_values, opset=opset)
+        for input_ in fx_args
     ]
 
     onnx_kwargs = {}
     for key, value in fx_kwargs.items():
-        onnx_kwargs[key] = _convert_fx_arg_to_onnx_arg(value, node_name_to_values)
+        onnx_kwargs[key] = _convert_fx_arg_to_onnx_arg(
+            value, node_name_to_values, opset=opset
+        )
         if key == "dtype" and onnx_kwargs[key] is None:
             # Set dtype to -1 if it is None
             onnx_kwargs[key] = -1
@@ -450,7 +482,7 @@ def _handle_call_function_node_with_lowering(
 
 def _handle_placeholder_node(
     node: torch.fx.Node,
-    node_name_to_values: dict[str, ir.Value],
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     *,
     lower: str,
     opset: onnxscript.values.Opset,
@@ -471,9 +503,10 @@ def _add_nodes(
     model: ir.Model,
     lower: Literal["at_conversion", "post_conversion", "none"],
     registry: _registration.OnnxRegistry,
-) -> dict[str, ir.Value]:
+) -> dict[str, ir.Value | Sequence[ir.Value]]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
+    opset = _get_onnxscript_opset(registry.opset_version)
     for node in exported_program.graph.nodes:
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
@@ -484,7 +517,7 @@ def _add_nodes(
                     node,
                     node_name_to_values,
                     lower=lower,
-                    opset=_get_onnxscript_opset(registry.opset_version),
+                    opset=opset,
                 )
             elif node.op == "call_function":
                 if lower == "at_conversion":
@@ -497,7 +530,9 @@ def _add_nodes(
                     )
                 else:
                     # No lowering
-                    _handle_call_function_node(model.graph, node, node_name_to_values)
+                    _handle_call_function_node(
+                        model.graph, node, node_name_to_values, opset=opset
+                    )
         except Exception as e:
             raise errors.OnnxConversionError(
                 f"Error when translating node {node.format_node()}. See the stack trace for more information."

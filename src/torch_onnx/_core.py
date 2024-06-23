@@ -376,11 +376,16 @@ def _handle_call_function_node_with_lowering(
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
     registry: _registration.OnnxRegistry,
+    opset: onnxscript.values.Opset,
 ):
-    opset = _get_onnxscript_opset(registry.opset_version)
-    if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values, opset=opset)
-        return
+    tracer = _building.OpRecorder(
+        _get_onnxscript_opset(registry.opset_version), constant_farm
+    )
+    with onnxscript.evaluator.default_as(tracer):
+        if node.target == operator.getitem:
+            _handle_getitem_node(node, node_name_to_values, opset=opset)
+            # TODO: Here: add the nodes to the model
+            return
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
@@ -413,11 +418,7 @@ def _handle_call_function_node_with_lowering(
             # Set dtype to -1 if it is None
             onnx_kwargs[key] = -1
 
-    with onnxscript.evaluator.default_as(
-        tracer := _building.OpRecorder(
-            _get_onnxscript_opset(registry.opset_version), constant_farm
-        )
-    ):
+    with onnxscript.evaluator.default_as(tracer):
         try:
             outputs = onnx_function(*onnx_args, **onnx_kwargs)
         except Exception as e:
@@ -527,6 +528,7 @@ def _add_nodes(
                         node_name_to_values,
                         constant_farm,
                         registry=registry,
+                        opset=opset,
                     )
                 else:
                     # No lowering

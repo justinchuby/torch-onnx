@@ -269,15 +269,7 @@ def _handle_call_function_node(
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
 ):
     if node.target == operator.getitem:
-        source = node.all_input_nodes[0]
-        source_outputs = node_name_to_values[source.name]
-        if isinstance(source_outputs, Sequence):
-            _handle_getitem_node(node, node_name_to_values)
-            return
-        else:
-            # `source_outputs` is a sequence(tensor()) value and we need to
-            # use SequenceAt to get the value. This is handled by torchlib
-            pass
+        _handle_getitem_node(node, node_name_to_values)
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
@@ -363,8 +355,15 @@ def _handle_call_function_node_with_lowering(
     opset: onnxscript.values.Opset,
 ):
     if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values)
-        return
+        source = node.all_input_nodes[0]
+        source_outputs = node_name_to_values[source.name]
+        if isinstance(source_outputs, Sequence):
+            _handle_getitem_node(node, node_name_to_values)
+            return
+        else:
+            # `source_outputs` is a sequence(tensor()) value and we need to
+            # use SequenceAt to get the value. This is handled by torchlib
+            pass
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions

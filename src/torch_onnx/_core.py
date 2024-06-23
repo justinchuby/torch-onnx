@@ -328,8 +328,15 @@ def _convert_fx_arg_to_onnx_arg(
         return None
     if hasattr(arg, "name"):
         if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
-            # If the node is getting an input from another node, get the actual value the node is retrieving
-            return _handle_getitem_node(arg, node_name_to_values)
+            source = arg.all_input_nodes[0]
+            source_outputs = node_name_to_values[source.name]
+            if isinstance(source_outputs, Sequence):
+                # If the node is getting an input from another node, get the actual value the node is retrieving
+                return _handle_getitem_node(arg, node_name_to_values)
+            else:
+                # `source_outputs` is a sequence(tensor()) value and we need to
+                # use SequenceAt to get the value. This is handled by torchlib
+                pass
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
     if isinstance(arg, (list, tuple)):

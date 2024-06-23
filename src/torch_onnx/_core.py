@@ -350,6 +350,8 @@ def _convert_fx_arg_to_onnx_arg(
     if hasattr(arg, "name"):
         if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
             # If the node is getting an input from another node, get the actual value the node is retrieving
+            # FIXME: We should just retrieve the value from the mapping here because the
+            # getitem node is already handled in the graph. This way we can avoid passing in the opset
             return _handle_getitem_node(arg, node_name_to_values, opset=opset)
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]

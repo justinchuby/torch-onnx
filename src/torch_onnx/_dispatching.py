@@ -187,6 +187,7 @@ def _get_first_tensor_in_node_list(
 
 
 def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
+    # FIXME: node.target may not have a schema
     torch_schema: torch.FunctionSchema = node.target._schema
     node_args = {}
     for arg, schema_arg in zip(node.args, torch_schema.arguments):
@@ -210,6 +211,8 @@ def get_matching_overload(
         A tuple containing the matched overload and a string describing the reason for failure or success.
     """
     named_args = _get_named_fx_node_args(node)
+    # FIXME: node.target may and builtin and not have a schema
+    # FIXME: Handle when we don't know the names of the arguments
     schema_args: dict[str, torch.Argument] = {
         arg.name: arg for arg in node.target._schema.arguments
     }

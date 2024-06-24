@@ -91,6 +91,10 @@ class TypeConstraintParam:
     def __hash__(self) -> int:
         return hash((self.name, tuple(self.allowed_types)))
 
+    def __str__(self) -> str:
+        allowed_types_str = " | ".join(str(t) for t in self.allowed_types)
+        return f"{self.name}={allowed_types_str}"
+
     @classmethod
     def any_tensor(cls, name: str, description: str = "") -> TypeConstraintParam:
         return cls(name, {ir.TensorType(dtype) for dtype in ir.DataType}, description)
@@ -111,6 +115,12 @@ class Parameter:
     default: Any = _EMPTY_DEFAULT
     # TODO: Add other properties too
 
+    def __str__(self) -> str:
+        type_str = self.type_constraint.name
+        if self.has_default():
+            return f"{self.name}: {type_str} = {self.default}"
+        return f"{self.name}: {type_str}"
+
     def has_default(self) -> bool:
         return self.default is not _EMPTY_DEFAULT
 
@@ -121,6 +131,12 @@ class AttributeParameter:
     type: ir.AttributeType
     required: bool
     default: ir.Attr | None = None
+
+    def __str__(self) -> str:
+        type_str = self.type.name
+        if self.has_default():
+            return f"{self.name}: {type_str} = {self.default}"
+        return f"{self.name}: {type_str}"
 
     def has_default(self) -> bool:
         return self.default is not None
@@ -343,6 +359,23 @@ class OpSignature:
 
     def __iter__(self) -> Iterator[Parameter | AttributeParameter]:
         return iter(self.params)
+
+    def __str__(self) -> str:
+        domain = self.domain or "''"
+        # TODO: Double check the separator for overload
+        overload = f"::{self.overload}" if self.overload else ""
+        params = ", ".join(str(param) for param in self.params)
+        outputs = ", ".join(str(param) for param in self.outputs)
+        type_constraints = {}
+        for param in self.params:
+            if isinstance(param, Parameter):
+                type_constraints[param.type_constraint.name] = param.type_constraint
+        for param in self.outputs:
+            type_constraints[param.type_constraint.name] = param.type_constraint
+        type_constraints_str = ", ".join(
+            str(type_constraint) for type_constraint in type_constraints.values()
+        )
+        return f"{domain}::{self.name}{overload}({params}) -> ({outputs}) where {type_constraints_str}"
 
     @classmethod
     def from_opschema(cls, opschema: onnx.defs.OpSchema) -> OpSignature:

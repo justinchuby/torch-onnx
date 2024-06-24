@@ -142,7 +142,7 @@ def _torch_onnx_export(
     )
 
     if f is not None:
-        onnx_program.save(f)
+        onnx_program.save(f, include_initializers=export_params)
 
     return onnx_program
 

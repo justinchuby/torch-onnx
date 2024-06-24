@@ -30,6 +30,19 @@ class ONNXProgram:
         external_data: bool | None = None,
         **_,
     ):
+        """Save the ONNX model to the specified destination.
+
+        When `external_data` is `True` or the model is larger than 2GB,
+        the weights are saved as external data in a separate file.
+
+        Args:
+            destination: The path to save the ONNX model to.
+            include_initializers: Whether to include the initializers in the saved model.
+            external_data: Whether to save the weights as external data in a separate file.
+
+        Raises:
+            TypeError: If `external_data` is `True` and `destination` is not a file path.
+        """
         if not include_initializers:
             self.model.graph.initializers.clear()
             logger.warning(

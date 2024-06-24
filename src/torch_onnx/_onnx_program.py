@@ -31,8 +31,10 @@ class ONNXProgram:
         **_,
     ):
         if not include_initializers:
-            raise NotImplementedError(
-                "Developers: Please implement ir.Model copy() and remove initializers"
+            self.model.graph.initializers.clear()
+            logger.warning(
+                "The initializers have been removed from the model. This is destructive. "
+                "Developers: Please implement ir.Model copy() and remove initializers on the copied model."
             )
         proto = ir.serde.serialize_model(self.model)
         byte_size = proto.ByteSize()

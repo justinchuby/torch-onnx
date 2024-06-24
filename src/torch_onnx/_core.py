@@ -741,6 +741,7 @@ def exported_program_to_ir(
     for name, param_name in itertools.chain(
         exported_program.graph_signature.inputs_to_parameters.items(),
         exported_program.graph_signature.inputs_to_buffers.items(),
+        exported_program.graph_signature.inputs_to_lifted_tensor_constants.items(),
     ):
         initializer = model.graph.initializers.pop(name)
         initializer.name = param_name

@@ -750,15 +750,25 @@ def exported_program_to_ir(
         model.graph.initializers[param_name] = initializer
 
     # 5. Add initializers to the graph
-    for name, value in model.graph.initializers.items():
-        torch_tensor = exported_program.state_dict.get(name)
-        if torch_tensor is None:
-            # FIXME(justinchuby/torch-onnx#60): Figure out a way to get value when
-            # the input is InputKind.CONSTANT_TENSOR because they are not in the state_dict
-            logger.warning("Tensor '%s' not found in state_dict", name)
+    # ExportedProgram stores parameters and buffers in state_dict,
+    # but non_persistent_buffers and lifted_tensor_constants are not there
+    # so we need to get them from the name_* apis.
+    for name, torch_tensor in itertools.chain(
+        exported_program.named_parameters(),
+        exported_program.named_buffers(),
+        exported_program.constants.items(),
+    ):
+        initializer = model.graph.initializers.get(name)
+        if initializer is None:
+            logger.warning("Tensor '%s' is not one of the initializers", name)
             continue
+        if not isinstance(torch_tensor, torch.Tensor):
+            raise NotImplementedError(
+                f"Tensor '{name}' should be a torch.Tensor. Actual type is '{type(torch_tensor)}': {torch_tensor!r}. "
+                "This is unexpected and not yet supported."
+            )
         ir_tensor = TorchTensor(torch_tensor, name=name)
-        model.graph.initializers[name].const_value = ir_tensor
+        initializer.const_value = ir_tensor
         _set_shape_type(
             value,
             torch_tensor,

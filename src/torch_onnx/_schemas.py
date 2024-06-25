@@ -365,7 +365,7 @@ class OpSignature:
         # TODO: Double check the separator for overload
         overload = f"::{self.overload}" if self.overload else ""
         params = ", ".join(str(param) for param in self.params)
-        outputs = ", ".join(str(param) for param in self.outputs)
+        outputs = ", ".join(str(param.type_constraint.name) for param in self.outputs)
         type_constraints = {}
         for param in self.params:
             if isinstance(param, Parameter):

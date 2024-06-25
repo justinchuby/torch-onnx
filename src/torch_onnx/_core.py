@@ -781,6 +781,15 @@ def exported_program_to_ir(
     return model
 
 
+def _take_first_line(text: str) -> str:
+    """Take the first line of a text."""
+    lines = text.split("\n", maxsplit=1)
+    first_line = lines[0]
+    if len(lines) > 1:
+        first_line += "[...]"
+    return first_line
+
+
 def export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
@@ -820,7 +829,7 @@ def export(
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
         try:
-            model_repr = repr(model)
+            model_repr = _take_first_line(repr(model))
             print(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
             )
@@ -831,6 +840,9 @@ def export(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
             )
         except Exception as e:
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ❌"
+            )
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if error_report:
@@ -873,6 +885,7 @@ def export(
         print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
+        print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if error_report:
@@ -922,6 +935,7 @@ def export(
         onnx.checker.check_model(onnx_program.model_proto, full_check=True)
         print("Run `onnx.checker` on the ONNX model... ✅")
     except Exception as e:
+        print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
             _reporting.create_onnx_export_error_report(
                 f"onnx_export_{timestamp}_checker.md",

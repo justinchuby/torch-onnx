@@ -66,13 +66,12 @@ class ONNXProgram:
                 )
             destination_path = pathlib.Path(destination)
             # Create the directory if it does not exist
-            destination_path.parent.mkdir(parents=True, exist_ok=True)
-            data_path = destination_path.with_suffix(f"{destination_path.suffix}.data")
+            data_path = f"{destination_path.name}.data"
             onnx.save_model(
                 proto,
                 destination,
                 save_as_external_data=True,
-                location=os.fspath(data_path),
+                location=data_path,
             )
         else:
             onnx.save_model(proto, destination)

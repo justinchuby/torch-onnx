@@ -4,22 +4,7 @@
 import argparse
 
 
-def main(args):
-    """Convert a pt2 PyTorch model to ONNX format."""
-
-    # Delay import to improve startup time.
-    import torch
-    from torch_onnx._core import export
-
-    exported_program = torch.export.load(args.model_path)
-    onnx_program = export(
-        exported_program, (), {}, error_report=not args.no_error_report
-    )
-    del exported_program
-    onnx_program.save(args.output_path)
-
-
-if __name__ == "__main__":
+def _parse_args():
     parser = argparse.ArgumentParser(
         description="Convert a pt2 PyTorch model to ONNX format."
     )
@@ -34,4 +19,25 @@ if __name__ == "__main__":
         help="Do not produce an error report if the conversion fails.",
     )
     args = parser.parse_args()
-    main(args)
+    return args
+
+
+def main():
+    """Convert a pt2 PyTorch model to ONNX format."""
+
+    args = _parse_args()
+
+    # Delay import to improve startup time.
+    import torch
+    from torch_onnx._core import export
+
+    exported_program = torch.export.load(args.model_path)
+    onnx_program = export(
+        exported_program, (), {}, error_report=not args.no_error_report
+    )
+    del exported_program
+    onnx_program.save(args.output_path)
+
+
+if __name__ == "__main__":
+    main()

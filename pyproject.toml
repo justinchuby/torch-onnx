@@ -30,6 +30,9 @@ dependencies = ["torch", "onnxscript>=0.1.0.dev20240621", "onnx>=1.16"]
 [project.urls]
 Repository = "https://github.com/justinchuby/torch-onnx"
 
+[project.scripts]
+torch-onnx = "torch_onnx.bin.convert:main"
+
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = "--tb=short --color=yes"

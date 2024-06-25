@@ -867,9 +867,7 @@ def export(
                 else ""
             ) from e
     else:
-        print("Obtain model graph with `torch.export.export`...")
         program = model
-        print("Obtain model graph with `torch.export.export`... ✅")
 
     # Step 1: Convert the exported program to an ONNX model
     try:

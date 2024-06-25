@@ -65,6 +65,8 @@ class ONNXProgram:
                     "Saving the weights as external data is only supported when destination is a file path"
                 )
             destination_path = pathlib.Path(destination)
+            # Create the directory if it does not exist
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
             data_path = destination_path.with_suffix(f"{destination_path.suffix}.data")
             onnx.save_model(
                 proto,

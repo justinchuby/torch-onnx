@@ -5,21 +5,19 @@ from __future__ import annotations
 import inspect
 import io
 import logging
-from typing import Any, Mapping, Sequence
 import warnings
+from typing import Any, Mapping, Sequence
 
-import onnx
 import torch
 import torch.export
-from onnxscript import ir
 
-import torch_onnx
-from torch_onnx import _ir_passes
+from torch_onnx import _onnx_program, _core
 
-_BLUE = "\033[96m"
-_END = "\033[0m"
 
 logger = logging.getLogger(__name__)
+
+WRITE_ERROR_REPORT = False
+WRITE_PROFILE_REPORT = False
 
 
 def _signature(model) -> inspect.Signature:
@@ -84,10 +82,27 @@ def _from_dynamic_axes_to_dynamic_shapes(
     return dynamic_shapes
 
 
-def torch_onnx_export_adaptor(
-    model: torch.nn.Module,
+def _get_torch_export_args(
+    model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
-    f: str | io.BytesIO,
+    kwargs: dict[str, Any] | None,
+    dynamic_axes: Mapping[str, Mapping[int, str]] | Mapping[str, Sequence[int]] | None,
+    input_names: Sequence[str] | None,
+):
+    if not kwargs and args and isinstance(args[-1], dict):
+        kwargs = args[-1]
+        args = args[:-1]
+
+    dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
+        model, dynamic_axes, input_names
+    )
+    return args, kwargs, dynamic_shapes
+
+
+def _torch_onnx_export(
+    model: torch.nn.Module | torch.export.ExportedProgram,
+    args: tuple[Any, ...],
+    f: str | io.BytesIO | None = None,
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
@@ -97,63 +112,74 @@ def torch_onnx_export_adaptor(
     dynamic_axes: Mapping[str, Mapping[int, str]]
     | Mapping[str, Sequence[int]]
     | None = None,
+    profile: bool = False,
+    error_report: bool = False,
     **_,
-) -> ir.Model:
-    # Test: create an exported program first
-    if not kwargs and args and isinstance(args[-1], dict):
-        kwargs = args[-1]
-        args = args[:-1]
+) -> _onnx_program.ONNXProgram:
+    # Set up the error reporting facilities
+    error_report = WRITE_ERROR_REPORT or error_report
+    profile = WRITE_PROFILE_REPORT or profile
 
-    dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
-        model, dynamic_axes, input_names
-    )
-    try:
-        program = torch.export.export(
-            model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+    if not isinstance(model, torch.export.ExportedProgram):
+        args, kwargs, dynamic_shapes = _get_torch_export_args(
+            model, args, kwargs, dynamic_axes, input_names
         )
-    except Exception as e:
-        raise RuntimeError(
-            "Failed to export the model with torch.export. "
-            f"{_BLUE}This is step 1/2{_END} "
-            "of exporting the model to ONNX. Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and "
-            "attach the full error stack as well as reproduction scripts."
-        ) from e
+    else:
+        args, kwargs, dynamic_shapes = _get_torch_export_args(
+            model, args, kwargs, None, input_names
+        )
 
-    try:
-        ir_model = torch_onnx.exported_program_to_ir(program)
+    onnx_program = _core.export(
+        model,
+        args,
+        kwargs,
+        registry=None,
+        dynamic_shapes=dynamic_shapes,
+        input_names=input_names,
+        output_names=output_names,
+        profile=profile,
+        error_report=error_report,
+    )
 
-        if input_names:
-            _ir_passes.rename_inputs(ir_model, input_names)
-        if output_names:
-            _ir_passes.rename_outputs(ir_model, output_names)
+    if f is not None:
+        onnx_program.save(f, include_initializers=export_params)
 
-        if not export_params:
-            ir_model.graph.initializers.clear()
-
-        proto = ir.serde.serialize_model(ir_model)
-        if proto.ByteSize() >= 1 << 31:
-            # TODO: Create an IR pass to handle external tensors conversion
-            logger.warning(
-                "The serialized ONNX model is larger than 2GB. "
-                "Saving the weights in a separate file"
-            )
-            onnx.save_model(proto, f, save_as_external_data=True)
-        else:
-            onnx.save_model(proto, f)
-
-    except Exception as e:
-        raise RuntimeError(
-            "Failed to convert the exported program to an ONNX model. "
-            f"{_BLUE}This is step 2/2{_END} "
-            "of exporting the model to ONNX. Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts."
-        ) from e
-
-    return ir_model
+    return onnx_program
 
 
-def patch_torch():
-    torch.onnx.export = torch_onnx_export_adaptor
-    torch.onnx.utils._export = torch_onnx_export_adaptor
+def _torch_onnx_dynamo_export(
+    model: torch.nn.Module | torch.export.ExportedProgram,
+    /,
+    *model_args,
+    export_options: torch.onnx.ExportOptions | None = None,
+    **model_kwargs,
+) -> _onnx_program.ONNXProgram:
+    if export_options and export_options.dynamic_shapes:
+        warnings.warn("Dynamic shapes are not implemented yet.", stacklevel=1)
+
+    return _core.export(
+        model,
+        model_args,
+        kwargs=model_kwargs,
+    )
+
+
+_original_torch_onnx_export = torch.onnx.export
+_original_torch_onnx_utils_export = torch.onnx.utils._export
+_original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
+
+
+def patch_torch(error_report: bool = False, profile: bool = False):
+    global WRITE_ERROR_REPORT  # noqa: PLW0603
+    WRITE_ERROR_REPORT = error_report
+    global WRITE_PROFILE_REPORT  # noqa: PLW0603
+    WRITE_PROFILE_REPORT = profile
+    torch.onnx.export = _torch_onnx_export
+    torch.onnx.utils._export = _torch_onnx_export
+    torch.onnx.dynamo_export = _torch_onnx_dynamo_export
+
+
+def unpatch_torch():
+    torch.onnx.export = _original_torch_onnx_export
+    torch.onnx.utils._export = _original_torch_onnx_utils_export
+    torch.onnx.dynamo_export = _original_torch_onnx_dynamo_export

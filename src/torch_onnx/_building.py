@@ -8,6 +8,8 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 
 from __future__ import annotations
 
+import copy
+import inspect
 import logging
 from typing import Any, Mapping, Sequence
 
@@ -17,7 +19,7 @@ import torch
 from onnxscript import evaluator, ir
 from onnxscript.ir import convenience as ir_convenience
 
-from torch_onnx import _schemas, _tensors
+from torch_onnx import _schemas, _tensors, errors
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,7 @@ def _construct_named_inputs_and_attrs(
     reversed_args_stack = list(reversed(args))
     for param in signature.params:
         if isinstance(param, _schemas.Parameter):
+            # Handle inputs
             if reversed_args_stack:
                 # First exhaust the positional arguments
                 if param.variadic:
@@ -92,6 +95,7 @@ def _construct_named_inputs_and_attrs(
                 )
                 named_inputs[param.name] = None
         else:
+            # Handle attributes
             attribute: ValidAttributeType | ir.Attr
             assert isinstance(
                 param, _schemas.AttributeParameter
@@ -106,19 +110,26 @@ def _construct_named_inputs_and_attrs(
             else:
                 attribute = None
 
-            if param.required and attribute is None:
-                raise ValueError(
-                    f"Required attribute '{param.name}' is not provided. "
-                    f"Signature: {signature}. Args: {args}. Kwargs: {kwargs}."
-                )
-
             if attribute is None:
-                logger.debug(
-                    "Optional attribute '%s' is None. Dropped. Signature: %s",
-                    param.name,
-                    signature,
-                )
-                continue
+                if param.required:
+                    raise ValueError(
+                        f"Required attribute '{param.name}' is not provided. "
+                        f"Signature: {signature}. Args: {args}. Kwargs: {kwargs}."
+                    )
+                else:
+                    logger.debug(
+                        "Optional attribute '%s' is None. Dropped. Signature: %s",
+                        param.name,
+                        signature,
+                    )
+                    continue
+
+            if isinstance(attribute, ir.Attr):
+                # Turn the attribute from an default value into an actual parameter for the node
+                attr_copied = copy.copy(attribute)
+                # Make sure the name is the same as the parameter name and not the name of the default parameter
+                attr_copied.name = param.name
+                attribute = attr_copied
 
             if isinstance(attribute, int) and param.type == ir.AttributeType.FLOAT:
                 # Convert the attribute to float if needed. This happens in PyTorch
@@ -171,7 +182,7 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
-def _process_python_constants(
+def _process_python_constants_and_sequences(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
@@ -184,7 +195,7 @@ def _process_python_constants(
     ],
     opset: onnxscript.values.Opset,
 ) -> dict[str, ir.Value | None]:
-    """Convert Python constants to Constant nodes based on the dtype information.
+    """Convert Python constants to Constant nodes and list to Sequence nodes based on the dtype information.
 
     The added constants will be replacing values in named_inputs in place.
 
@@ -207,15 +218,26 @@ def _process_python_constants(
     #            otherwise set named_inputs[param.name] = Constant(value, dtype=type_binding[param.constraint])
     #       - Otherwise, set named_inputs[param.name] = Constant(value)
     for name, arg in named_inputs.items():
-        # FIXME: Handle when arg is list[ir.Value]
+        param = signature.params_map[name]
+        assert isinstance(
+            param, _schemas.Parameter
+        ), f"Expected Parameter, got {type(param)}"
+
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
         if isinstance(arg, Sequence) and all(isinstance(val, ir.Value) for val in arg):
             # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
+            # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
+            # like `Max(0, ir.Value())`
+            # We need to convert the Python constants to Constant nodes
             continue
+            # if param.variadic:
+            #     # FXIME: Handle variadic inputs and sequence inputs differently
+            #     raise NotImplementedError
+            # TODO: Find a way to recursively build constants. Maybe extract the logic out.
+            # FIXME: I am here
 
-        param = signature.params_map[name]
         assert isinstance(
             param, _schemas.Parameter
         ), f"Expected Parameter, got {type(param)}"
@@ -285,7 +307,11 @@ def _construct_node(
 
     Args:
         signature: The OpSignature for the node.
-        named_inputs: The mapping of parameter names to their arguments.
+        named_inputs: The mapping of parameter names to their arguments. When we
+            do not have the schema of an operator, we do not know the names of
+            the inputs, in which case the names can be anything because they
+            are not used in this function. The data structure is passed in for
+            consistency with the other functions.
         named_attrs: The mapping of attribute names to their values.
     """
     inputs = []
@@ -337,14 +363,28 @@ class OpRecorder(evaluator.Evaluator):
             named_attrs: The mapping of attribute names to their values.
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
-        converted_named_inputs = _process_python_constants(
-            op_signature, named_inputs, type_binding, self.constant_farm, self.opset
-        )
-        self.nodes.append(
-            node := _construct_node(
-                op_signature, converted_named_inputs, named_attrs, self.opset
+        try:
+            converted_named_inputs = _process_python_constants_and_sequences(
+                op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
-        )
+        except Exception as e:
+            raise errors.GraphConstructionError(
+                f"Error processing Python constants for operator '{op_signature.domain}::{op_signature.name}'. "
+                f"named_inputs={named_inputs}, named_attrs={named_attrs}, opset={self.opset}, op_signature={op_signature}."
+            ) from e
+
+        try:
+            self.nodes.append(
+                node := _construct_node(
+                    op_signature, converted_named_inputs, named_attrs, self.opset
+                )
+            )
+        except Exception as e:
+            raise errors.GraphConstructionError(
+                f"Error constructing node for operator '{op_signature.domain}::{op_signature.name}'. "
+                f"named_inputs={named_inputs}, converted_named_inputs={converted_named_inputs}, "
+                f"named_attrs={named_attrs}, opset={self.opset}, op_signature={op_signature}."
+            ) from e
         return node.outputs  # type: ignore
 
     def eval(
@@ -384,7 +424,7 @@ class OpRecorder(evaluator.Evaluator):
                 return outputs[0]
             return outputs
         except Exception as e:
-            raise RuntimeError(
+            raise errors.GraphConstructionError(
                 f"Error calling operator '{schema.name}' with args {args} and kwargs {kwargs}."
             ) from e
 
@@ -459,6 +499,14 @@ class OpRecorder(evaluator.Evaluator):
                 return outputs[0]
             return outputs
         except Exception as e:
-            raise RuntimeError(
+            try:
+                source_file = inspect.getsourcefile(function.function)
+                _, lineno = inspect.getsourcelines(function.function)
+            except Exception:
+                source_file = lineno = None
+            raise errors.GraphConstructionError(
                 f"Error calling function '{function.name}' with args {args} and kwargs {kwargs}."
+                + f" The function is defined at '{source_file}:{lineno}'."
+                if source_file
+                else ""
             ) from e

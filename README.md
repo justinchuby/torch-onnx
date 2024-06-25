@@ -9,7 +9,7 @@ Experimental torch ONNX exporter.
 ## Installation
 
 ```bash
-pip install torch-onnx
+pip install --upgrade torch-onnx
 ```
 
 ## Usage
@@ -28,25 +28,30 @@ proto = ir.to_proto(model)
 onnx.save(proto, "model.onnx")
 
 # Or patch the torch.onnx export API
-torch_onnx.patch_torch()
+# Set error_report=True to get a detailed error report if the export fails
+torch_onnx.patch_torch(error_report=True, profile=True)
 torch.onnx.export(...)
+
+# Use the analysis API to print an analysis report for unsupported ops
+torch_onnx.analyze(exported)
 ```
 
 ## Design
 
-{ExportedProgram, jit} -> {ONNX IR} -> {torchlib} -> {ONNX}
+{dynamo/jit} -> {ExportedProgram} -> {torchlib} -> {ONNX IR} -> {ONNX}
 
+- Use ExportedProgram
+  - Rely on robustness of the torch.export implementation
+  - Reduce complexity in the exporter
+  - This does not solve dynamo limitations, but it avoids introducing additional breakage by running fx passes
 - Flat graph; Scope info as metadata, not functions
   - Because existing tools are not good at handling them
 - Eager optimization where appropriate
   - Because exsiting tools are not good at optimizing
 - Drop in replacement for torch.onnx.export
   - Minimum migration effort
-- Use ExportedProgram
-  - Rely on robustness of the torch.export implementation
-  - This does not solve dynamo limitations, but it avoids introducing additional breakage by running fx passes
-- Build graph eagerly, in place
-  - Expose shape and dtype information to the op functions; build with IR
+- Build graph eagerly in the exporter
+  - Give the exporter full control over the graph being built
 
 ## Why is this doable?
 

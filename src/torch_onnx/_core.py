@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import ctypes
+import datetime
 import inspect
 import itertools
 import logging
 import operator
+import textwrap
+import traceback
 import typing
 from typing import Any, Literal, Sequence
 
 import numpy as np
+import onnx
 import onnxscript
 import onnxscript.evaluator
 import onnxscript.function_libs
@@ -20,9 +24,20 @@ from onnxscript import ir
 from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 
-from torch_onnx import _building, _dispatching, _fx_passes, _registration, _decomp
+from torch_onnx import (
+    _building,
+    _dispatching,
+    _fx_passes,
+    _registration,
+    _decomp,
+    errors,
+    _tensors,
+    _onnx_program,
+    _reporting,
+    _ir_passes,
+)
 
-logger = logging.getLogger(__name__)
+
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.bfloat16: ir.DataType.BFLOAT16,
@@ -42,6 +57,10 @@ _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.int8: ir.DataType.INT8,
     torch.uint8: ir.DataType.UINT8,
 }
+_BLUE = "\033[96m"
+_END = "\033[0m"
+
+logger = logging.getLogger(__name__)
 
 
 def _torch_dtype_to_onnx_dtype(dtype: torch.dtype) -> ir.DataType:
@@ -206,8 +225,6 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
 
 def _set_node_metadata(fx_node: torch.fx.Node, ir_node: ir.Node) -> None:
     """Adds namespace and other node metadata to the ONNX node."""
-    nn_module_stack = fx_node.meta.get("nn_module_stack")
-    fx_node.meta["nn_module_stack"] = nn_module_stack
     namespace, class_hierarchy, name_scopes = _get_node_namespace(fx_node)
     ir_node.metadata_props["namespace"] = namespace
     ir_node.metadata_props["pkg.torch.onnx.class_hierarchy"] = repr(class_hierarchy)
@@ -224,6 +241,11 @@ def _handle_getitem_node(
     """Handle a getitem node.
 
     Add the input value it is getting to the mapping, then return the value.
+
+    There are two cases for this node:
+    1. The output is a Sequence (traced), we can simply get the value from the sequence
+    2. The output is produced by a SplitToSequence node, we need to get the value from the sequence value
+    This function only handles the first case
     """
     assert len(node.all_input_nodes) == 1
     source = node.all_input_nodes[0]
@@ -248,7 +270,6 @@ def _handle_call_function_node(
 ):
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
-        return
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
@@ -288,33 +309,6 @@ def _handle_call_function_node(
     graph.append(ir_node)
 
 
-def _fill_in_default_kwargs(
-    node: torch.fx.Node,
-) -> tuple[list[Any], dict[str, Any]]:
-    """Find and Fill in the not provided kwargs with default values."""
-    assert not isinstance(node.target, str)
-    node_schema = node.target._schema
-    # This function assumes the order of arguments in FX op is the
-    # same as the order of arguments in TorchScript op.
-    complete_args = []
-    complete_kwargs = {}
-
-    if inspect.isbuiltin(node.target):
-        complete_args = list(node.args)
-    else:
-        for i, expected_arg in enumerate(node_schema.arguments):
-            # TODO: Fix this bugggg
-            if i < len(node.args):
-                complete_args.append(node.args[i])
-            elif expected_arg.name in node.kwargs:
-                complete_kwargs[expected_arg.name] = node.kwargs[expected_arg.name]
-            else:
-                # Get default from schema.
-                complete_kwargs[expected_arg.name] = expected_arg.default_value
-
-    return complete_args, complete_kwargs
-
-
 def _convert_fx_arg_to_onnx_arg(
     arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
 ):
@@ -334,8 +328,15 @@ def _convert_fx_arg_to_onnx_arg(
         return None
     if hasattr(arg, "name"):
         if isinstance(arg, torch.fx.Node) and arg.target == operator.getitem:
-            # If the node is getting an input from another node, get the actual value the node is retrieving
-            return _handle_getitem_node(arg, node_name_to_values)
+            source = arg.all_input_nodes[0]
+            source_outputs = node_name_to_values[source.name]
+            if isinstance(source_outputs, Sequence):
+                # If the node is getting an input from another node, get the actual value the node is retrieving
+                return _handle_getitem_node(arg, node_name_to_values)
+            else:
+                # `source_outputs` is a sequence(tensor()) value and we need to
+                # use SequenceAt to get the value. This is handled by torchlib
+                pass
         # If the input is a node, get the value from the mapping
         return node_name_to_values[arg.name]
     if isinstance(arg, (list, tuple)):
@@ -348,7 +349,7 @@ def _convert_fx_arg_to_onnx_arg(
     return arg
 
 
-def _get_onnxscript_opset(opset_version: int) -> onnxscript.Opset:
+def _get_onnxscript_opset(opset_version: int) -> onnxscript.values.Opset:
     return onnxscript.values.Opset("", opset_version)
 
 
@@ -358,24 +359,34 @@ def _handle_call_function_node_with_lowering(
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
     registry: _registration.OnnxRegistry,
+    opset: onnxscript.values.Opset,
 ):
     if node.target == operator.getitem:
-        _handle_getitem_node(node, node_name_to_values)
-        return
+        source = node.all_input_nodes[0]
+        source_outputs = node_name_to_values[source.name]
+        if isinstance(source_outputs, Sequence):
+            _handle_getitem_node(node, node_name_to_values)
+            return
+        else:
+            # `source_outputs` is a sequence(tensor()) value and we need to
+            # use SequenceAt to get the value. This is handled by torchlib
+            pass
 
     # Find the matching ONNX overload for the node
     # NOTE: Create different registries for different ONNX opset versions
+    # TODO: Log the message here to expose false positives
     onnx_function, message = _dispatching.dispatch(node, registry)
 
     if onnx_function is None:
         # TODO(justinchuby): Fall back to ATen op or do something else?
-        raise RuntimeError(
+        raise errors.DispatchError(
             f"No ONNX function found for {node.target!r}. Failure message: {message}"
         )
 
-    # Map FX inputs to ONNX inputs and fill optional inputs with default values.
+    # Map FX inputs to ONNX inputs and fill optional inputs.
     # torch_args and torch_kwargs are for op-level validation
-    fx_args, fx_kwargs = _fill_in_default_kwargs(node)
+    fx_args = node.args
+    fx_kwargs = node.kwargs
 
     # Replace the input FX nodes with ONNX values
     onnx_args = [
@@ -390,14 +401,12 @@ def _handle_call_function_node_with_lowering(
             onnx_kwargs[key] = -1
 
     with onnxscript.evaluator.default_as(
-        tracer := _building.OpRecorder(
-            _get_onnxscript_opset(registry.opset_version), constant_farm
-        )
+        tracer := _building.OpRecorder(opset, constant_farm)
     ):
         try:
             outputs = onnx_function(*onnx_args, **onnx_kwargs)
         except Exception as e:
-            raise RuntimeError(
+            raise errors.GraphConstructionError(
                 f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
             ) from e
 
@@ -457,13 +466,17 @@ def _handle_call_function_node_with_lowering(
 
 
 def _handle_placeholder_node(
-    node: torch.fx.Node, node_name_to_values: dict[str, ir.Value], lower: str
+    node: torch.fx.Node,
+    node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
+    *,
+    lower: str,
+    opset: onnxscript.values.Opset,
 ) -> None:
     # Placeholder nodes are user inputs
     # We need to create a new tensor for each user input
     # and add it to the graph's inputs
     name = node.name
-    input_ = ir.Input(name)
+    input_ = _tensors.SymbolicTensor(opset, name=name)
     input_.meta["node"] = node
     _set_shape_type(input_, node.meta["val"], complex_to_float=lower != "none")
     node_name_to_values[name] = input_
@@ -475,16 +488,22 @@ def _add_nodes(
     model: ir.Model,
     lower: Literal["at_conversion", "post_conversion", "none"],
     registry: _registration.OnnxRegistry,
-) -> dict[str, ir.Value]:
+) -> dict[str, ir.Value | Sequence[ir.Value]]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
+    opset = _get_onnxscript_opset(registry.opset_version)
     for node in exported_program.graph.nodes:
         logger.debug(
             "%s", (node.name, node.args, node.target, node.op, node.type, node.kwargs)
         )
         try:
             if node.op == "placeholder":
-                _handle_placeholder_node(node, node_name_to_values, lower=lower)
+                _handle_placeholder_node(
+                    node,
+                    node_name_to_values,
+                    lower=lower,
+                    opset=opset,
+                )
             elif node.op == "call_function":
                 if lower == "at_conversion":
                     _handle_call_function_node_with_lowering(
@@ -493,12 +512,13 @@ def _add_nodes(
                         node_name_to_values,
                         constant_farm,
                         registry=registry,
+                        opset=opset,
                     )
                 else:
                     # No lowering
                     _handle_call_function_node(model.graph, node, node_name_to_values)
         except Exception as e:
-            raise RuntimeError(
+            raise errors.OnnxConversionError(
                 f"Error when translating node {node.format_node()}. See the stack trace for more information."
             ) from e
     return node_name_to_values
@@ -521,6 +541,9 @@ def _get_inputs_and_attributes(
         return inputs, {}, [], [node.name]
 
     # The target should be an ATen operator now
+    assert hasattr(
+        node.target, "_schema"
+    ), f"The target should be an ATen operator now, but node target {node.target} has no schema"
     node_schema: torch.FunctionSchema = node.target._schema
 
     # This function assumes the order of arguments in FX op is the
@@ -569,6 +592,27 @@ def _get_inputs_and_attributes(
     output_names = [f"{node.name}_{output.name}" for output in node_schema.returns]
 
     return inputs, attributes, input_names, output_names
+
+
+def _maybe_start_profiler(should_profile: bool) -> Any:
+    if should_profile:
+        import pyinstrument
+
+        profiler = pyinstrument.Profiler(async_mode="disabled")
+        profiler.start()
+        return profiler
+    return None
+
+
+def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
+    if profiler is None:
+        return None
+    profiler.stop()
+    return profiler.output_text(unicode=True)
+
+
+def _format_exception(e: Exception) -> str:
+    return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
 
 
 def exported_program_to_ir(
@@ -623,6 +667,7 @@ def exported_program_to_ir(
 
         # Include explicit type promotion nodes
         _fx_passes.insert_type_promotion_nodes(exported_program)
+        _fx_passes.remove_assertion_nodes(exported_program)
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
@@ -679,6 +724,12 @@ def exported_program_to_ir(
         output_kind = spec.kind
         value = values[value_name]
 
+        if not isinstance(value, ir.Value):
+            raise TypeError(
+                f"Output '{value_name}' should be an ir.Value. Actual type is '{type(value)}': {value!r}. "
+                "This may be due to an incorrect implementation of the ONNX function that produced this output."
+            )
+
         value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
             output_kind.name
         )
@@ -690,6 +741,7 @@ def exported_program_to_ir(
     for name, param_name in itertools.chain(
         exported_program.graph_signature.inputs_to_parameters.items(),
         exported_program.graph_signature.inputs_to_buffers.items(),
+        exported_program.graph_signature.inputs_to_lifted_tensor_constants.items(),
     ):
         initializer = model.graph.initializers.pop(name)
         initializer.name = param_name
@@ -699,13 +751,25 @@ def exported_program_to_ir(
         model.graph.initializers[param_name] = initializer
 
     # 5. Add initializers to the graph
-    for name, value in model.graph.initializers.items():
-        torch_tensor = exported_program.state_dict.get(name)
-        if torch_tensor is None:
-            logger.warning("Tensor '%s' not found in state_dict", name)
+    # ExportedProgram stores parameters and buffers in state_dict,
+    # but non_persistent_buffers and lifted_tensor_constants are not there
+    # so we need to get them from the name_* apis.
+    for name, torch_tensor in itertools.chain(
+        exported_program.named_parameters(),
+        exported_program.named_buffers(),
+        exported_program.constants.items(),
+    ):
+        initializer = model.graph.initializers.get(name)
+        if initializer is None:
+            logger.warning("Tensor '%s' is not one of the initializers", name)
             continue
+        if not isinstance(torch_tensor, torch.Tensor):
+            raise NotImplementedError(
+                f"Tensor '{name}' should be a torch.Tensor. Actual type is '{type(torch_tensor)}': {torch_tensor!r}. "
+                "This is unexpected and not yet supported."
+            )
         ir_tensor = TorchTensor(torch_tensor, name=name)
-        model.graph.initializers[name].const_value = ir_tensor
+        initializer.const_value = ir_tensor
         _set_shape_type(
             value,
             torch_tensor,
@@ -715,3 +779,204 @@ def exported_program_to_ir(
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 
     return model
+
+
+def _take_first_line(text: str) -> str:
+    """Take the first line of a text."""
+    lines = text.split("\n", maxsplit=1)
+    first_line = lines[0]
+    if len(lines) > 1:
+        first_line += "[...]"
+    return first_line
+
+
+def export(
+    model: torch.nn.Module | torch.export.ExportedProgram,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any] | None = None,
+    *,
+    registry: _registration.OnnxRegistry | None = None,
+    dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
+    input_names: Sequence[str] | None = None,
+    output_names: Sequence[str] | None = None,
+    profile: bool = False,
+    error_report: bool = False,
+) -> _onnx_program.ONNXProgram:
+    """Export a PyTorch model to ONNXProgram.
+
+    Args:
+        model: The model to export. This can be a PyTorch nn.Module or an ExportedProgram.
+        args: The arguments to pass to the model.
+        kwargs: The keyword arguments to pass to the model.
+        registry: The registry of all ONNX decompositions.
+        dynamic_shapes: Dynamic shapes in the graph.
+        input_names: If provided, rename the inputs.
+        output_names: If provided, rename the outputs.
+        profile: Whether to profile the export process.
+        error_report: Whether to generate an error report if the export fails.
+
+    Returns:
+        The ONNXProgram with the exported IR graph.
+
+    Raises:
+        TorchExportError: If the export process fails with torch.export.
+        OnnxConversionError: If the ExportedProgram to ONNX translation fails.
+    """
+    # Set up the error reporting facilities
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    profiler = _maybe_start_profiler(profile)
+
+    # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
+    if not isinstance(model, torch.export.ExportedProgram):
+        try:
+            model_repr = _take_first_line(repr(model))
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
+            )
+            program = torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            )
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
+            )
+        except Exception as e:
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ❌"
+            )
+            profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+            if error_report:
+                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                _reporting.create_torch_export_error_report(
+                    error_report_path,
+                    _format_exception(e),
+                    profile_result=profile_result,
+                )
+            else:
+                error_report_path = None
+
+            raise errors.TorchExportError(
+                textwrap.dedent(f"""\
+                    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
+                    - Modify the model code for `torch.export.export` to succeed.
+                    - Debug `torch.export.export` and summit a PR to PyTorch.
+                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.
+                    """)
+                + f"Error report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            ) from e
+    else:
+        print("Obtain model graph with `torch.export.export`...")
+        program = model
+        print("Obtain model graph with `torch.export.export`... ✅")
+
+    # Step 1: Convert the exported program to an ONNX model
+    try:
+        print("Translate the graph into ONNX...")
+        ir_model = exported_program_to_ir(program, registry=registry)
+
+        if input_names:
+            _ir_passes.rename_inputs(ir_model, input_names)
+        if output_names:
+            _ir_passes.rename_outputs(ir_model, output_names)
+
+        onnx_program = _onnx_program.ONNXProgram(ir_model, program)
+        print("Translate the graph into ONNX... ✅")
+
+    except Exception as e:
+        print("Translate the graph into ONNX... ❌")
+        profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+        if error_report:
+            error_report_path = f"onnx_export_{timestamp}_conversion.md"
+
+            # Run the analysis to get the error report
+            _reporting.create_onnx_export_error_report(
+                error_report_path,
+                _format_exception(e),
+                program,
+                step=1,
+                profile_result=profile_result,
+                registry=registry,
+            )
+        else:
+            error_report_path = None
+
+        raise errors.OnnxConversionError(
+            textwrap.dedent(f"""\
+                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
+                - If there is a missing ONNX function, implement it and register it to the registry.
+                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
+                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.
+                """)
+            + f"Error report has been saved to '{error_report_path}'."
+            if error_report
+            else ""
+        ) from e
+
+    profile_result = _maybe_stop_profiler_and_get_result(profiler)
+    if not error_report:
+        # Return if error report is not requested
+        if profile:
+            assert profile_result is not None
+            _reporting.crete_onnx_export_profile_report(
+                f"onnx_export_{timestamp}_profile.md",
+                onnx_program.exported_program,
+                profile_result,
+                step=1,
+            )
+        return onnx_program
+
+    # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
+    try:
+        print("Run `onnx.checker` on the ONNX model...")
+        # TODO: Handle when model is >2GB
+        onnx.checker.check_model(onnx_program.model_proto, full_check=True)
+        print("Run `onnx.checker` on the ONNX model... ✅")
+    except Exception as e:
+        print("Run `onnx.checker` on the ONNX model... ❌")
+        if error_report:
+            _reporting.create_onnx_export_error_report(
+                f"onnx_export_{timestamp}_checker.md",
+                _format_exception(e),
+                onnx_program.exported_program,
+                step=2,
+                profile_result=profile_result,
+                model=onnx_program.model,
+                registry=registry,
+            )
+        logger.warning(
+            "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
+            "Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. ",
+            exc_info=e,
+        )
+        return onnx_program
+
+    # Step 3: (When error report is requested) Execute the model with ONNX Runtime
+    # try:
+    #     print("Execute the model with ONNX Runtime... ")
+    #     print("✅")
+    # except Exception as e:
+    #     raise errors.OnnxConversionError(
+    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
+    #         "Please create an issue "
+    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+    #         "attach the full error stack as well as reproduction scripts. "
+    #     ) from e
+
+    # Step 4: (When error report is requested) Validate the output values
+    # TODO
+
+    if profile:
+        assert profile_result is not None
+        _reporting.crete_onnx_export_profile_report(
+            f"onnx_export_{timestamp}_profile.md",
+            onnx_program.exported_program,
+            profile_result,
+            step=2,  # TODO: Update the step number to 4 when validation is implemented
+        )
+
+    return onnx_program

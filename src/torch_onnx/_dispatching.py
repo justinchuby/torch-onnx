@@ -174,15 +174,20 @@ def _get_type_from_tensor(
 
 
 def _get_first_tensor_in_node_list(
-    nodes: Sequence[torch.fx.Node],
+    nodes: Sequence[torch.fx.Node | None],
 ) -> torch.Tensor | None:
     for node in nodes:
-        if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+        if (
+            node is not None
+            and "val" in node.meta
+            and isinstance(node.meta["val"], torch.Tensor)
+        ):
             return node.meta["val"]
     return None
 
 
 def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
+    # FIXME: node.target may not have a schema
     torch_schema: torch.FunctionSchema = node.target._schema
     node_args = {}
     for arg, schema_arg in zip(node.args, torch_schema.arguments):
@@ -206,6 +211,8 @@ def get_matching_overload(
         A tuple containing the matched overload and a string describing the reason for failure or success.
     """
     named_args = _get_named_fx_node_args(node)
+    # FIXME: node.target may and builtin and not have a schema
+    # FIXME: Handle when we don't know the names of the arguments
     schema_args: dict[str, torch.Argument] = {
         arg.name: arg for arg in node.target._schema.arguments
     }
@@ -215,7 +222,10 @@ def get_matching_overload(
         fail_reason = ""
         if not hasattr(overload, "signature"):
             # When an overload does not have a signature, we assume it is a custom op and should be matched
-            return overload
+            return (
+                overload,
+                "The overload does not have a signature. Assuming it is a custom op and matching it.",
+            )
         for param in overload.signature:
             if param.name not in schema_args and param.required:
                 # We don't need to handle variadic inputs as there is none.
@@ -248,28 +258,30 @@ def get_matching_overload(
                 ):
                     first_tensor = _get_first_tensor_in_node_list(arg)
                     assert first_tensor is not None
+                    # FIXME: Handle symfloat here
                     arg = ir.SequenceType(_get_type_from_tensor(first_tensor))
                 elif isinstance(arg, torch.fx.Node):
                     meta_val = arg.meta["val"]
                     arg = _get_type_from_tensor(meta_val)
                 # TODO: Handle None attributes
+                # FIXME: Handle symfloat etc.
                 # Handle tensors and Python values
                 if not _param_type_compatible_with_arg(param, arg, assigned_types):
-                    fail_reason = f"Parameter type not compatible with argument: param={param}, assigned_types={assigned_types}, arg={arg}"
+                    fail_reason = f"Parameter type not compatible with argument: param=`{param}`, assigned_types=`{assigned_types}`, arg=`{arg}`"
                     break
             elif isinstance(param, _schemas.AttributeParameter):
                 if not _attribute_type_compatible_with_arg(param, arg):
-                    fail_reason = f"Attribute type not compatible with argument: param={param}, arg={arg}"
+                    fail_reason = f"Attribute type not compatible with argument: param=`{param}`, arg=`{arg}`"
                     break
         if not fail_reason:
             return overload, "Successfully matched overload"
         else:
             failure_messages.append(
-                f"- Failed to match overload '{overload}': {fail_reason}"
+                f"- Failed to match overload `{overload}`: {fail_reason}"
             )
     return (
         None,
-        f"All overloads did not match the node '{node.format_node()}'.\n"
+        f"All overloads did not match the node `{node.format_node()}`.\n"
         + "\n".join(failure_messages),
     )
 
@@ -309,11 +321,11 @@ def dispatch(
     if is_complex:
         decomp_metas = [decomp for decomp in decomp_metas if decomp.is_complex]
         if not decomp_metas:
-            return None, "No decompositions defined for the complex-valued input"
+            return None, "No decompositions registered for the complex-valued input"
     else:
         decomp_metas = [decomp for decomp in decomp_metas if not decomp.is_complex]
         if not decomp_metas:
-            return None, "No decompositions defined for the real-valued input"
+            return None, "No decompositions registered for the real-valued input"
 
     if len(decomp_metas) == 1:
         return decomp_metas[

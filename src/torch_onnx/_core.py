@@ -623,6 +623,9 @@ def exported_program_to_ir(
 ) -> ir.Model:
     """Convert an exported program to an ONNX IR model.
 
+    Reference:
+        - ExportedProgram spec: https://pytorch.org/docs/stable/export.ir_spec.html
+
     Args:
         exported_program: The exported program to convert.
         lower: Whether to lower the graph to core ONNX operators.

@@ -830,7 +830,23 @@ def export(
     profiler = _maybe_start_profiler(profile)
 
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
-    if not isinstance(model, torch.export.ExportedProgram):
+    if isinstance(model, torch.export.ExportedProgram):
+        program = model
+    elif isinstance(model, (torch.jit.ScriptModule, torch.jit.ScriptFunction)):
+        try:
+            model_repr = _take_first_line(repr(model))
+            print(
+                f"Obtain model graph for `{model_repr}` with `torchscript converter`..."
+            )
+            program = torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            )
+            print(
+                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
+            )
+        except Exception as e:
+            pass
+    else:
         try:
             model_repr = _take_first_line(repr(model))
             print(
@@ -869,8 +885,6 @@ def export(
                 if error_report
                 else ""
             ) from e
-    else:
-        program = model
 
     # Step 1: Convert the exported program to an ONNX model
     try:

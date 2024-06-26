@@ -208,15 +208,9 @@ class OnnxRegistry:
         """Registers a custom operator: torch.ops.<namespace>.<op_name>.<overload>.
 
         Args:
+            target: The PyTorch node callable target.
             function: The onnx-script function to register.
-            namespace: The namespace of the operator to register.
-            op_name: The name of the operator to register.
-            overload: The overload of the operator to register. If it's default overload,
-                leave it to None.
             is_complex: Whether the function is a function that handles complex valued inputs.
-
-        Raises:
-            ValueError: If the name is not in the form of 'namespace::op'.
         """
         onnx_decomposition = OnnxDecompMeta(
             onnx_function=function,

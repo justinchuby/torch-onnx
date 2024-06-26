@@ -17,7 +17,6 @@ import math
 import types
 from typing import Callable, Literal, Mapping, TypeAlias, Union
 import operator
-import warnings
 
 import onnxscript
 import torch

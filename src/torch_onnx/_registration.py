@@ -17,16 +17,18 @@ import math
 import types
 from typing import Callable, Literal, Mapping, TypeAlias, Union
 import operator
-import warnings
+import typing
 
 import onnxscript
 import torch
 import torch._ops
-from onnxscript.function_libs.torch_lib import (
-    registration as torchlib_registration,
-)
 
 from torch_onnx import _schemas
+
+if typing.TYPE_CHECKING:
+    from onnxscript.function_libs.torch_lib import (
+        registration as torchlib_registration,
+    )
 
 _DEFAULT_OPSET_VERSION = 18
 
@@ -64,10 +66,15 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
     if namespace == "math":
         return getattr(math, op_name)
     if namespace == "torchvision":
-        import torchvision.ops
-
-        return getattr(torchvision.ops, op_name)
-
+        try:
+            import torchvision.ops
+        except ImportError:
+            logger.warning("torchvision is not installed. Skipping %s", qualified_name)
+        try:
+            return getattr(torchvision.ops, op_name)
+        except AttributeError:
+            logger.warning("'%s' is not found in torchvision.", qualified_name)
+            return None
     try:
         op_packet = getattr(getattr(torch.ops, namespace), op_name)
         if overload:
@@ -76,11 +83,20 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             # Has a default overload
             overload = "default"
         else:
+            logger.warning(
+                "'%s' does not have a 'default' overload. Ignoring.",
+                qualified_name,
+                stacklevel=1,
+            )
             return None
 
         return getattr(op_packet, overload)
     except AttributeError:
-        logger.warning("%s is not found in this version of PyTorch.", qualified_name)
+        if qualified_name.endswith("getitem"):
+            # This is a special case where we registered the function incorrectly,
+            # but for BC reasons (pt<=2.4) we need to keep it.
+            return None
+        logger.warning("'%s' is not found in this version of PyTorch.", qualified_name)
         return None
 
 
@@ -124,6 +140,10 @@ class OnnxRegistry:
         """
         registry = cls()
         if torchlib_registry is None:
+            from onnxscript.function_libs.torch_lib import (
+                registration as torchlib_registration,
+            )
+
             torchlib_registry = torchlib_registration.default_registry
         for qualified_name, aten_overloads_func in torchlib_registry.items():
             if qualified_name.startswith("internal::"):
@@ -131,10 +151,6 @@ class OnnxRegistry:
                 continue
             target = _get_overload(qualified_name)
             if target is None:
-                warnings.warn(
-                    f"{qualified_name} does not have a default overload or is not found. Ignoring.",
-                    stacklevel=1,
-                )
                 continue
             for overload_func in aten_overloads_func.overloads:
                 overload_func.signature = _schemas.OpSignature.from_function(

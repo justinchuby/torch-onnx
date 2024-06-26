@@ -23,12 +23,12 @@ import onnxscript
 import torch
 import torch._ops
 
+from torch_onnx import _schemas
+
 if typing.TYPE_CHECKING:
     from onnxscript.function_libs.torch_lib import (
         registration as torchlib_registration,
     )
-
-from torch_onnx import _schemas
 
 _DEFAULT_OPSET_VERSION = 18
 

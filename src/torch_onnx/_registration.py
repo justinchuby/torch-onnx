@@ -227,10 +227,7 @@ class OnnxRegistry:
         first in the list.
 
         Args:
-            namespace: The namespace of the operator to get.
-            op_name: The name of the operator to get.
-            overload: The overload of the operator to get. If it's default overload,
-                leave it to None.
+            target: The PyTorch node callable target.
         Returns:
             A list of OnnxDecompMeta corresponding to the given name, or None if
             the name is not in the registry.
@@ -248,10 +245,7 @@ class OnnxRegistry:
         """Returns whether the given op is registered: torch.ops.<namespace>.<op_name>.<overload>.
 
         Args:
-            namespace: The namespace of the operator to check.
-            op_name: The name of the operator to check.
-            overload: The overload of the operator to check. If it's default overload,
-                leave it to None.
+            target: The PyTorch node callable target.
 
         Returns:
             True if the given op is registered, otherwise False.

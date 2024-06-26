@@ -17,13 +17,16 @@ import math
 import types
 from typing import Callable, Literal, Mapping, TypeAlias, Union
 import operator
+import typing
 
 import onnxscript
 import torch
 import torch._ops
-from onnxscript.function_libs.torch_lib import (
-    registration as torchlib_registration,
-)
+
+if typing.TYPE_CHECKING:
+    from onnxscript.function_libs.torch_lib import (
+        registration as torchlib_registration,
+    )
 
 from torch_onnx import _schemas
 
@@ -137,6 +140,10 @@ class OnnxRegistry:
         """
         registry = cls()
         if torchlib_registry is None:
+            from onnxscript.function_libs.torch_lib import (
+                registration as torchlib_registration,
+            )
+
             torchlib_registry = torchlib_registration.default_registry
         for qualified_name, aten_overloads_func in torchlib_registry.items():
             if qualified_name.startswith("internal::"):

@@ -30,14 +30,14 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
         print_output=False, colored=False
     )
     text = (
-        "ExportedProgram:\n"
+        "ExportedProgram:\n\n"
         f"```python\n"
         f"{graph_module}\n"
-        f"```\n"
-        f"Graph signature:\n"
-        f"`{exported_program.graph_signature}`\n"
-        f"Range constraints:\n"
-        f"`{exported_program.range_constraints}`\n"
+        f"```\n\n"
+        f"Graph signature:\n\n"
+        f"`{exported_program.graph_signature}`\n\n"
+        f"Range constraints:\n\n"
+        f"`{exported_program.range_constraints}`\n\n"
     )
     return text
 

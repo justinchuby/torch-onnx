@@ -38,12 +38,7 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
     # colored option was added only recently, we can't guarantee that the
     # version of PyTorch used by the user has this option. Therefore, we
     # still call str(ExportedProgram)
-    text = (
-        "ExportedProgram:\n\n"
-        f"```python\n"
-        f"{_strip_color_from_string(str(exported_program))}\n"
-        f"```\n\n"
-    )
+    text = f"```python\n{_strip_color_from_string(str(exported_program))}\n```\n\n"
     return text
 
 

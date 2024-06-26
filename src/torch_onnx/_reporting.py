@@ -23,6 +23,25 @@ def _format_export_status(step: int, error: bool):
     )
 
 
+def _format_exported_program(exported_program: torch.export.ExportedProgram) -> str:
+    # Adapted from https://github.com/pytorch/pytorch/blob/9554a9af8788c57e1c5222c39076a5afcf0998ae/torch/export/exported_program.py#L677-L687
+    # to remove colors
+    graph_module = exported_program.graph_module.print_readable(
+        print_output=False, colored=False
+    )
+    text = (
+        "ExportedProgram:\n"
+        f"```python\n"
+        f"{graph_module}\n"
+        f"```\n"
+        f"Graph signature:\n"
+        f"`{exported_program.graph_signature}`\n"
+        f"Range constraints:\n"
+        f"`{exported_program.range_constraints}`\n"
+    )
+    return text
+
+
 def create_torch_export_error_report(
     filename: str, formatted_traceback: str, *, profile_result: str | None
 ):
@@ -53,14 +72,12 @@ def create_onnx_export_error_report(
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
         f.write(_format_export_status(step, True))
-        f.write("Error message:\n\n")
+        f.write("## Error message\n\n")
         f.write("```pytb\n")
         f.write(formatted_traceback)
         f.write("```\n\n")
-        f.write("Exported program:\n\n")
-        f.write("```python\n")
-        f.write(str(program))
-        f.write("```\n\n")
+        f.write("## Exported program\n\n")
+        f.write(_format_exported_program(program))
         if model is not None:
             f.write("ONNX model:\n\n")
             f.write("```python\n")
@@ -89,10 +106,8 @@ def crete_onnx_export_profile_report(
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(step, False))
-        f.write("Exported program:\n\n")
-        f.write("```python\n")
-        f.write(str(program))
-        f.write("```\n\n")
+        f.write("## Exported program\n\n")
+        f.write(_format_exported_program(program))
         f.write("## Profiling result\n\n")
         f.write("```\n")
         f.write(profile_result)

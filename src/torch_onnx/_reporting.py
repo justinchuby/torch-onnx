@@ -1,3 +1,4 @@
+import re
 import torch
 
 from torch_onnx import _analysis, _registration
@@ -23,21 +24,25 @@ def _format_export_status(step: int, error: bool):
     )
 
 
+def _strip_color_from_string(text: str) -> str:
+    # This regular expression matches ANSI escape codes
+    # https://github.com/pytorch/pytorch/blob/9554a9af8788c57e1c5222c39076a5afcf0998ae/torch/_dynamo/utils.py#L2785-L2788
+    ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+    return ansi_escape.sub("", text)
+
+
 def _format_exported_program(exported_program: torch.export.ExportedProgram) -> str:
-    # Adapted from https://github.com/pytorch/pytorch/blob/9554a9af8788c57e1c5222c39076a5afcf0998ae/torch/export/exported_program.py#L677-L687
+    # Adapted from https://github.com/pytorch/pytorch/pull/128476
     # to remove colors
-    graph_module = exported_program.graph_module.print_readable(
-        print_output=False, colored=False
-    )
+    # Even though we can call graph_module.print_readable directly, since the
+    # colored option was added only recently, we can't guarantee that the
+    # version of PyTorch used by the user has this option. Therefore, we
+    # still call str(ExportedProgram)
     text = (
         "ExportedProgram:\n\n"
         f"```python\n"
-        f"{graph_module}\n"
+        f"{_strip_color_from_string(str(exported_program))}\n"
         f"```\n\n"
-        f"Graph signature:\n\n"
-        f"`{exported_program.graph_signature}`\n\n"
-        f"Range constraints:\n\n"
-        f"`{exported_program.range_constraints}`\n\n"
     )
     return text
 

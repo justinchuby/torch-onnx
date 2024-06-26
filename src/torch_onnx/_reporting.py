@@ -1,3 +1,4 @@
+import re
 import torch
 
 from torch_onnx import _analysis, _registration
@@ -21,6 +22,24 @@ def _format_export_status(step: int, error: bool):
         f"{status_emoji(4, error)} Validate model output accuracy\n"
         f"```\n\n"
     )
+
+
+def _strip_color_from_string(text: str) -> str:
+    # This regular expression matches ANSI escape codes
+    # https://github.com/pytorch/pytorch/blob/9554a9af8788c57e1c5222c39076a5afcf0998ae/torch/_dynamo/utils.py#L2785-L2788
+    ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+    return ansi_escape.sub("", text)
+
+
+def _format_exported_program(exported_program: torch.export.ExportedProgram) -> str:
+    # Adapted from https://github.com/pytorch/pytorch/pull/128476
+    # to remove colors
+    # Even though we can call graph_module.print_readable directly, since the
+    # colored option was added only recently, we can't guarantee that the
+    # version of PyTorch used by the user has this option. Therefore, we
+    # still call str(ExportedProgram)
+    text = f"```python\n{_strip_color_from_string(str(exported_program))}\n```\n\n"
+    return text
 
 
 def create_torch_export_error_report(
@@ -53,14 +72,12 @@ def create_onnx_export_error_report(
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
         f.write(_format_export_status(step, True))
-        f.write("Error message:\n\n")
+        f.write("## Error message\n\n")
         f.write("```pytb\n")
         f.write(formatted_traceback)
         f.write("```\n\n")
-        f.write("Exported program:\n\n")
-        f.write("```python\n")
-        f.write(str(program))
-        f.write("```\n\n")
+        f.write("## Exported program\n\n")
+        f.write(_format_exported_program(program))
         if model is not None:
             f.write("ONNX model:\n\n")
             f.write("```python\n")
@@ -89,10 +106,8 @@ def crete_onnx_export_profile_report(
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(step, False))
-        f.write("Exported program:\n\n")
-        f.write("```python\n")
-        f.write(str(program))
-        f.write("```\n\n")
+        f.write("## Exported program\n\n")
+        f.write(_format_exported_program(program))
         f.write("## Profiling result\n\n")
         f.write("```\n")
         f.write(profile_result)

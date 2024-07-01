@@ -183,7 +183,7 @@ def analyze(
     exported_program: torch.export.ExportedProgram,
     registry: _registration.OnnxRegistry | None = None,
     file=None,
-) -> str:
+) -> None:
     """Analyze the compatibility of the exported program."""
     # Get basic information about the model
     model_info = ModelInfo()
@@ -224,4 +224,3 @@ def analyze(
     # Print the results
     report = _format_model_info(model_info)
     print(report, file=file, flush=True)
-    return report

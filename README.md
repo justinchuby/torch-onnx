@@ -24,7 +24,6 @@ import onnx
 exported = torch.export.export(...)
 model = torch_onnx.exported_program_to_ir(exported)
 proto = ir.to_proto(model)
-# This will give you an ATen dialect graph (un-lowered ONNX graph with ATen ops)
 onnx.save(proto, "model.onnx")
 
 # Or patch the torch.onnx export API

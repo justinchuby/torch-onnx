@@ -888,7 +888,7 @@ def export(
             # If torch.export.export fails, fall back to torchscript and try again.
             try:
                 jit_model = torch.jit.trace(
-                    model, example_inputs=args, example_kwarg_inputs=kwargs
+                    model, example_inputs=args, check_trace=False, strict=False
                 )
                 program = _torchscript_converter.TS2EPConverter(
                     jit_model, args, kwargs

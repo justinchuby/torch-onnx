@@ -39,7 +39,7 @@ def inplace_optimize_sym_size_div(gm: torch.fx.GraphModule):
         sym_size_int = torch.ops.aten.sym_size.int(im, dim)
         return sym_size_int // scale
 
-    replaced_patterns = subgraph_rewriter.replace_pattern(gm, pattern, replacement)
+    _replaced_patterns = subgraph_rewriter.replace_pattern(gm, pattern, replacement)
 
 
 def normalize_name(name: str) -> str:
@@ -285,7 +285,7 @@ class TS2FXGraphConverter:
         self.blocks_to_lifted_attrs = blocks_to_lifted_attrs
 
         # Populate methods for the standard operators.
-        for k in kind_to_standard_operators.keys():
+        for k in kind_to_standard_operators:
             handler_func_name = ir_name_to_func_name(k)
             # Create an indirect function call:
             # convert_<namespace>_<opname> --> lambda node: _convert_standard_operator(node)
@@ -458,9 +458,9 @@ class TS2FXGraphConverter:
                 self.name_to_node[output_name] = self.fx_graph.get_attr(attr_fqn)
             else:
                 if attr_fqn not in self.name_to_non_tensor_attribute_node:
-                    self.name_to_non_tensor_attribute_node[
-                        attr_fqn
-                    ] = self.name_to_non_tensor_attribute[attr_fqn]
+                    self.name_to_non_tensor_attribute_node[attr_fqn] = (
+                        self.name_to_non_tensor_attribute[attr_fqn]
+                    )
                 self.name_to_node[output_name] = self.name_to_non_tensor_attribute_node[
                     attr_fqn
                 ]
@@ -507,7 +507,7 @@ class TS2FXGraphConverter:
     def _convert_prim_iterator(self, node: torch._C.Node):
         output_list = []
         for inp in node.inputs():
-            output_list.append(self.get_fx_value(inp))
+            output_list.append(self.get_fx_value(inp))  # noqa: PERF401
 
         output_name = node.output().debugName()
         self.name_to_node[output_name] = output_list
@@ -939,7 +939,7 @@ DEBUG: (TORCH_LOGS="+export" <cmd>), additionaly
                     if isinstance(value, torch.Tensor):
                         if attr_fqn not in self.name_to_buffer_map:
                             # Lift tensor constants to be a buffer
-                            warnings.warn(
+                            warnings.warn(  # noqa: B028
                                 f"ts converter lifted tensor constant {attr_fqn} to be a buffer"
                             )
                             self.name_to_buffer_map[attr_fqn] = value

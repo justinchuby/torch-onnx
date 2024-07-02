@@ -6,6 +6,8 @@ import inspect
 import itertools
 import logging
 import operator
+import os
+import pathlib
 import textwrap
 import traceback
 import typing
@@ -804,6 +806,8 @@ def export(
     output_names: Sequence[str] | None = None,
     profile: bool = False,
     error_report: bool = False,
+    dump_exported_program: bool = False,
+    artifacts_dir: str | os.PathLike = '.',
 ) -> _onnx_program.ONNXProgram:
     """Export a PyTorch model to ONNXProgram.
 
@@ -817,6 +821,8 @@ def export(
         output_names: If provided, rename the outputs.
         profile: Whether to profile the export process.
         error_report: Whether to generate an error report if the export fails.
+        dump_exported_program: Whether to save the exported program to a file.
+        artifacts_dir: The directory to save the exported program and error reports.
 
     Returns:
         The ONNXProgram with the exported IR graph.
@@ -828,6 +834,11 @@ def export(
     # Set up the error reporting facilities
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
     profiler = _maybe_start_profiler(profile)
+
+    # Create the artifacts directory if it does not exist
+    artifacts_dir = pathlib.Path(artifacts_dir)
+    if error_report or profile or dump_exported_program:
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
     if not isinstance(model, torch.export.ExportedProgram):
@@ -849,7 +860,7 @@ def export(
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if error_report:
-                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                error_report_path = artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
                 _reporting.create_torch_export_error_report(
                     error_report_path,
                     _format_exception(e),
@@ -890,7 +901,7 @@ def export(
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if error_report:
-            error_report_path = f"onnx_export_{timestamp}_conversion.md"
+            error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
             # Run the analysis to get the error report
             _reporting.create_onnx_export_error_report(
@@ -917,12 +928,18 @@ def export(
         ) from e
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+    if dump_exported_program:
+        program_path = artifacts_dir / f"onnx_export_{timestamp}.pt2"
+        torch.export.save(program, program_path)
+        print(f"Exported program has been saved to '{program_path}'.")
+
     if not error_report:
         # Return if error report is not requested
         if profile:
             assert profile_result is not None
             _reporting.crete_onnx_export_profile_report(
-                f"onnx_export_{timestamp}_profile.md",
+                artifacts_dir / f"onnx_export_{timestamp}_profile.md",
                 onnx_program.exported_program,
                 profile_result,
                 step=1,
@@ -939,7 +956,7 @@ def export(
         print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
             _reporting.create_onnx_export_error_report(
-                f"onnx_export_{timestamp}_checker.md",
+                artifacts_dir / f"onnx_export_{timestamp}_checker.md",
                 _format_exception(e),
                 onnx_program.exported_program,
                 step=2,
@@ -974,7 +991,7 @@ def export(
     if profile:
         assert profile_result is not None
         _reporting.crete_onnx_export_profile_report(
-            f"onnx_export_{timestamp}_profile.md",
+            artifacts_dir / f"onnx_export_{timestamp}_profile.md",
             onnx_program.exported_program,
             profile_result,
             step=2,  # TODO: Update the step number to 4 when validation is implemented

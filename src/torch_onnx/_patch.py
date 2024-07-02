@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import io
 import logging
+import os
 import warnings
 from typing import Any, Mapping, Sequence
 
@@ -18,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 WRITE_ERROR_REPORT = False
 WRITE_PROFILE_REPORT = False
+DUMP_EXPORTED_PROGRAM = False
+ARTIFACTS_DIR = "."
 
 
 def _signature(model) -> inspect.Signature:
@@ -114,11 +117,15 @@ def _torch_onnx_export(
     | None = None,
     profile: bool = False,
     error_report: bool = False,
+    dump_exported_program: bool = False,
+    artifacts_dir: str | os.PathLike = ".",
     **_,
 ) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
     error_report = WRITE_ERROR_REPORT or error_report
     profile = WRITE_PROFILE_REPORT or profile
+    dump_exported_program = DUMP_EXPORTED_PROGRAM or dump_exported_program
+    artifacts_dir = ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
 
     if not isinstance(model, torch.export.ExportedProgram):
         args, kwargs, dynamic_shapes = _get_torch_export_args(
@@ -169,11 +176,21 @@ _original_torch_onnx_utils_export = torch.onnx.utils._export
 _original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
 
 
-def patch_torch(error_report: bool = False, profile: bool = False):
+def patch_torch(
+    error_report: bool = False,
+    profile: bool = False,
+    dump_exported_program: bool = False,
+    artifacts_dir: str | os.PathLike = ".",
+    **_,
+):
     global WRITE_ERROR_REPORT  # noqa: PLW0603
     WRITE_ERROR_REPORT = error_report
     global WRITE_PROFILE_REPORT  # noqa: PLW0603
     WRITE_PROFILE_REPORT = profile
+    global DUMP_EXPORTED_PROGRAM  # noqa: PLW0603
+    DUMP_EXPORTED_PROGRAM = dump_exported_program
+    global ARTIFACTS_DIR  # noqa: PLW0603
+    ARTIFACTS_DIR = artifacts_dir
     torch.onnx.export = _torch_onnx_export
     torch.onnx.utils._export = _torch_onnx_export
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export

@@ -1,3 +1,4 @@
+import os
 import re
 import torch
 
@@ -43,7 +44,7 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
 
 
 def create_torch_export_error_report(
-    filename: str, formatted_traceback: str, *, profile_result: str | None
+    filename: str | os.PathLike, formatted_traceback: str, *, profile_result: str | None
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
@@ -60,7 +61,7 @@ def create_torch_export_error_report(
 
 
 def create_onnx_export_error_report(
-    filename: str,
+    filename: str | os.PathLike,
     formatted_traceback: str,
     program: torch.export.ExportedProgram,
     *,
@@ -93,7 +94,7 @@ def create_onnx_export_error_report(
 
 
 def crete_onnx_export_profile_report(
-    filename: str, program: torch.export.ExportedProgram, profile_result: str, step: int
+    filename: str | os.PathLike, program: torch.export.ExportedProgram, profile_result: str, step: int
 ):
     """Create a report for the ONNX export profiling result.
 

@@ -805,6 +805,7 @@ def export(
     output_names: Sequence[str] | None = None,
     profile: bool = False,
     error_report: bool = False,
+    dump_exported_program: bool = False,
 ) -> _onnx_program.ONNXProgram:
     """Export a PyTorch model to ONNXProgram.
 
@@ -818,6 +819,7 @@ def export(
         output_names: If provided, rename the outputs.
         profile: Whether to profile the export process.
         error_report: Whether to generate an error report if the export fails.
+        dump_exported_program: Whether to dump the exported program to a file.
 
     Returns:
         The ONNXProgram with the exported IR graph.
@@ -921,6 +923,11 @@ def export(
                     if error_report
                     else ""
                 ) from e
+
+    if dump_exported_program:
+        program_path = f"onnx_export_{timestamp}.pt2"
+        torch.export.save(program, program_path)
+        print(f"Exported program has been saved to '{program_path}'.")
 
     # Step 1: Convert the exported program to an ONNX model
     try:

@@ -146,6 +146,8 @@ def _torch_onnx_export(
         output_names=output_names,
         profile=profile,
         error_report=error_report,
+        dump_exported_program=dump_exported_program,
+        artifacts_dir=artifacts_dir,
     )
 
     if f is not None:

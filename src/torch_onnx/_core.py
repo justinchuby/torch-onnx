@@ -37,6 +37,7 @@ from torch_onnx import (
     _onnx_program,
     _reporting,
     _ir_passes,
+    _isolated,
 )
 
 
@@ -807,7 +808,7 @@ def export(
     profile: bool = False,
     error_report: bool = False,
     dump_exported_program: bool = False,
-    artifacts_dir: str | os.PathLike = '.',
+    artifacts_dir: str | os.PathLike = ".",
 ) -> _onnx_program.ONNXProgram:
     """Export a PyTorch model to ONNXProgram.
 
@@ -860,7 +861,9 @@ def export(
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if error_report:
-                error_report_path = artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                error_report_path = (
+                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                )
                 _reporting.create_torch_export_error_report(
                     error_report_path,
                     _format_exception(e),
@@ -950,7 +953,10 @@ def export(
     try:
         print("Run `onnx.checker` on the ONNX model...")
         # TODO: Handle when model is >2GB
-        onnx.checker.check_model(onnx_program.model_proto, full_check=True)
+        # The checker may segfault so we need to run it in a separate process
+        _isolated.safe_call(
+            onnx.checker.check_model, onnx_program.model_proto, full_check=True
+        )
         print("Run `onnx.checker` on the ONNX model... ✅")
     except Exception as e:
         print("Run `onnx.checker` on the ONNX model... ❌")

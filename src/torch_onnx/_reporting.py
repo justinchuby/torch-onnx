@@ -94,7 +94,10 @@ def create_onnx_export_error_report(
 
 
 def crete_onnx_export_profile_report(
-    filename: str | os.PathLike, program: torch.export.ExportedProgram, profile_result: str, step: int
+    filename: str | os.PathLike,
+    program: torch.export.ExportedProgram,
+    profile_result: str,
+    step: int,
 ):
     """Create a report for the ONNX export profiling result.
 

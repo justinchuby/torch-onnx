@@ -777,7 +777,7 @@ def exported_program_to_ir(
         ir_tensor = TorchTensor(torch_tensor, name=name)
         initializer.const_value = ir_tensor
         _set_shape_type(
-            value,
+            initializer,
             torch_tensor,
             complex_to_float=lower != "none",
         )

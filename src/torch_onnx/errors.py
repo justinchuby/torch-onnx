@@ -10,6 +10,12 @@ class TorchExportError(ExporterError):
     pass
 
 
+class TorchScriptConverterError(ExporterError):
+    """Error during torchscript -> ExportedProgram conversion."""
+
+    pass
+
+
 class OnnxConversionError(ExporterError):
     """Error during ONNX conversion."""
 

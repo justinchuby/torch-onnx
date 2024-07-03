@@ -863,7 +863,9 @@ def export(
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if error_report:
-                error_report_path = f"onnx_export_{timestamp}_pt_export.md"
+                error_report_path = (
+                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                )
                 _reporting.create_torch_export_error_report(
                     error_report_path,
                     # TODO(justinchuby): Check if we need to format the previous exception separately
@@ -873,7 +875,7 @@ def export(
             else:
                 error_report_path = None
 
-            raise errors.TorchExportError(
+            raise errors.TorchScriptConverterError(
                 textwrap.dedent(f"""\
                     Failed to export the model with TorchScript converter. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
                     - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.

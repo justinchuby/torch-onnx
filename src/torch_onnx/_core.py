@@ -28,19 +28,18 @@ from torch.export import graph_signature
 
 from torch_onnx import (
     _building,
+    _decomp,
     _dispatching,
     _fx_passes,
-    _registration,
-    _decomp,
-    errors,
-    _tensors,
-    _onnx_program,
-    _reporting,
     _ir_passes,
-    _torchscript_converter,
     _isolated,
+    _onnx_program,
+    _registration,
+    _reporting,
+    _tensors,
+    _torchscript_converter,
+    errors,
 )
-
 
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
@@ -913,7 +912,7 @@ def export(
 
                 if error_report:
                     error_report_path = (
-                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                        artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
                     )
                     _reporting.create_torch_export_error_report(
                         error_report_path,

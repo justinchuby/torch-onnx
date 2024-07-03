@@ -946,11 +946,10 @@ def export(
                 ) from e_export
 
     if dump_exported_program:
+        print("Dumping ExportedProgram because `dump_exported_program=True`...")
         program_path = f"onnx_export_{timestamp}.pt2"
         torch.export.save(program, program_path)
-        print(
-            f"Exported program has been saved to '{program_path}' because `dump_exported_program=True`."
-        )
+        print(f"ExportedProgram has been saved to '{program_path}'.")
 
     # Step 1: Convert the exported program to an ONNX model
     try:
@@ -1000,8 +999,9 @@ def export(
 
     if dump_exported_program:
         program_path = artifacts_dir / f"onnx_export_{timestamp}.pt2"
+        print("Dumping ExportedProgram because `dump_exported_program=True`...")
         torch.export.save(program, program_path)
-        print(f"Exported program has been saved to '{program_path}'.")
+        print(f"ExportedProgram has been saved to '{program_path}'.")
 
     if not error_report:
         # Return if error report is not requested

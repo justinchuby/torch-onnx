@@ -45,7 +45,10 @@ def safe_call(func: Callable, *args, **kwargs):
         # It is important to fork a process here to prevent the main logic from
         # running again when the user does not place it under a `if __name__ == "__main__":`
         # block.
-        result = pool.apply(_call_function_and_return_exception, (func, args, kwargs))
+        result = pool.apply_async(
+            _call_function_and_return_exception, (func, args, kwargs)
+        )
+        result = result.get(timeout=5)
     if isinstance(result, Exception):
         raise result
     return result

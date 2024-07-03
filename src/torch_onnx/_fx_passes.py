@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import torch
 import torch.export
 from torch.onnx._internal.fx import diagnostics, passes

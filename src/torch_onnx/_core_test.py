@@ -1,4 +1,5 @@
 # ruff: noqa: UP037
+from __future__ import annotations
 
 import unittest
 

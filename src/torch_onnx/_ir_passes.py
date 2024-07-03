@@ -11,6 +11,7 @@ def rename_inputs(model: ir.Model, new_names: Sequence[str]):
         input.metadata_props["pkg.torch.onnx.original_node_name"] = input.name
         input.name = new_name
 
+
 def rename_outputs(model: ir.Model, new_names: Sequence[str]):
     for output, new_name in zip(model.graph.outputs, new_names):
         output.metadata_props["pkg.torch.onnx.original_node_name"] = output.name

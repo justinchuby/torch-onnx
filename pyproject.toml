@@ -25,7 +25,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["torch>=2.1", "onnxscript>=0.1.0.dev20240621", "onnx>=1.16"]
+dependencies = ["torch>=2.1", "onnxscript>=0.1.0.dev20240621", "onnx>=1.16", "typing-extensions"]
 
 [project.urls]
 Repository = "https://github.com/justinchuby/torch-onnx"

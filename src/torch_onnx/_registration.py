@@ -15,9 +15,11 @@ import dataclasses
 import logging
 import math
 import types
-from typing import Callable, Literal, Mapping, TypeAlias, Union
+from typing import Callable, Literal, Mapping, Union
 import operator
 import typing
+
+from typing_extensions import TypeAlias
 
 import onnxscript
 import torch

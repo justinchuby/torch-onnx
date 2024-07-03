@@ -900,8 +900,9 @@ def export(
             )
             # If torch.export.export fails, fall back to torchscript and try again.
             try:
+                # FIXME: Turn kwargs into args
                 jit_model = torch.jit.trace(
-                    model, example_inputs=args, check_trace=False, strict=False
+                    model, check_trace=False, strict=False, example_kwarg_inputs=kwargs
                 )
                 if dump_exported_program:
                     program_path = artifacts_dir / f"onnx_export_{timestamp}.pt"

@@ -70,6 +70,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             import torchvision.ops
         except ImportError:
             logger.warning("torchvision is not installed. Skipping %s", qualified_name)
+            return None
         try:
             return getattr(torchvision.ops, op_name)
         except AttributeError:

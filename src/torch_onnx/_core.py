@@ -948,7 +948,9 @@ def export(
     if dump_exported_program:
         program_path = f"onnx_export_{timestamp}.pt2"
         torch.export.save(program, program_path)
-        print(f"Exported program has been saved to '{program_path}'.")
+        print(
+            f"Exported program has been saved to '{program_path}' because `dump_exported_program=True`."
+        )
 
     # Step 1: Convert the exported program to an ONNX model
     try:

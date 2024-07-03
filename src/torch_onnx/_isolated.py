@@ -29,7 +29,10 @@ def safe_call(func: Callable, *args, **kwargs):
     Raises:
         Exception: If the function raised an exception.
     """
-    with multiprocessing.Pool(1) as pool:
+    with multiprocessing.get_context('fork').Pool(1) as pool:
+        # It is important to fork a process here to prevent the main logic from
+        # running again when the user does not place it under a `if __name__ == "__main__":`
+        # block.
         result = pool.apply(_call_function_and_return_exception, (func, args, kwargs))
     if isinstance(result, Exception):
         raise result

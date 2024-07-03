@@ -1012,12 +1012,20 @@ def export(
     # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
     try:
         print("Run `onnx.checker` on the ONNX model...")
+
         # TODO: Handle when model is >2GB
-        # The checker may segfault so we need to run it in a separate process
-        _isolated.safe_call(
-            onnx.checker.check_model, onnx_program.model_proto, full_check=True
-        )
-        print("Run `onnx.checker` on the ONNX model... ✅")
+
+        model_proto = onnx_program.model_proto
+        if model_proto.ByteSize() < 2 * 1024 * 1024 * 1024:
+            # The checker may segfault so we need to run it in a separate process
+            _isolated.safe_call(
+                onnx.checker.check_model, onnx_program.model_proto, full_check=True
+            )
+            print("Run `onnx.checker` on the ONNX model... ✅")
+        else:
+            print(
+                "Run `onnx.checker` on the ONNX model... ⚠️ Skipped because model is too large."
+            )
     except Exception as e:
         print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:

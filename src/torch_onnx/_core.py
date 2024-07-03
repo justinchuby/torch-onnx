@@ -903,6 +903,10 @@ def export(
                 jit_model = torch.jit.trace(
                     model, example_inputs=args, check_trace=False, strict=False
                 )
+                if dump_exported_program:
+                    program_path = artifacts_dir / f"onnx_export_{timestamp}.pt"
+                    jit_model.save(program_path)
+                    print(f"Torch Script model has been saved to '{program_path}'.")
                 program = _torchscript_converter.TS2EPConverter(
                     jit_model, args, kwargs
                 ).convert()

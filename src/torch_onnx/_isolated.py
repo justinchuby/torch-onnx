@@ -2,29 +2,17 @@
 
 from __future__ import annotations
 
-import functools
 import multiprocessing
 from typing import Callable
 
 
-class AbortedError(RuntimeError):
-    """Process aborted."""
+def _call_function_and_return_exception(func, args, kwargs):
+    """Call function and return a exception if there is one."""
 
-
-def _turn_exception_as_return(func, return_dict):
-    """Decorator to turn an exception into a return value."""
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            result = func(*args, **kwargs)
-            return_dict["result"] = result
-            return_dict["exception"] = None
-        except Exception as e:
-            return_dict["result"] = None
-            return_dict["exception"] = e
-
-    return wrapper
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        return e
 
 
 def safe_call(func: Callable, *args, **kwargs):
@@ -39,19 +27,10 @@ def safe_call(func: Callable, *args, **kwargs):
         The return value of the function.
 
     Raises:
-        AbortedError: If the process was aborted.
         Exception: If the function raised an exception.
     """
-    manager = multiprocessing.Manager()
-    return_dict = manager.dict()
-    process = multiprocessing.Process(
-        target=_turn_exception_as_return(func, return_dict), args=args, kwargs=kwargs
-    )
-    process.start()
-    process.join()
-    process.close()
-    if not return_dict:
-        raise AbortedError
-    if return_dict["error"] is not None:
-        raise return_dict["error"]
-    return return_dict["results"]
+    with multiprocessing.Pool(1) as pool:
+        result = pool.apply(_call_function_and_return_exception, (func, args, kwargs))
+    if isinstance(result, Exception):
+        raise result
+    return result

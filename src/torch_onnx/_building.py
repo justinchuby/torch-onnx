@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import inspect
 import logging
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Union
 
 import onnx
 import onnxscript
@@ -24,18 +24,11 @@ from torch_onnx import _schemas, _tensors, errors
 logger = logging.getLogger(__name__)
 
 # TODO(justinchuby): Update ValidAttributeType to ir_convenience.SupportedAttrTypes
-ValidAttributeType = (
-    ir.TensorProtocol
-    | int
-    | float
-    | bool
-    | str
-    | Sequence[int]
-    | Sequence[float]
-    | None
-)
+ValidAttributeType = Union[
+    ir.TensorProtocol, int, float, bool, str, Sequence[int], Sequence[float], None
+]
 
-AllowedArgType = ir.Value | Sequence[ir.Value] | ValidAttributeType
+AllowedArgType = Union[ir.Value, Sequence[ir.Value], ValidAttributeType]
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value

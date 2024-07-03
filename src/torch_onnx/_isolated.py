@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import multiprocessing
 from typing import Callable
+import os
+
+
+_IS_WINDOWS = os.name == "nt"
 
 
 def _call_function_and_return_exception(func, args, kwargs):
@@ -29,7 +33,9 @@ def safe_call(func: Callable, *args, **kwargs):
     Raises:
         Exception: If the function raised an exception.
     """
-    with multiprocessing.get_context('fork').Pool(1) as pool:
+    with multiprocessing.get_context("fork" if not _IS_WINDOWS else "spawn").Pool(
+        1
+    ) as pool:
         # It is important to fork a process here to prevent the main logic from
         # running again when the user does not place it under a `if __name__ == "__main__":`
         # block.

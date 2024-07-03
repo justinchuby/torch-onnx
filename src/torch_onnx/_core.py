@@ -894,7 +894,7 @@ def export(
             print(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
             )
-        except Exception:
+        except Exception as e_export:
             print(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export` but failed. Falling back to use torch.jit.trace... ⚠️"
             )
@@ -910,7 +910,7 @@ def export(
                 program = _torchscript_converter.TS2EPConverter(
                     jit_model, args, kwargs
                 ).convert()
-            except Exception as e:
+            except Exception as e_trace:
                 print(
                     f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` fails as well... ❌"
                 )
@@ -922,13 +922,17 @@ def export(
                     )
                     _reporting.create_torch_export_error_report(
                         error_report_path,
-                        # TODO(justinchuby): Check if we need to format the previous exception separately
-                        _format_exception(e),
+                        _format_exception(e_trace),
                         profile_result=profile_result,
                     )
                 else:
                     error_report_path = None
 
+                # NOTE: We throw e_export and not e_trace because we want to
+                # focus on the torch.export.export error. The torch.jit.trace
+                # error is due to the fallback and can be confusing to users.
+                # e_trace is still saved in the error report and will include
+                # e_export as well.
                 raise errors.TorchExportError(
                     textwrap.dedent(f"""\
                         Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
@@ -939,12 +943,14 @@ def export(
                     + f"Error report has been saved to '{error_report_path}'."
                     if error_report
                     else ""
-                ) from e
+                ) from e_export
 
     if dump_exported_program:
         program_path = f"onnx_export_{timestamp}.pt2"
         torch.export.save(program, program_path)
-        print(f"Exported program has been saved to '{program_path}'.")
+        print(
+            f"Exported program has been saved to '{program_path}' because `dump_exported_program=True`."
+        )
 
     # Step 1: Convert the exported program to an ONNX model
     try:

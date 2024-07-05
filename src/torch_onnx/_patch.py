@@ -47,25 +47,33 @@ def _from_dynamic_axes_to_dynamic_shapes(
 
     """
     # https://github.com/pytorch/pytorch/pull/128371
+    
+    # 1. The function does not need to provide dynamic_shapes to torch.export.export 
     if dynamic_axes is None:
         return None
 
-    if input_names is not None:
-        sig = _signature(model)
-        if len(input_names) > len(sig.parameters):
-            raise ValueError(
-                f"Number of input names ({len(input_names)}) should not be greater than the number of model inputs ({len(sig.parameters)})"
-            )
-        input_names_to_model_inputs = {
-            input_name: param_name
-            for input_name, param_name in zip(input_names, sig.parameters)
-        }
+    if input_names is None:
+        input_names = []
+
+    sig = _signature(model)
+    if len(input_names) > len(sig.parameters):
+        raise ValueError(
+            f"Number of input names ({len(input_names)}) should not be greater than the number of model inputs ({len(sig.parameters)})"
+        )
+    
+    input_names_to_model_inputs = {}
+    for idx, param_name in enumerate(sig.parameters):
+        if idx < len(input_names):
+            input_names_to_model_inputs[input_names[idx]] = param_name
+        else:
+            input_names_to_model_inputs[param_name] = param_name
 
     # NOTE: torch.export.export does not support input names assignment,
     # so we need to map input names to model inputs to create dynamic_shapes
     # for the exported program
     dynamic_shapes_to_exported_program = {}
     for input_name, axes in dynamic_axes.items():
+        # input_name can be either from inptu_names or from the model inputs
         if input_name not in input_names_to_model_inputs:
             raise ValueError(
                 f"dynamix axis: {input_name} is not found in the input names: {input_names}"

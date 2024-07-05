@@ -48,23 +48,36 @@ def _from_dynamic_axes_to_dynamic_shapes(
     """
     # https://github.com/pytorch/pytorch/pull/128371
     if dynamic_axes is None:
-        return None
+        return None, input_names
 
-    input_names_set = set() if input_names is None else set(input_names)
-
-    dynamic_shapes = {}
-    for input_name, axes in dynamic_axes.items():
-        if input_name in input_names_set:
+    if input_names is not None:
+        sig = _signature(model)
+        if len(input_names) > len(sig.parameters):
             raise ValueError(
-                "input names is not supported yet. Please use model forward signature."
+                f"Number of input names ({len(input_names)}) should not be greater than the number of model inputs ({len(sig.parameters)})"
             )
+        input_names_to_model_inputs = {
+            input_name: param_name
+            for input_name, param_name in zip(input_names, sig.parameters)
+        }
+
+    # NOTE: torch.export.export does not support input names assignmen,
+    # so we need to map input names to model inputs to create dynamic_shapes
+    # for the exported program
+    dynamic_shapesto_exported_program = {}
+    for input_name, axes in dynamic_axes.items():
+        if input_name not in input_names_to_model_inputs:
+            raise ValueError(
+                f"dynamix axe: {input_name} is not found in the input names: {input_names}"
+            )
+        model_input_name = input_names_to_model_inputs[input_name]
         if isinstance(axes, dict):
-            dynamic_shapes[input_name] = {
+            dynamic_shapesto_exported_program[model_input_name] = {
                 k: torch.export.Dim(v) for k, v in axes.items()
             }
         elif isinstance(axes, list):
-            dynamic_shapes[input_name] = {
-                k: torch.export.Dim(f"{input_name}_dim_{k}") for k in axes
+            dynamic_shapesto_exported_program[model_input_name] = {
+                k: torch.export.Dim(f"{model_input_name}_dim_{k}") for k in axes
             }
         else:
             raise TypeError(
@@ -72,17 +85,11 @@ def _from_dynamic_axes_to_dynamic_shapes(
             )
     # torch.export.export needs static dim to present in dynamic_shapes
     # for all input tensors, so we need to add them with None
-    try:
-        sig = _signature(model)
-    except ValueError as e:
-        warnings.warn(
-            f"{e}, skipping auto filling None on static axes...", stacklevel=1
-        )
-        return dynamic_shapes
     for input_name in sig.parameters:
-        if input_name not in dynamic_shapes:
-            dynamic_shapes[input_name] = None
-    return dynamic_shapes
+        if input_name not in dynamic_shapesto_exported_program:
+            dynamic_shapesto_exported_program[input_name] = None
+
+    return dynamic_shapesto_exported_program
 
 
 def _get_torch_export_args(

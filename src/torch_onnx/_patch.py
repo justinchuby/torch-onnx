@@ -59,7 +59,6 @@ def _from_dynamic_axes_to_dynamic_shapes(
         raise ValueError(
             f"Number of input names ({len(input_names)}) should not be greater than the number of model inputs ({len(sig.parameters)})"
         )
-    
     input_names_to_model_inputs = {}
     for idx, param_name in enumerate(sig.parameters):
         if idx < len(input_names):

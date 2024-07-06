@@ -47,8 +47,7 @@ def _from_dynamic_axes_to_dynamic_shapes(
 
     """
     # https://github.com/pytorch/pytorch/pull/128371
-    
-    # 1. The function does not need to provide dynamic_shapes to torch.export.export 
+    # 1. The function does not need to provide dynamic_shapes to torch.export.export
     if dynamic_axes is None:
         return None
 

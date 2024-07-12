@@ -59,19 +59,12 @@ def create_onnx_friendly_decomposition_table(
     # TORCH_LIBRARY can be used to register the namespace nvprims; please put all of your
     # definitions in a single TORCH_LIBRARY block.
     for op_overload, decomp_fn in torch._decomp.decomposition_table.items():  # type: ignore[attr-defined]
-        # Skip decomposition into "prim::*" ops (defined in 'torch._refs'), because they
-        # are not generally supported by ONNX.
         # Skip decomposition for op_overload as long as that op_overload has a corresponding ONNX
         # symbolic function.
-        if "torch._refs" in decomp_fn.__module__ or op_overload in onnx_registered_ops:
-            continue
-        decomposition_table[op_overload] = decomp_fn
-
-    # NOTE: There are ops in core ATen and under torch._refs,
-    # that are not decomposed to prim::ops. We need to pick them
-    # back
-    for op_overload, decomp_fn in torch._decomp.core_aten_decompositions().items():
+        # NOTE: Do not skip torch._refs decomps. They are fine because otherwise the model is
+        # not exportable anyways.
         if op_overload in onnx_registered_ops:
             continue
         decomposition_table[op_overload] = decomp_fn
+
     return decomposition_table

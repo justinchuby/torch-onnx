@@ -66,9 +66,4 @@ def create_onnx_friendly_decomposition_table(
             continue
         decomposition_table[op_overload] = decomp_fn
 
-    # TODO: Is this repeated?
-    for op_overload, decomp_fn in torch._decomp.core_aten_decompositions().items():
-        if op_overload in onnx_registered_ops:
-            continue
-        decomposition_table[op_overload] = decomp_fn
     return decomposition_table

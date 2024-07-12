@@ -61,7 +61,8 @@ def create_onnx_friendly_decomposition_table(
     for op_overload, decomp_fn in torch._decomp.decomposition_table.items():  # type: ignore[attr-defined]
         # Skip decomposition for op_overload as long as that op_overload has a corresponding ONNX
         # symbolic function.
-        # NOTE: Do not skip torch._refs decomps. They are fine.
+        # NOTE: Do not skip torch._refs decomps. They are fine because otherwise the model is
+        # not exportable anyways.
         if op_overload in onnx_registered_ops:
             continue
         decomposition_table[op_overload] = decomp_fn

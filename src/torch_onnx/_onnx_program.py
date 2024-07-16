@@ -90,10 +90,11 @@ class ONNXProgram:
 
         onnxruntime_input = {
             k.name: v.numpy(force=True)  # type: ignore[union-attr]
-            for k, v in zip(self.model.inputs, args)
+            for k, v in zip(self.model.graph.inputs, args)
         }
 
         # TODO: Turn off optimization
+        # TODO: Isolate the run in a separate process
         return ort_session.run(None, onnxruntime_input)
 
 

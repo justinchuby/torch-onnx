@@ -53,6 +53,8 @@ import parameterized
 import pytest
 import pytorch_test_common
 from onnx_test_common import skip, skip_slow, xfail
+from torch.utils import _pytree as pytree
+import torch.fx
 
 import torch
 from torch.onnx._internal.diagnostics import _rules
@@ -1705,6 +1707,26 @@ def _should_skip_xfail_test_sample(
     return None, None
 
 
+def _convert_complex_to_real_representation(model_args):
+    """Convert complex dtype tensors to real representation tensors.
+
+    ONNX does not support complex dtype tensors. Thus, we convert complex dtype tensors
+    to real representation tensors (i.e., float dtype tensors with an extra dimension
+    representing the real and imaginary parts of the complex number).
+    """
+    return tuple(
+        torch.view_as_real(arg.resolve_conj())
+        if isinstance(arg, torch.Tensor) and arg.is_complex()
+        else arg
+        for arg in model_args
+    )
+
+
+def adapt_torch_outputs_to_onnx(outputs):
+    flattened_args, _ = pytree.tree_flatten((outputs,))
+    return _convert_complex_to_real_representation(flattened_args)
+
+
 def _compare_onnx_and_torch_exported_program(
     torch_exported_program,
     onnx_exported_program,
@@ -1729,9 +1751,7 @@ def _compare_onnx_and_torch_exported_program(
         torch_outputs = torch_exported_program.module()(*input_args, **input_kwargs)
     else:
         torch_outputs = torch_exported_program(*input_args, **input_kwargs)
-    torch_outputs_onnx_format = onnx_exported_program.adapt_torch_outputs_to_onnx(
-        torch_outputs
-    )
+    torch_outputs_onnx_format = adapt_torch_outputs_to_onnx(torch_outputs)
     if len(torch_outputs_onnx_format) != len(onnx_outputs):
         raise AssertionError(
             f"Expected {len(torch_outputs_onnx_format)} outputs, got {len(onnx_outputs)}"

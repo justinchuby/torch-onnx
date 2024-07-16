@@ -11,6 +11,8 @@ import onnxruntime  # type: ignore[import]
 import parameterized  # type: ignore[import]
 import pytorch_test_common
 
+from torch.utils import _pytree as pytree
+
 import transformers  # type: ignore[import]
 
 import torch
@@ -53,6 +55,26 @@ def _parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any]
     for k, v in input_dicts.items():
         suffixes.append(f"{k}_{v}")
     return f"{cls.__name__}_{'_'.join(suffixes)}"
+
+
+def _convert_complex_to_real_representation(model_args):
+    """Convert complex dtype tensors to real representation tensors.
+
+    ONNX does not support complex dtype tensors. Thus, we convert complex dtype tensors
+    to real representation tensors (i.e., float dtype tensors with an extra dimension
+    representing the real and imaginary parts of the complex number).
+    """
+    return tuple(
+        torch.view_as_real(arg.resolve_conj())
+        if isinstance(arg, torch.Tensor) and arg.is_complex()
+        else arg
+        for arg in model_args
+    )
+
+
+def adapt_torch_outputs_to_onnx(outputs):
+    flattened_args, _ = pytree.tree_flatten((outputs,))
+    return _convert_complex_to_real_representation(flattened_args)
 
 
 @parameterized.parameterized_class(
@@ -190,16 +212,14 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
             ),
         )
         onnx_test_common.assert_dynamic_shapes(onnx_program, self.dynamic_shapes)
-        onnx_format_args = onnx_program.adapt_torch_inputs_to_onnx(tensor_x, b=8.0)
-        ref_outputs = onnx_program.adapt_torch_outputs_to_onnx(func(tensor_x, 8.0))
-        ort_outputs = onnx_test_common.run_ort(onnx_program, onnx_format_args)
+        ref_outputs = adapt_torch_outputs_to_onnx(func(tensor_x, 8.0))
+        ort_outputs = onnx_program(tensor_x)
         for ref_output, ort_output in zip(ref_outputs, ort_outputs):
             torch.testing.assert_close(ref_output, torch.tensor(ort_output))
 
         # test on different non-tensor input - xfail
-        onnx_format_args = onnx_program.adapt_torch_inputs_to_onnx(tensor_x, b=9.0)
-        ref_outputs = onnx_program.adapt_torch_outputs_to_onnx(func(tensor_x, 9.0))
-        _ = onnx_test_common.run_ort(onnx_program, onnx_format_args)
+        ref_outputs = adapt_torch_outputs_to_onnx(func(tensor_x, 9.0))
+        _ = onnx_program(tensor_x)
         for ref_output, ort_output in zip(ref_outputs, ort_outputs):
             torch.testing.assert_close(ref_output, torch.tensor(ort_output))
 

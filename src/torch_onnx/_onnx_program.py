@@ -9,7 +9,6 @@ import onnx
 import torch
 from onnxscript import ir
 from torch.utils import _pytree as pytree
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ class ONNXProgram:
         else:
             onnx.save_model(proto, destination)
 
-    def __call__(self, *args, **kwargs) -> Sequence[np.ndarray]:
+    def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
         import onnxruntime as ort
 
         onnx_model = self.model_proto.SerializeToString()
@@ -95,7 +94,8 @@ class ONNXProgram:
 
         # TODO: Turn off optimization
         # TODO: Isolate the run in a separate process
-        return ort_session.run(None, onnxruntime_input)
+        outputs = ort_session.run(None, onnxruntime_input)
+        return tuple(torch.from_numpy(output) for output in outputs)
 
 
 def _process_args(args, kwargs) -> tuple[torch.Tensor, ...]:

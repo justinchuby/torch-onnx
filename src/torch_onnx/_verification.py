@@ -23,7 +23,8 @@ def _compare_tensors(
     actual: torch.Tensor,
 ) -> tuple[float, float]:
     absolute_difference = torch.abs(expected - actual).max().item()
-    relative_difference = torch.abs(absolute_difference / expected).max().item()
+    eps = 1e-7
+    relative_difference = torch.abs(absolute_difference / (expected + eps)).max().item()
     return absolute_difference, relative_difference
 
 

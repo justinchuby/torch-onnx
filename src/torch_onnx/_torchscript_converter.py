@@ -4,10 +4,12 @@
 import logging
 import operator
 import warnings
+
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.export._trace
+
 from torch.export.exported_program import ExportedProgram
 from torch.export.graph_signature import (
     ConstantArgument,
@@ -37,7 +39,7 @@ def inplace_optimize_sym_size_div(gm: torch.fx.GraphModule):
         sym_size_int = torch.ops.aten.sym_size.int(im, dim)
         return sym_size_int // scale
 
-    _replaced_patterns = subgraph_rewriter.replace_pattern(gm, pattern, replacement)
+    replaced_patterns = subgraph_rewriter.replace_pattern(gm, pattern, replacement)
 
 
 def is_valid_for_codegen(name):
@@ -300,7 +302,7 @@ class TS2FXGraphConverter:
         self.blocks_to_lifted_attrs = blocks_to_lifted_attrs
 
         # Populate methods for the standard operators.
-        for k in kind_to_standard_operators:
+        for k in kind_to_standard_operators.keys():
             handler_func_name = ir_name_to_func_name(k)
             # Create an indirect function call:
             # convert_<namespace>_<opname> --> lambda node: _convert_standard_operator(node)
@@ -476,9 +478,9 @@ class TS2FXGraphConverter:
                 self.name_to_node[output_name] = self.fx_graph.get_attr(attr_fqn)
             else:
                 if attr_fqn not in self.name_to_non_tensor_attribute_node:
-                    self.name_to_non_tensor_attribute_node[attr_fqn] = (
-                        self.name_to_non_tensor_attribute[attr_fqn]
-                    )
+                    self.name_to_non_tensor_attribute_node[
+                        attr_fqn
+                    ] = self.name_to_non_tensor_attribute[attr_fqn]
                 self.name_to_node[output_name] = self.name_to_non_tensor_attribute_node[
                     attr_fqn
                 ]
@@ -858,7 +860,7 @@ class ExplainTS2FXGraphConverter(TS2FXGraphConverter):
             # If the original dictionary has the key, return its value.
             # Otherwise, return the mock value.
             if not super().__contains__(key):
-                warnings.warn(  # noqa: B028
+                warnings.warn(
                     f"{key} is not found in <class 'dict'>. Mock is instead used."
                 )
                 return self.mock_value

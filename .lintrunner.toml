@@ -6,7 +6,9 @@ include_patterns = [
     '**/*.py',
     '**/*.pyi',
 ]
-exclude_patterns = []
+exclude_patterns = [
+    'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
+]
 command = [
     'python',
     '-m',
@@ -33,7 +35,9 @@ code = 'RUFF-FORMAT'
 include_patterns = [
     '**/*.py',
 ]
-exclude_patterns = []
+exclude_patterns = [
+    'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
+]
 command = [
     'python',
     '-m',

@@ -36,6 +36,11 @@ def verify_onnx_program(
     exported_program = onnx_program.exported_program
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs
+        if exported_program.example_inputs is None:
+            raise ValueError(
+                "No example inputs provided and the exported_program does not contain example inputs. "
+                "Please provide arguments to verify the ONNX program."
+            )
         args, kwargs = exported_program.example_inputs
     if args is None:
         args = ()

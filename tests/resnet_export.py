@@ -1,6 +1,7 @@
 import torch
 import torchvision
 import torch_onnx
+from torch_onnx import _validation
 
 
 def main():
@@ -15,12 +16,13 @@ def main():
         weights=torchvision.models.ResNet18_Weights.DEFAULT
     )
     sample_input = (torch.randn(4, 3, 224, 224),)
-    torch.onnx.export(
+    onnx_program = torch.onnx.export(
         resnet18,
         sample_input,
         "resnet18.onnx",
         opset_version=18,
     )
+    _validation.verify_onnx_program(onnx_program)
 
 
 if __name__ == "__main__":

@@ -961,6 +961,9 @@ def export(
         if output_names:
             _ir_passes.rename_outputs(ir_model, output_names)
 
+        # TODO(justinchuby): Remove the hack
+        _ir_passes.add_torchlib_common_imports(ir_model)
+
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
         print("Translate the graph into ONNX... ✅")
 

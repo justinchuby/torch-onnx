@@ -1,7 +1,7 @@
 import torch
 import torchvision
 import torch_onnx
-from torch_onnx import _validation
+from torch_onnx import _verification
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
         "resnet18.onnx",
         opset_version=18,
     )
-    _validation.verify_onnx_program(onnx_program)
+    _verification.verify_onnx_program(onnx_program)
 
 
 if __name__ == "__main__":

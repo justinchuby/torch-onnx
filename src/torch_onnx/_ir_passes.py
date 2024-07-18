@@ -16,3 +16,11 @@ def rename_outputs(model: ir.Model, new_names: Sequence[str]):
     for output, new_name in zip(model.graph.outputs, new_names):
         output.metadata_props["pkg.torch.onnx.original_node_name"] = output.name
         output.name = new_name
+
+
+def add_torchlib_common_imports(model: ir.Model):
+    """Hack to add torchlib common imports to the model."""
+
+    # TODO(justinchuby): Remove this hack and improved onnxscript
+
+    model.opset_imports["pkg.onnxscript.torch_lib.common"] = 1

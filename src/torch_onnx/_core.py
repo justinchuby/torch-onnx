@@ -626,7 +626,7 @@ def _summarize_exception_stack(e: BaseException) -> str:
         e = e.__cause__
     return (
         "\n\n## Exception summary\n\n"
-        + "⬇️\n".join([f"{type(e)}: {e}\n" for e in reversed(causes)])
+        + "⬆️\n".join([f"{type(e)}: {e}\n" for e in reversed(causes)])
         + "\n(Refer to the full stack trace above for more information.)"
     )
 

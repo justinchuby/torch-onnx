@@ -620,14 +620,14 @@ def _format_exception(e: Exception) -> str:
 
 def _summarize_exception_stack(e: BaseException) -> str:
     """Format the exception stack by showing the text of each exception."""
-    causes = []
+    causes = [e]
     while e.__cause__ is not None:
         causes.append(e.__cause__)
         e = e.__cause__
     return (
-        "\n\n## Exception summary\n"
-        + "\n⬇️\n".join([str(e) for e in causes])
-        + "\nRefer to the full stack trace for more information."
+        "\n\n## Exception summary\n\n"
+        + "⬇️\n".join([f"{type(e)}: {e}\n" for e in reversed(causes)])
+        + "\n(Refer to the full stack trace above for more information.)"
     )
 
 
@@ -891,11 +891,13 @@ def export(
             raise errors.TorchScriptConverterError(
                 textwrap.dedent(f"""\
                     Failed to export the model with TorchScript converter. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
-                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.
-                    """)
-                + f"Error report has been saved to '{error_report_path}'."
-                if error_report
-                else "" + _summarize_exception_stack(e)
+                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+                + (
+                    f"\nError report has been saved to '{error_report_path}'."
+                    if error_report
+                    else ""
+                )
+                + _summarize_exception_stack(e)
             ) from e
     else:
         model_repr = _take_first_line(repr(model))
@@ -951,11 +953,13 @@ def export(
                         Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
                         - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
                         - Debug `torch.export.export` and summit a PR to PyTorch.
-                        - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.
-                        """)
-                    + f"Error report has been saved to '{error_report_path}'."
-                    if error_report
-                    else "" + _summarize_exception_stack(e_export)
+                        - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+                    + (
+                        f"\nError report has been saved to '{error_report_path}'."
+                        if error_report
+                        else ""
+                    )
+                    + _summarize_exception_stack(e_export)
                 ) from e_export
 
     if dump_exported_program:
@@ -1008,11 +1012,13 @@ def export(
                 Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
                 - If there is a missing ONNX function, implement it and register it to the registry.
                 - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.
-                """)
-            + f"Error report has been saved to '{error_report_path}'."
-            if error_report
-            else "" + _summarize_exception_stack(e)
+                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+            + (
+                f"\nError report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            )
+            + _summarize_exception_stack(e)
         ) from e
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)

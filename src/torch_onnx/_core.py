@@ -841,7 +841,7 @@ def export(
     if error_report or profile or dump_exported_program:
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 0: Export the model with torch.export.export if the model is not already an ExportedProgram
+    # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
     elif isinstance(model, (torch.jit.ScriptModule, torch.jit.ScriptFunction)):
@@ -951,7 +951,7 @@ def export(
         torch.export.save(program, program_path)
         print(f"ExportedProgram has been saved to '{program_path}'.")
 
-    # Step 1: Convert the exported program to an ONNX model
+    # Step 2: Convert the exported program to an ONNX model
     try:
         print("Translate the graph into ONNX...")
         ir_model = exported_program_to_ir(program, registry=registry)
@@ -1000,12 +1000,6 @@ def export(
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-    if dump_exported_program:
-        program_path = artifacts_dir / f"onnx_export_{timestamp}.pt2"
-        print("Dumping ExportedProgram because `dump_exported_program=True`...")
-        torch.export.save(program, program_path)
-        print(f"ExportedProgram has been saved to '{program_path}'.")
-
     if not error_report:
         # Return if error report is not requested
         if profile:
@@ -1018,7 +1012,7 @@ def export(
             )
         return onnx_program
 
-    # Step 2: (When error report is requested) Check the ONNX model with ONNX checker
+    # Step 3: (When error report is requested) Check the ONNX model with ONNX checker
     try:
         print("Run `onnx.checker` on the ONNX model...")
 
@@ -1057,7 +1051,7 @@ def export(
         )
         return onnx_program
 
-    # Step 3: (When error report is requested) Execute the model with ONNX Runtime
+    # Step 4: (When error report is requested) Execute the model with ONNX Runtime
     # try:
     #     print("Execute the model with ONNX Runtime... ")
     #     print("✅")
@@ -1069,7 +1063,7 @@ def export(
     #         "attach the full error stack as well as reproduction scripts. "
     #     ) from e
 
-    # Step 4: (When error report is requested) Validate the output values
+    # Step 5: (When error report is requested) Validate the output values
     # TODO
 
     if profile:

@@ -1,5 +1,7 @@
 # PyTorch to ONNX Exporter
 
+[![PyPI version](https://badge.fury.io/py/torch-onnx.svg)](https://badge.fury.io/py/torch-onnx)
+
 Experimental torch ONNX exporter.
 
 > [!WARNING]
@@ -55,5 +57,5 @@ torch_onnx.analyze(exported)
 ## Why is this doable?
 
 - We need to verify torch.export coverage on Huggingface Optimum https://github.com/huggingface/optimum/tree/main/optimum/exporters/onnx; and they are not patching torch.onnx itself.
-- Path torch.onnx.export such that packages do not need to change a single line to use dynamo
+- Patch torch.onnx.export such that packages do not need to change a single line to use dynamo
 - We have all operators implemented and portable

@@ -11,7 +11,7 @@ import pathlib
 import textwrap
 import traceback
 import typing
-from typing import Any, Literal, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 import numpy as np
 import onnx
@@ -615,6 +615,7 @@ def _maybe_stop_profiler_and_get_result(profiler) -> str | None:
 
 
 def _format_exception(e: Exception) -> str:
+    """Format the full traceback as Python would show it."""
     return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
 
 
@@ -809,6 +810,13 @@ def _take_first_line(text: str) -> str:
     return first_line
 
 
+def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
+    """"""
+    if verbose is False:
+        return lambda *_, **__: None
+    return lambda *args, **kwargs: print("[torch.onnx]", *args, **kwargs)
+
+
 def export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
@@ -822,6 +830,7 @@ def export(
     error_report: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
+    verbose: bool | None = None,
 ) -> _onnx_program.ONNXProgram:
     """Export a PyTorch model to ONNXProgram.
 
@@ -837,6 +846,7 @@ def export(
         error_report: Whether to generate an error report if the export fails.
         dump_exported_program: Whether to save the exported program to a file.
         artifacts_dir: The directory to save the exported program and error reports.
+        verbose: Whether to print verbose messages. If None (default), some messages will be printed.
 
     Returns:
         The ONNXProgram with the exported IR graph.
@@ -854,23 +864,25 @@ def export(
     if error_report or profile or dump_exported_program:
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
+    verbose_print = _verbose_printer(verbose)
+
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
     elif isinstance(model, (torch.jit.ScriptModule, torch.jit.ScriptFunction)):
         model_repr = _take_first_line(repr(model))
-        print(
+        verbose_print(
             f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed..."
         )
         try:
             program = _torchscript_converter.TS2EPConverter(
                 model, args, kwargs
             ).convert()
-            print(
+            verbose_print(
                 f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ✅"
             )
         except Exception as e:
-            print(
+            verbose_print(
                 f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ❌"
             )
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -901,16 +913,18 @@ def export(
             ) from e
     else:
         model_repr = _take_first_line(repr(model))
-        print(f"Obtain model graph for `{model_repr}` with `torch.export.export`...")
+        verbose_print(
+            f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
+        )
         try:
             program = torch.export.export(
                 model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
             )
-            print(
+            verbose_print(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
             )
         except Exception as e_export:
-            print(
+            verbose_print(
                 f"Obtain model graph for `{model_repr}` with `torch.export.export` but failed. Falling back to use torch.jit.trace... ⚠️"
             )
             # If torch.export.export fails, fall back to torchscript and try again.
@@ -921,12 +935,14 @@ def export(
                 if dump_exported_program:
                     program_path = artifacts_dir / f"onnx_export_{timestamp}.pt"
                     jit_model.save(program_path)
-                    print(f"Torch Script model has been saved to '{program_path}'.")
+                    verbose_print(
+                        f"Torch Script model has been saved to '{program_path}'."
+                    )
                 program = _torchscript_converter.TS2EPConverter(
                     jit_model, args, kwargs
                 ).convert()
             except Exception as e_trace:
-                print(
+                verbose_print(
                     f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` fails as well... ❌"
                 )
                 profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -963,18 +979,18 @@ def export(
                 ) from e_export
 
     if dump_exported_program:
-        print("Dumping ExportedProgram because `dump_exported_program=True`...")
+        verbose_print("Dumping ExportedProgram because `dump_exported_program=True`...")
         program_path = f"onnx_export_{timestamp}.pt2"
         try:
             torch.export.save(program, program_path)
         except Exception as e:
-            print(f"Failed to save ExportedProgram due to an error: {e}")
+            verbose_print(f"Failed to save ExportedProgram due to an error: {e}")
         else:
-            print(f"ExportedProgram has been saved to '{program_path}'.")
+            verbose_print(f"ExportedProgram has been saved to '{program_path}'.")
 
     # Step 2: Convert the exported program to an ONNX model
     try:
-        print("Translate the graph into ONNX...")
+        verbose_print("Translate the graph into ONNX...")
         ir_model = exported_program_to_ir(program, registry=registry)
 
         if input_names:
@@ -986,10 +1002,10 @@ def export(
         _ir_passes.add_torchlib_common_imports(ir_model)
 
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
-        print("Translate the graph into ONNX... ✅")
+        verbose_print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
-        print("Translate the graph into ONNX... ❌")
+        verbose_print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if error_report:
@@ -1037,7 +1053,7 @@ def export(
 
     # Step 3: (When error report is requested) Check the ONNX model with ONNX checker
     try:
-        print("Run `onnx.checker` on the ONNX model...")
+        verbose_print("Run `onnx.checker` on the ONNX model...")
 
         # TODO: Handle when model is >2GB
 
@@ -1048,13 +1064,13 @@ def export(
             _isolated.safe_call(
                 onnx.checker.check_model, onnx_program.model_proto, full_check=True
             )
-            print("Run `onnx.checker` on the ONNX model... ✅")
+            verbose_print("Run `onnx.checker` on the ONNX model... ✅")
         else:
-            print(
+            verbose_print(
                 f"Run `onnx.checker` on the ONNX model... ⚠️ Skipped because model is too large ({byte_size})."
             )
     except Exception as e:
-        print("Run `onnx.checker` on the ONNX model... ❌")
+        verbose_print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
             _reporting.create_onnx_export_error_report(
                 artifacts_dir / f"onnx_export_{timestamp}_checker.md",
@@ -1076,8 +1092,8 @@ def export(
 
     # Step 4: (When error report is requested) Execute the model with ONNX Runtime
     # try:
-    #     print("Execute the model with ONNX Runtime... ")
-    #     print("✅")
+    #     verbose_print("Execute the model with ONNX Runtime... ")
+    #     verbose_print("✅")
     # except Exception as e:
     #     raise errors.OnnxConversionError(
     #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "

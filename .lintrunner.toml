@@ -58,3 +58,32 @@ init_command = [
     'ruff==0.4.4',
 ]
 is_formatter = true
+
+[[linter]]
+code = 'MYPY'
+include_patterns = [
+    '**/*.py',
+    '**/*.pyi',
+]
+exclude_patterns = [
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'mypy_linter',
+    '--config=mypy.ini',
+    '--show-disable',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    'mypy==1.10.0',
+]

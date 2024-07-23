@@ -934,10 +934,16 @@ def export(
                 )
                 if dump_exported_program:
                     program_path = artifacts_dir / f"onnx_export_{timestamp}.pt"
-                    jit_model.save(program_path)
-                    verbose_print(
-                        f"Torch Script model has been saved to '{program_path}'."
-                    )
+                    try:
+                        jit_model.save(program_path)
+                    except Exception as e:
+                        verbose_print(
+                            f"Failed to save Torch Script model due to an error: {e}"
+                        )
+                    else:
+                        verbose_print(
+                            f"Torch Script model has been saved to '{program_path}'."
+                        )
                 program = _torchscript_converter.TS2EPConverter(
                     jit_model, args, kwargs
                 ).convert()

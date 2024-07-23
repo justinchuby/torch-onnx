@@ -11,7 +11,6 @@ from torch.ao.quantization.quantizer import xnnpack_quantizer
 torch_onnx.patch_torch(error_report=True, profile=True, dump_exported_program=True)
 
 
-
 class TestModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -19,6 +18,7 @@ class TestModel(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
 
 example_inputs = (torch.randn(1, 5),)
 model = TestModel().eval()

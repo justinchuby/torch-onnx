@@ -618,6 +618,19 @@ def _format_exception(e: Exception) -> str:
     return "\n".join(traceback.format_exception(type(e), e, e.__traceback__))
 
 
+def _summarize_exception_stack(e: BaseException) -> str:
+    """Format the exception stack by showing the text of each exception."""
+    causes = []
+    while e.__cause__ is not None:
+        causes.append(e.__cause__)
+        e = e.__cause__
+    return (
+        "\n\n## Exception summary\n"
+        + "\n⬇️\n".join([str(e) for e in causes])
+        + "\nRefer to the full stack trace for more information."
+    )
+
+
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
@@ -882,7 +895,7 @@ def export(
                     """)
                 + f"Error report has been saved to '{error_report_path}'."
                 if error_report
-                else ""
+                else "" + _summarize_exception_stack(e)
             ) from e
     else:
         model_repr = _take_first_line(repr(model))
@@ -942,7 +955,7 @@ def export(
                         """)
                     + f"Error report has been saved to '{error_report_path}'."
                     if error_report
-                    else ""
+                    else "" + _summarize_exception_stack(e_export)
                 ) from e_export
 
     if dump_exported_program:
@@ -995,7 +1008,7 @@ def export(
                 """)
             + f"Error report has been saved to '{error_report_path}'."
             if error_report
-            else ""
+            else "" + _summarize_exception_stack(e)
         ) from e
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)

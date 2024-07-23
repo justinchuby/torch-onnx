@@ -104,7 +104,8 @@ def _get_torch_export_args(
     kwargs: dict[str, Any] | None,
     dynamic_axes: Mapping[str, Mapping[int, str]] | Mapping[str, Sequence[int]] | None,
     input_names: Sequence[str] | None,
-):
+) -> tuple[tuple[Any, ...], dict[str, Any] | None, dict[str, Any] | None]:
+    """Obtain the arguments for torch.onnx.export from the model and the input arguments."""
     if not kwargs and args and isinstance(args[-1], dict):
         kwargs = args[-1]
         args = args[:-1]

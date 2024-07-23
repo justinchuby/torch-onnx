@@ -99,21 +99,14 @@ def _from_dynamic_axes_to_dynamic_shapes(
 
 
 def _get_torch_export_args(
-    model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
     kwargs: dict[str, Any] | None,
-    dynamic_axes: Mapping[str, Mapping[int, str]] | Mapping[str, Sequence[int]] | None,
-    input_names: Sequence[str] | None,
-) -> tuple[tuple[Any, ...], dict[str, Any] | None, dict[str, Any] | None]:
+) -> tuple[tuple[Any, ...], dict[str, Any] | None]:
     """Obtain the arguments for torch.onnx.export from the model and the input arguments."""
     if not kwargs and args and isinstance(args[-1], dict):
         kwargs = args[-1]
         args = args[:-1]
-
-    dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
-        model, dynamic_axes, input_names
-    )
-    return args, kwargs, dynamic_shapes
+    return args, kwargs
 
 
 def _torch_onnx_export(
@@ -129,6 +122,7 @@ def _torch_onnx_export(
     dynamic_axes: Mapping[str, Mapping[int, str]]
     | Mapping[str, Sequence[int]]
     | None = None,
+    dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     profile: bool = False,
     error_report: bool = False,
     dump_exported_program: bool = False,
@@ -141,14 +135,16 @@ def _torch_onnx_export(
     dump_exported_program = DUMP_EXPORTED_PROGRAM or dump_exported_program
     artifacts_dir = ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
 
-    if not isinstance(model, torch.export.ExportedProgram):
-        args, kwargs, dynamic_shapes = _get_torch_export_args(
-            model, args, kwargs, dynamic_axes, input_names
-        )
+    if isinstance(model, torch.export.ExportedProgram):
+        # We the model is already exported program, so the args, kwargs, and dynamic_shapes
+        # are not used
+        dynamic_shapes = dynamic_shapes or {}
     else:
-        args, kwargs, dynamic_shapes = _get_torch_export_args(
-            model, args, kwargs, None, input_names
-        )
+        args, kwargs = _get_torch_export_args(args, kwargs)
+        if dynamic_shapes is None and dynamic_axes is not None:
+            dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
+                model, dynamic_axes, input_names
+            )
 
     onnx_program = _core.export(
         model,

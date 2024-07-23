@@ -62,8 +62,8 @@ is_formatter = true
 [[linter]]
 code = 'MYPY'
 include_patterns = [
-    'torch_onnx/**/*.py',
-    'torch_onnx/**/*.pyi',
+    '**/*.py',
+    '**/*.pyi',
 ]
 exclude_patterns = [
 ]
@@ -73,7 +73,7 @@ command = [
     'lintrunner_adapters',
     'run',
     'mypy_linter',
-    '--config=pyproject.toml',
+    '--config=mypy.ini',
     '--show-disable',
     '--',
     '@{{PATHSFILE}}'
@@ -85,5 +85,5 @@ init_command = [
     'run',
     'pip_init',
     '--dry-run={{DRYRUN}}',
-    '--requirement=requirements/lintrunner/requirements.txt',
+    'mypy==1.10.0',
 ]

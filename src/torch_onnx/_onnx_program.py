@@ -31,6 +31,7 @@ class ONNXProgram:
         *,
         include_initializers: bool = True,
         external_data: bool | None = None,
+        all_tensors_to_one_file: bool = True,
         **_,
     ):
         """Save the ONNX model to the specified destination.
@@ -42,6 +43,7 @@ class ONNXProgram:
             destination: The path to save the ONNX model to.
             include_initializers: Whether to include the initializers in the saved model.
             external_data: Whether to save the weights as external data in a separate file.
+            all_tensors_to_one_file: Whether to save all tensors to one file when saving as external data.
 
         Raises:
             TypeError: If `external_data` is `True` and `destination` is not a file path.
@@ -74,6 +76,7 @@ class ONNXProgram:
                 proto,
                 destination,
                 save_as_external_data=True,
+                all_tensors_to_one_file=all_tensors_to_one_file,
                 location=data_path,
             )
         else:

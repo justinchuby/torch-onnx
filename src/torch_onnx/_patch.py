@@ -123,6 +123,8 @@ def _torch_onnx_export(
     | Mapping[str, Sequence[int]]
     | None = None,
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
+    external_data: bool = True,
+    all_tensors_to_one_file: bool = True,
     profile: bool = False,
     error_report: bool = False,
     dump_exported_program: bool = False,
@@ -161,7 +163,13 @@ def _torch_onnx_export(
     )
 
     if f is not None:
-        onnx_program.save(f, include_initializers=export_params)
+        # Always save the initializers as external data to reduce the size of the ONNX file
+        onnx_program.save(
+            f,
+            include_initializers=export_params,
+            external_data=external_data,
+            all_tensors_to_one_file=all_tensors_to_one_file,
+        )
 
     return onnx_program
 

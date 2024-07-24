@@ -1,3 +1,4 @@
+import unittest
 import torch
 import torch_onnx
 from functorch.experimental.control_flow import cond
@@ -41,8 +42,15 @@ class CondBranchClassMethod(torch.nn.Module):
         return cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
 
 
-model = CondBranchClassMethod()
-input = torch.randn(5)
+class ConditionalTest(unittest.TestCase):
+    @unittest.expectedFailure  # Conditionals are not supported yet
+    def test_conditional(self):
+        model = CondBranchClassMethod()
+        input = torch.randn(5)
+        onnx_program = torch.onnx.dynamo_export(model, input)
+        if __name__ == "__main__":
+            onnx_program.save("conditional.onnx")
 
-onnx_program = torch.onnx.dynamo_export(model, input)
-onnx_program.save("conditional.onnx")
+
+if __name__ == "__main__":
+    unittest.main()

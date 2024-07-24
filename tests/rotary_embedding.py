@@ -1,3 +1,5 @@
+import unittest
+
 import onnx
 import torch
 import torch_onnx
@@ -68,25 +70,28 @@ class Model(nn.Module):
         return self.rotary_embedding_ms(x, cos, sin, pos)
 
 
-batch_size = 2
-num_heads = 16
-sequence_length = 32
-head_size = 8
+class RotaryEmbeddingTest(unittest.TestCase):
+    def test_resnet(self):
+        batch_size = 2
+        num_heads = 16
+        sequence_length = 32
+        head_size = 8
 
-# Calculated this way to match the data in rotary_embedding_op_test.cc
-x_bnsh = torch.randn(batch_size, num_heads, sequence_length, head_size)
-x_bsnh = x_bnsh.transpose(1, 2)
-rotary_embedding_ms = LlamaMSRotaryEmbedding(head_size, num_heads, sequence_length)
-model = Model()
-cos_ms, sin_ms = rotary_embedding_ms.get_cos_sin_cache()
-pos_ms = 0
+        # Calculated this way to match the data in rotary_embedding_op_test.cc
+        x_bnsh = torch.randn(batch_size, num_heads, sequence_length, head_size)
+        x_bsnh = x_bnsh.transpose(1, 2)
+        rotary_embedding_ms = LlamaMSRotaryEmbedding(
+            head_size, num_heads, sequence_length
+        )
+        model = Model()
+        cos_ms, sin_ms = rotary_embedding_ms.get_cos_sin_cache()
+        pos_ms = 0
 
-lower = "at_conversion"
-print("Exporting model...")
-exported = torch.export.export(model, (x_bsnh, cos_ms, sin_ms, pos_ms))
-print("ExportedProgram done.")
-print(exported)
-ir_model = torch_onnx.exported_program_to_ir(exported, lower=lower)
-proto = ir.to_proto(ir_model)
-onnx.save_model(proto, f"rotary_embedding_ms_lower_{lower}.onnx")
-onnx.checker.check_model(proto, full_check=True)
+        exported = torch.export.export(model, (x_bsnh, cos_ms, sin_ms, pos_ms))
+        ir_model = torch_onnx.exported_program_to_ir(exported)
+        proto = ir.to_proto(ir_model)
+        onnx.checker.check_model(proto, full_check=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

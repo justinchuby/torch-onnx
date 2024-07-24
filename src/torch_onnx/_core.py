@@ -422,13 +422,13 @@ def _handle_call_function_node_with_lowering(
         for i, output in enumerate(node_schema.returns):
             if not output.name:
                 if i == 0:
-                    output_names.append(f"val_{node.name}")
+                    output_names.append(node.name)
                 else:
                     # More than one output may not have a name, in which case we
                     # append an index to avoid duplication
-                    output_names.append(f"val_{node.name}__{i}")
+                    output_names.append(f"{node.name}__{i}")
             else:
-                output_names.append(f"val_{node.name}_{output.name}")
+                output_names.append(f"{node.name}__{output.name}")
 
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"], complex_to_float=True)
@@ -438,14 +438,14 @@ def _handle_call_function_node_with_lowering(
                 output.name = name
         else:
             for i, output in enumerate(outputs):
-                output.name = f"val_{node.name}_{i}"
+                output.name = f"{node.name}__{i}"
     else:
         _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
         if output_names:
             outputs.name = output_names[0]
         else:
-            outputs.name = f"val_{node.name}"
+            outputs.name = node.name
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node

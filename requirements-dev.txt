@@ -1,6 +1,13 @@
+expecttest==0.1.6
+hypothesis
+onnxruntime
+parameterized
+pyinstrument
+pytest
+pytest-cov
+pytest-subtests
+pytest-xdist
+pyyaml
 torchvision
 transformers
-pytest
-pytest-xdist
-pytest-cov
-pyinstrument
+typing_extensions

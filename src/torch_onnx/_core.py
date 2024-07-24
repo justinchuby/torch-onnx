@@ -422,7 +422,7 @@ def _handle_call_function_node_with_lowering(
         for i, output in enumerate(node_schema.returns):
             if not output.name:
                 if i == 0:
-                    output_names.append(f"{node.name}")
+                    output_names.append(node.name)
                 else:
                     # More than one output may not have a name, in which case we
                     # append an index to avoid duplication
@@ -445,7 +445,7 @@ def _handle_call_function_node_with_lowering(
         if output_names:
             outputs.name = output_names[0]
         else:
-            outputs.name = f"{node.name}"
+            outputs.name = node.name
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node

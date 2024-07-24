@@ -793,7 +793,7 @@ def _take_first_line(text: str) -> str:
 
 
 def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
-    """"""
+    """Prints messages based on `verbose`."""
     if verbose is False:
         return lambda *_, **__: None
     return lambda *args, **kwargs: print("[torch.onnx]", *args, **kwargs)
@@ -894,6 +894,7 @@ def export(
                 + _summarize_exception_stack(e)
             ) from e
     else:
+        # Convert an nn.Module to an ExportedProgram
         model_repr = _take_first_line(repr(model))
         verbose_print(
             f"Obtain model graph for `{model_repr}` with `torch.export.export`..."

@@ -413,43 +413,25 @@ def _handle_call_function_node_with_lowering(
                 f"Error when calling function '{onnx_function}' with args '{onnx_args}' and kwargs '{onnx_kwargs}'"
             ) from e
 
-    output_names = []
-    try:
-        node_schema = node.target._schema
-    except AttributeError:
-        logger.debug("No schema found for node %s", node.format_node())
-    else:
-        for i, output in enumerate(node_schema.returns):
-            if not output.name:
-                if i == 0:
-                    output_names.append(node.name)
-                else:
-                    # More than one output may not have a name, in which case we
-                    # append an index to avoid duplication
-                    output_names.append(f"{node.name}__{i}")
-            else:
-                output_names.append(f"{node.name}__{output.name}")
-
+    # NOTE: Instead of using the output names from node.target._schema,
+    # we always use the index if there are more than one outputs so the
+    # names can be programmatically reconstructed. This is useful for
+    # comparing values from the ONNX graph with those from the FX graph.
+    #
+    # When there are multiple outputs, the output names will be
+    # node_name__0, node_name__1, etc.
     if isinstance(outputs, Sequence):
         _set_shape_types(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
-        if output_names:
-            for output, name in zip(outputs, output_names):
-                output.name = name
-        else:
-            for i, output in enumerate(outputs):
-                output.name = f"{node.name}__{i}"
+        for i, output in enumerate(outputs):
+            output.name = f"{node.name}__{i}"
     else:
         _set_shape_type(outputs, node.meta["val"], complex_to_float=True)
         node_name_to_values[node.name] = outputs
-        if output_names:
-            outputs.name = output_names[0]
-        else:
-            outputs.name = node.name
+        outputs.name = node.name
 
     for ir_node in tracer.nodes:
         ir_node.meta["node"] = node
-
         # Record the nn.Module stack for the node
         _set_node_metadata(node, ir_node)
 
@@ -464,7 +446,7 @@ def _handle_call_function_node_with_lowering(
         ir_function = ir.serde.deserialize_function(proto)
         model.functions[identifier] = ir_function
         if ir_function.domain not in model.opset_imports:
-            # FIXME: Record the opset version of the function
+            # FIXME: Record the correct opset version of the function
             model.opset_imports[ir_function.domain] = 1
 
 

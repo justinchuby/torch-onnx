@@ -44,7 +44,5 @@ class CondBranchClassMethod(torch.nn.Module):
 model = CondBranchClassMethod()
 input = torch.randn(5)
 
-onnx_program = torch.onnx.dynamo_export(
-    model, input
-)
+onnx_program = torch.onnx.dynamo_export(model, input)
 onnx_program.save("conditional.onnx")

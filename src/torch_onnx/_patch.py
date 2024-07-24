@@ -183,10 +183,10 @@ def _torch_onnx_dynamo_export(
         model,
         model_args,
         kwargs=model_kwargs,
-        error_report = WRITE_ERROR_REPORT,
-        profile = WRITE_PROFILE_REPORT,
-        dump_exported_program = DUMP_EXPORTED_PROGRAM,
-        artifacts_dir = ARTIFACTS_DIR,
+        error_report=WRITE_ERROR_REPORT,
+        profile=WRITE_PROFILE_REPORT,
+        dump_exported_program=DUMP_EXPORTED_PROGRAM,
+        artifacts_dir=ARTIFACTS_DIR,
     )
 
 

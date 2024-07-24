@@ -5,6 +5,7 @@ import torchvision
 import torch_onnx
 from torch_onnx import _verification
 
+
 class ResnetTest(unittest.TestCase):
     def test_resnet(self):
         torch_onnx.patch_torch(

@@ -1,6 +1,8 @@
 """Strategies for capturing ExportedPrograms."""
 
 from __future__ import annotations
+import os
+import pathlib
 from typing import Any, Callable
 
 import torch
@@ -26,72 +28,96 @@ def _take_first_line(text: str) -> str:
     return first_line
 
 
-class CaptureStrategy(abc.ABC):
-    """Strategy for capturing a module as ExportedProgram."""
+@dataclasses.dataclass
+class Result:
+    exported_program: torch.export.ExportedProgram | None
+    strategy: str
+    success: bool = True
+    exception: Exception | None = None
 
-    def __init__(self, verbose: bool = False):
+
+class CaptureStrategy(abc.ABC):
+    """Strategy for capturing a module as ExportedProgram.
+
+    To use a strategy, create an instance and call it with the model, args, kwargs, and dynamic_shapes.
+    Example::
+
+        strategy = TorchExportStrategy(verbose=True)
+        result = strategy(model, args, kwargs, dynamic_shapes)
+    """
+
+    def __init__(self, *, verbose: bool = False, dump: bool = False, artifacts_dir: str | os.PathLike = ".", timestamp: str):
+        """Initialize the strategy.
+
+        Args:
+            verbose: Whether to print verbose messages.
+            dump: Whether to dump the intermediate artifacts to a file.
+        """
         self._verbose_print = _verbose_printer(verbose)
+        self._dump = dump
+        self._artifacts_dir = pathlib.Path(artifacts_dir)
+        self._timestamp = timestamp
 
     def __call__(
         self,
         model: torch.nn.Module,
         args: tuple[Any, ...],
-        kwargs: dict[str, Any],
+        kwargs: dict[str, Any] | None,
         dynamic_shapes,
     ) -> Result:
-        self.enter(model)
+        self._enter(model)
+        if kwargs is None:
+            kwargs = {}
         try:
-            exported_program = self.capture(model, args, kwargs, dynamic_shapes)
+            exported_program = self._capture(model, args, kwargs, dynamic_shapes)
         except Exception as e:
-            self.failure(model, e)
-            return Result(exported_program=None, success=False, exception=e)
-        self.success(model)
-        return Result(exported_program)
+            self._failure(model, e)
+            return Result(
+                exported_program=None,
+                strategy=self.__call__.__name__,
+                success=False,
+                exception=e,
+            )
+        self._success(model)
+        return Result(exported_program, strategy=self.__call__.__name__)
 
     @abc.abstractmethod
-    def capture(
+    def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
         raise NotImplementedError
 
-    def enter(self, model: torch.nn.Module) -> None:
+    def _enter(self, model: torch.nn.Module) -> None:
         return
 
-    def success(self, model: torch.nn.Module) -> None:
+    def _success(self, model: torch.nn.Module) -> None:
         return
 
-    def failure(self, model: torch.nn.Module, e: Exception) -> None:
+    def _failure(self, model: torch.nn.Module, e: Exception) -> None:
         return
-
-
-@dataclasses.dataclass
-class Result:
-    exported_program: torch.export.ExportedProgram | None
-    success: bool = True
-    exception: Exception | None = None
 
 
 class TorchExportStrategy(CaptureStrategy):
-    def capture(
+    def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
         return torch.export.export(
             model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
         )
 
-    def enter(self, model) -> None:
+    def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
         )
 
-    def success(self, model) -> None:
+    def _success(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
         )
 
-    def failure(self, model, e) -> None:
+    def _failure(self, model, e) -> None:
         del e  # Unused
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
@@ -100,26 +126,26 @@ class TorchExportStrategy(CaptureStrategy):
 
 
 class TorchExportNonStrictStrategy(CaptureStrategy):
-    def capture(
+    def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
         return torch.export.export(
             model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes, strict=False
         )
 
-    def enter(self, model) -> None:
+    def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with `torch.export.export(..., strict=False)`..."
         )
 
-    def success(self, model) -> None:
+    def _success(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with `torch.export.export(..., strict=False)`... ✅"
         )
 
-    def failure(self, model, e) -> None:
+    def _failure(self, model, e) -> None:
         del e  # Unused
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
@@ -128,7 +154,7 @@ class TorchExportNonStrictStrategy(CaptureStrategy):
 
 
 class JitTraceConvertStrategy(CaptureStrategy):
-    def capture(
+    def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
         del dynamic_shapes  # Unused
@@ -136,23 +162,42 @@ class JitTraceConvertStrategy(CaptureStrategy):
         jit_model = torch.jit.trace(
             model, example_inputs=args, check_trace=False, strict=False
         )
+        if self._dump:
+            program_path = self._artifacts_dir / f"onnx_export_{self._timestamp}.pt"
+            try:
+                torch.jit.save(jit_model, program_path)
+            except Exception as e:
+                self._verbose_print(
+                    f"Failed to save Torch Script model due to an error: {e}"
+                )
+            else:
+                self._verbose_print(
+                    f"Torch Script model has been saved to '{program_path}'."
+                )
         return _torchscript_converter.TS2EPConverter(jit_model, args, kwargs).convert()
 
-    def enter(self, model) -> None:
+    def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with Torch Script..."
         )
 
-    def success(self, model) -> None:
+    def _success(self, model) -> None:
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with Torch Script... ✅"
         )
 
-    def failure(self, model, e) -> None:
+    def _failure(self, model, e) -> None:
         del e  # Unused
         model_repr = _take_first_line(repr(model))
         self._verbose_print(
             f"Obtain model graph for `{model_repr}` with Torch Script... ❌"
         )
+
+
+CAPTURE_STRATEGIES = (
+    TorchExportStrategy,
+    TorchExportNonStrictStrategy,
+    JitTraceConvertStrategy,
+)

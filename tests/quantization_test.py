@@ -10,7 +10,11 @@ import torch._export as torch_export
 from torch.ao.quantization import quantize_pt2e
 from torch.ao.quantization.quantizer import xnnpack_quantizer
 
-torch_onnx.patch_torch(error_report=True, profile=True, dump_exported_program=True)
+IS_MAIN = __name__ == "__main__"
+
+torch_onnx.patch_torch(
+    error_report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN
+)
 
 
 class TestModel(torch.nn.Module):
@@ -47,7 +51,7 @@ class QuantizationTest(unittest.TestCase):
         )
         program = torch.onnx.dynamo_export(pt2e_torch_model, *example_inputs)
         onnx.checker.check_model(program.model_proto, full_check=True)
-        if __name__ == "__main__":
+        if IS_MAIN:
             program.save("quantized.onnx")
 
 

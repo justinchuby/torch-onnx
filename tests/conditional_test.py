@@ -3,8 +3,11 @@ import torch
 import torch_onnx
 from functorch.experimental.control_flow import cond
 
+IS_MAIN = __name__ == "__main__"
 
-torch_onnx.patch_torch(error_report=True, profile=True, dump_exported_program=True)
+torch_onnx.patch_torch(
+    error_report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN
+)
 
 
 class MySubModule(torch.nn.Module):
@@ -48,7 +51,7 @@ class ConditionalTest(unittest.TestCase):
         model = CondBranchClassMethod()
         input = torch.randn(5)
         onnx_program = torch.onnx.dynamo_export(model, input)
-        if __name__ == "__main__":
+        if IS_MAIN:
             onnx_program.save("conditional.onnx")
 
 

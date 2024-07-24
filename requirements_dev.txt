@@ -1,6 +1,0 @@
-torchvision
-transformers
-pytest
-pytest-xdist
-pytest-cov
-pyinstrument

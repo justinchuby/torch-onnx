@@ -917,7 +917,7 @@ def export(
         # Try everything 🐰 (all paths for getting an ExportedProgram)
         for strategy_class in _capture_strategies.CAPTURE_STRATEGIES:
             strategy = strategy_class(
-                verbose=verbose is True,
+                verbose=verbose is not False,  # Treat None as verbose
                 dump=dump_exported_program,
                 artifacts_dir=artifacts_dir,
                 timestamp=timestamp,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import textwrap
 from typing import IO, Sequence
 
 import onnx
@@ -19,6 +20,17 @@ class ONNXProgram:
     def __init__(self, model: ir.Model, exported_program: torch.export.ExportedProgram):
         self.model: ir.Model = model
         self.exported_program = exported_program
+
+    def __repr__(self) -> str:
+        return f"""\
+ONNXProgram(
+    model=
+{textwrap.indent(str(self.model), ' ' * 8)}
+    ,
+    exported_program=
+{textwrap.indent(str(self.exported_program), ' ' * 8)}
+)
+"""
 
     @property
     def model_proto(self) -> onnx.ModelProto:

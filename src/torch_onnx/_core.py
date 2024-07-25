@@ -38,6 +38,7 @@ from torch_onnx import (
     _reporting,
     _tensors,
     _torchscript_converter,
+    _capture_strategies,
     errors,
 )
 
@@ -614,6 +615,20 @@ def _summarize_exception_stack(e: BaseException) -> str:
     )
 
 
+def _format_exceptions_for_all_strategies(
+    results: list[_capture_strategies.Result],
+) -> str:
+    """Format all the exceptions from the capture strategies."""
+    return "\n".join(
+        [
+            f"# Errors from {result.strategy}:\n\n"
+            f"{_format_exception(result.exception)}\n"
+            for result in results
+            if result.exception is not None
+        ]
+    )
+
+
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
@@ -793,7 +808,7 @@ def _take_first_line(text: str) -> str:
 
 
 def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
-    """"""
+    """Prints messages based on `verbose`."""
     if verbose is False:
         return lambda *_, **__: None
     return lambda *args, **kwargs: print("[torch.onnx]", *args, **kwargs)
@@ -847,6 +862,7 @@ def export(
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     verbose_print = _verbose_printer(verbose)
+    export_status = _reporting.ExportStatus()
 
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
@@ -868,6 +884,7 @@ def export(
                 f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ❌"
             )
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
+            export_status.torch_jit = False
 
             if error_report:
                 error_report_path = (
@@ -875,8 +892,8 @@ def export(
                 )
                 _reporting.create_torch_export_error_report(
                     error_report_path,
-                    # TODO(justinchuby): Check if we need to format the previous exception separately
                     _format_exception(e),
+                    export_status=export_status,
                     profile_result=profile_result,
                 )
             else:
@@ -894,81 +911,76 @@ def export(
                 + _summarize_exception_stack(e)
             ) from e
     else:
-        model_repr = _take_first_line(repr(model))
-        verbose_print(
-            f"Obtain model graph for `{model_repr}` with `torch.export.export`..."
-        )
-        try:
-            program = torch.export.export(
-                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+        failed_results: list[_capture_strategies.Result] = []
+        # Convert an nn.Module to an ExportedProgram
+        # Try everything 🐰 (all paths for getting an ExportedProgram)
+        for strategy_class in _capture_strategies.CAPTURE_STRATEGIES:
+            strategy = strategy_class(
+                verbose=verbose is not False,  # Treat None as verbose
+                dump=dump_exported_program,
+                artifacts_dir=artifacts_dir,
+                timestamp=timestamp,
             )
-            verbose_print(
-                f"Obtain model graph for `{model_repr}` with `torch.export.export`... ✅"
-            )
-        except Exception as e_export:
-            verbose_print(
-                f"Obtain model graph for `{model_repr}` with `torch.export.export` but failed. Falling back to use torch.jit.trace... ⚠️"
-            )
-            # If torch.export.export fails, fall back to torchscript and try again.
-            try:
-                jit_model = torch.jit.trace(
-                    model, example_inputs=args, check_trace=False, strict=False
-                )
-                if dump_exported_program:
-                    program_path = artifacts_dir / f"onnx_export_{timestamp}.pt"
-                    try:
-                        jit_model.save(program_path)
-                    except Exception as e:
-                        verbose_print(
-                            f"Failed to save Torch Script model due to an error: {e}"
-                        )
-                    else:
-                        verbose_print(
-                            f"Torch Script model has been saved to '{program_path}'."
-                        )
-                program = _torchscript_converter.TS2EPConverter(
-                    jit_model, args, kwargs
-                ).convert()
-            except Exception as e_trace:
-                verbose_print(
-                    f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` fails as well... ❌"
-                )
-                profile_result = _maybe_stop_profiler_and_get_result(profiler)
+            result = strategy(model, args, kwargs, dynamic_shapes=dynamic_shapes)
 
-                if error_report:
-                    error_report_path = (
-                        artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
-                    )
-                    _reporting.create_torch_export_error_report(
-                        error_report_path,
-                        _format_exception(e_trace),
-                        profile_result=profile_result,
-                    )
-                else:
-                    error_report_path = None
+            # Record the status
+            if strategy_class is _capture_strategies.TorchExportStrategy:
+                export_status.torch_export = result.success
+            elif strategy_class is _capture_strategies.TorchExportNonStrictStrategy:
+                export_status.torch_export_non_strict = result.success
+            elif strategy_class is _capture_strategies.JitTraceConvertStrategy:
+                export_status.torch_jit = result.success
 
-                # NOTE: We throw e_export and not e_trace because we want to
-                # focus on the torch.export.export error. The torch.jit.trace
-                # error is due to the fallback and can be confusing to users.
-                # e_trace is still saved in the error report and will include
-                # e_export as well.
-                raise errors.TorchExportError(
-                    textwrap.dedent(f"""\
-                        Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
-                        - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-                        - Debug `torch.export.export` and summit a PR to PyTorch.
-                        - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
-                    + (
-                        f"\nError report has been saved to '{error_report_path}'."
-                        if error_report
-                        else ""
-                    )
-                    + _summarize_exception_stack(e_export)
-                ) from e_export
+            if result.success:
+                program = result.exported_program
+                break
+            else:
+                failed_results.append(result)
+
+        if not result.success:
+            # If all strategies fail, produce an error report and raise the first error
+            profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+            if error_report:
+                error_report_path = (
+                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                )
+
+                _reporting.create_torch_export_error_report(
+                    error_report_path,
+                    _format_exceptions_for_all_strategies(failed_results),
+                    export_status=export_status,
+                    profile_result=profile_result,
+                )
+            else:
+                error_report_path = None
+
+            first_error = failed_results[0].exception
+            assert first_error is not None
+
+            # NOTE: We only throw the torch.export (first) exception because we want to
+            # focus on the torch.export.export error. Errors from other strategies like
+            # torch.jit.trace is due to the fallback and can be confusing to users.
+            # We save all errors in the error report.
+            raise errors.TorchExportError(
+                textwrap.dedent(f"""\
+                    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
+                    - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+                    - Debug `torch.export.export` and summit a PR to PyTorch.
+                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+                + (
+                    f"\nError report has been saved to '{error_report_path}'."
+                    if error_report
+                    else ""
+                )
+                + _summarize_exception_stack(first_error)
+            ) from first_error
+
+    assert program
 
     if dump_exported_program:
         verbose_print("Dumping ExportedProgram because `dump_exported_program=True`...")
-        program_path = f"onnx_export_{timestamp}.pt2"
+        program_path = artifacts_dir / f"onnx_export_{timestamp}.pt2"
         try:
             torch.export.save(program, program_path)
         except Exception as e:
@@ -990,9 +1002,11 @@ def export(
         _ir_passes.add_torchlib_common_imports(ir_model)
 
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
+        export_status.onnx_translation = True
         verbose_print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
+        export_status.onnx_translation = False
         verbose_print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -1004,7 +1018,7 @@ def export(
                 error_report_path,
                 _format_exception(e),
                 program,
-                step=1,
+                export_status=export_status,
                 profile_result=profile_result,
                 registry=registry,
             )
@@ -1035,7 +1049,7 @@ def export(
                 artifacts_dir / f"onnx_export_{timestamp}_profile.md",
                 onnx_program.exported_program,
                 profile_result,
-                step=1,
+                export_status=export_status,
             )
         return onnx_program
 
@@ -1052,19 +1066,21 @@ def export(
             _isolated.safe_call(
                 onnx.checker.check_model, onnx_program.model_proto, full_check=True
             )
+            export_status.onnx_checker = True
             verbose_print("Run `onnx.checker` on the ONNX model... ✅")
         else:
             verbose_print(
                 f"Run `onnx.checker` on the ONNX model... ⚠️ Skipped because model is too large ({byte_size})."
             )
     except Exception as e:
+        export_status.onnx_checker = False
         verbose_print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
             _reporting.create_onnx_export_error_report(
                 artifacts_dir / f"onnx_export_{timestamp}_checker.md",
                 _format_exception(e),
                 onnx_program.exported_program,
-                step=2,
+                export_status=export_status,
                 profile_result=profile_result,
                 model=onnx_program.model,
                 registry=registry,
@@ -1099,7 +1115,7 @@ def export(
             artifacts_dir / f"onnx_export_{timestamp}_profile.md",
             onnx_program.exported_program,
             profile_result,
-            step=2,  # TODO: Update the step number to 4 when validation is implemented
+            export_status=export_status,
         )
 
     return onnx_program

@@ -7,22 +7,43 @@ import torch
 from torch_onnx import _analysis, _registration
 from onnxscript import ir
 
+import dataclasses
 
-def _format_export_status(step: int, error: bool):
-    def status_emoji(current_step: int, error: bool) -> str:
-        if current_step < step:
-            return "✅"
-        if current_step == step:
-            return "❌" if error else "✅"
+
+@dataclasses.dataclass
+class ExportStatus:
+    # Whether torch.export.export.export() succeeds
+    torch_export: bool | None = None
+    # Whether torch.export.export.export(..., strict=False) succeeds
+    torch_export_non_strict: bool | None = None
+    # Whether torch.jit.trace succeeds
+    torch_jit: bool | None = None
+    # Whether ONNX translation succeeds
+    onnx_translation: bool | None = None
+    # Whether ONNX model passes onnx.checker.check_model
+    onnx_checker: bool | None = None
+    # Whether ONNX model runs successfully with ONNX Runtime
+    onnx_runtime: bool | None = None
+    # Whether the output of the ONNX model is accurate
+    output_accuracy: bool | None = None
+
+
+def _status_emoji(status: bool | None) -> str:
+    if status is None:
         return "⚪"
+    return "✅" if status else "❌"
 
+
+def _format_export_status(status: ExportStatus) -> str:
     return (
         f"```\n"
-        f"{status_emoji(0, error)} Obtain model graph with `torch.export.export`\n"
-        f"{status_emoji(1, error)} Translate the graph into ONNX\n"
-        f"{status_emoji(2, error)} Run `onnx.checker` on the ONNX model\n"
-        f"{status_emoji(3, error)} Execute the model with ONNX Runtime\n"
-        f"{status_emoji(4, error)} Validate model output accuracy\n"
+        f"{_status_emoji(status.torch_export)} Obtain model graph with `torch.export.export`\n"
+        f"{_status_emoji(status.torch_export_non_strict)} Obtain model graph with `torch.export.export(..., strict=False)`\n"
+        f"{_status_emoji(status.torch_jit)} Obtain model graph with `torch.jit.trace`\n"
+        f"{_status_emoji(status.onnx_translation)} Translate the graph into ONNX\n"
+        f"{_status_emoji(status.onnx_checker)} Run `onnx.checker` on the ONNX model\n"
+        f"{_status_emoji(status.onnx_runtime)} Execute the model with ONNX Runtime\n"
+        f"{_status_emoji(status.output_accuracy)} Validate model output accuracy\n"
         f"```\n\n"
     )
 
@@ -46,11 +67,15 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
 
 
 def create_torch_export_error_report(
-    filename: str | os.PathLike, formatted_traceback: str, *, profile_result: str | None
+    filename: str | os.PathLike,
+    formatted_traceback: str,
+    *,
+    export_status: ExportStatus,
+    profile_result: str | None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
-        f.write(_format_export_status(0, True))
+        f.write(_format_export_status(export_status))
         f.write("Error message:\n\n")
         f.write("```pytb\n")
         f.write(formatted_traceback)
@@ -67,14 +92,14 @@ def create_onnx_export_error_report(
     formatted_traceback: str,
     program: torch.export.ExportedProgram,
     *,
-    step: int,
+    export_status: ExportStatus,
     profile_result: str | None,
     model: ir.Model | None = None,
     registry: _registration.OnnxRegistry | None = None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
-        f.write(_format_export_status(step, True))
+        f.write(_format_export_status(export_status))
         f.write("## Error message\n\n")
         f.write("```pytb\n")
         f.write(formatted_traceback)
@@ -99,7 +124,7 @@ def crete_onnx_export_profile_report(
     filename: str | os.PathLike,
     program: torch.export.ExportedProgram,
     profile_result: str,
-    step: int,
+    export_status: ExportStatus,
 ):
     """Create a report for the ONNX export profiling result.
 
@@ -111,7 +136,7 @@ def crete_onnx_export_profile_report(
     """
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
-        f.write(_format_export_status(step, False))
+        f.write(_format_export_status(export_status))
         f.write("## Exported program\n\n")
         f.write(_format_exported_program(program))
         f.write("## Profiling result\n\n")

@@ -665,6 +665,14 @@ def exported_program_to_ir(
                 "": registry.opset_version,
             },
             name="main_graph",
+            metadata_props={
+                "pkg.torch.export.ExportedProgram.graph_signature": str(
+                    exported_program.graph_signature
+                ),
+                "pkg.torch.export.ExportedProgram.range_constraints": str(
+                    exported_program.range_constraints
+                ),
+            },
         ),
         ir_version=9,
         producer_name="torch",

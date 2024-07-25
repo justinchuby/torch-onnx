@@ -29,7 +29,6 @@ from torch.export import graph_signature
 from torch_onnx import (
     _building,
     _capture_strategies,
-    _decomp,
     _dispatching,
     _fx_passes,
     _ir_passes,

@@ -881,6 +881,7 @@ def export(
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
+        export_status.torch_export = True
     else:
         failed_results: list[_capture_strategies.Result] = []
         # Convert an nn.Module to an ExportedProgram

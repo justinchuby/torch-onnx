@@ -78,6 +78,7 @@ ignore = [
   "E501", # line too long
   "PYI041",
   "NPY002",
+  "SIM103",
 ]
 
 [tool.ruff.lint.per-file-ignores]

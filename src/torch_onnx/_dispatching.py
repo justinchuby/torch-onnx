@@ -192,8 +192,8 @@ def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argu
     node_args = {}
     for arg, schema_arg in zip(node.args, torch_schema.arguments):
         node_args[schema_arg.name] = arg
-    for name, arg in node.kwargs.items():
-        node_args[name] = arg
+
+    node_args.update(node.kwargs)
     return node_args
 
 

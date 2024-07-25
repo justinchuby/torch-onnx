@@ -29,7 +29,6 @@ from torch.export import graph_signature
 from torch_onnx import (
     _building,
     _capture_strategies,
-    _decomp,
     _dispatching,
     _fx_passes,
     _ir_passes,
@@ -656,6 +655,33 @@ def exported_program_to_ir(
             none: Do not lower the graph.
         registry: The registry of all ONNX Script decomposition.
     """
+    return _exported_program_to_onnx_program(
+        exported_program, registry=registry, lower=lower
+    ).model
+
+
+def _exported_program_to_onnx_program(
+    exported_program: torch.export.ExportedProgram,
+    *,
+    registry: _registration.OnnxRegistry | None = None,
+    lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
+) -> _onnx_program.ONNXProgram:
+    """Convert an exported program to an ONNX Program.
+
+    The exported_program field in the returned ONNXProgram is one that is after
+    decompositions have been applied.
+
+    Reference:
+        - ExportedProgram spec: https://pytorch.org/docs/stable/export.ir_spec.html
+
+    Args:
+        exported_program: The exported program to convert.
+        lower: Whether to lower the graph to core ONNX operators.
+            at_conversion: Lower whe translating the FX graph to ONNX IR.
+            post_conversion: Use an IR pass to lower the graph.
+            none: Do not lower the graph.
+        registry: The registry of all ONNX Script decomposition.
+    """
     if registry is None:
         # Trigger op registration
         from onnxscript.function_libs.torch_lib import ops
@@ -695,12 +721,17 @@ def exported_program_to_ir(
     # 1. Add all nodes to the graph and create a dictionary of values
     if lower != "none":
         # Decompose the graph given the implemented torch ops in ONNX
-        decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-        exported_program.run_decompositions(decomp_table)
+        exported_program = _fx_passes.decompose_with_registry(
+            exported_program, registry
+        )
 
+        graph_module = exported_program.graph_module
         # Include explicit type promotion nodes
-        _fx_passes.insert_type_promotion_nodes(exported_program)
-        _fx_passes.remove_assertion_nodes(exported_program)
+        graph_module = _fx_passes.insert_type_promotion_nodes(graph_module)
+        graph_module = _fx_passes.remove_assertion_nodes(graph_module)
+        # TODO(justinchuby): Reassigning the graph module to save some runtime.
+        # If this does not work, we need to retrace the module with torch.export
+        exported_program._graph_module = graph_module
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
@@ -826,16 +857,7 @@ def exported_program_to_ir(
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 
-    return model
-
-
-def _take_first_line(text: str) -> str:
-    """Take the first line of a text."""
-    lines = text.split("\n", maxsplit=1)
-    first_line = lines[0]
-    if len(lines) > 1:
-        first_line += "[...]"
-    return first_line
+    return _onnx_program.ONNXProgram(model, exported_program)
 
 
 def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
@@ -985,17 +1007,16 @@ def export(
     # Step 2: Convert the exported program to an ONNX model
     try:
         verbose_print("Translate the graph into ONNX...")
-        ir_model = exported_program_to_ir(program, registry=registry)
+        onnx_program = _exported_program_to_onnx_program(program, registry=registry)
 
         if input_names:
-            _ir_passes.rename_inputs(ir_model, input_names)
+            _ir_passes.rename_inputs(onnx_program.model, input_names)
         if output_names:
-            _ir_passes.rename_outputs(ir_model, output_names)
+            _ir_passes.rename_outputs(onnx_program.model, output_names)
 
         # TODO(justinchuby): Remove the hack
-        _ir_passes.add_torchlib_common_imports(ir_model)
+        _ir_passes.add_torchlib_common_imports(onnx_program.model)
 
-        onnx_program = _onnx_program.ONNXProgram(ir_model, program)
         export_status.onnx_translation = True
         verbose_print("Translate the graph into ONNX... ✅")
 

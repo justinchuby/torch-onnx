@@ -11,8 +11,8 @@ torch_onnx.patch_torch(
     error_report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN
 )
 
-class ConversionTest(unittest.TestCase):
 
+class ConversionTest(unittest.TestCase):
     @unittest.expectedFailure  # Conditionals are not supported yet
     def test_conditional(self):
         class MySubModule(torch.nn.Module):
@@ -21,7 +21,6 @@ class ConversionTest(unittest.TestCase):
 
             def forward(self, x):
                 return self.foo(x)
-
 
         class CondBranchClassMethod(torch.nn.Module):
             """
@@ -48,7 +47,6 @@ class ConversionTest(unittest.TestCase):
             def forward(self, x):
                 return cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
 
-
         model = CondBranchClassMethod()
         input = torch.randn(5)
         onnx_program = torch.onnx.dynamo_export(model, input)
@@ -60,6 +58,7 @@ class ConversionTest(unittest.TestCase):
             def forward(self, arg0_1):
                 view = torch.ops.aten.view.default(arg0_1, [])
                 return (view,)
+
         model = GraphModule()
         input = torch.randn(1)
         onnx_program = torch.onnx.dynamo_export(model, input)

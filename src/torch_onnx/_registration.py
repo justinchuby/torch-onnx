@@ -135,7 +135,7 @@ class OnnxRegistry:
         cls,
         torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
         | None = None,
-    ):
+    ) -> OnnxRegistry:
         """Populates the registry with ATen functions from torchlib.
 
         Args:

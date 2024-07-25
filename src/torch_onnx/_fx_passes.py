@@ -5,12 +5,25 @@ import torch.export
 from torch.onnx._internal.fx import diagnostics, passes
 import torch.fx
 
+from torch_onnx import _decomp, _registration
+
 _ATEN_ASSERTION_TARGETS = frozenset(
     {
         torch.ops.aten.sym_constrain_range_for_size.default,
         torch.ops.aten._assert_async.msg,
     }
 )
+
+
+def decompose_with_registry(
+    exported_program: torch.export.ExportedProgram, registry: _registration.OnnxRegistry
+) -> torch.export.ExportedProgram:
+    """Decompose the exported program with the given registry.
+
+    This function is needed so it shows clearly on the profiler results.
+    """
+    decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
+    return exported_program.run_decompositions(decomp_table)
 
 
 def insert_type_promotion_nodes(

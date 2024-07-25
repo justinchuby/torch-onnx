@@ -722,8 +722,9 @@ def _exported_program_to_onnx_program(
     # 1. Add all nodes to the graph and create a dictionary of values
     if lower != "none":
         # Decompose the graph given the implemented torch ops in ONNX
-        decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-        exported_program = exported_program.run_decompositions(decomp_table)
+        exported_program = _fx_passes.decompose_with_registry(
+            exported_program, registry
+        )
 
         graph_module = exported_program.graph_module
         # Include explicit type promotion nodes

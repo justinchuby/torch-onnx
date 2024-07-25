@@ -219,11 +219,16 @@ def _process_python_constants_and_sequences(
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
-        if isinstance(arg, Sequence) and all(isinstance(val, ir.Value) for val in arg):
+        if (
+            isinstance(arg, Sequence)
+            and len(arg) > 0
+            and all(isinstance(val, ir.Value) for val in arg)
+        ):
             # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
             # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
             # like `Max(0, ir.Value())`
             # We need to convert the Python constants to Constant nodes
+            # NOTE: Important to check that arg is not empty because we need to treat it as list[int] or list[float]
             continue
             # if param.variadic:
             #     # FXIME: Handle variadic inputs and sequence inputs differently

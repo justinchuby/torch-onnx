@@ -34,8 +34,11 @@ def _take_first_line(text: str) -> str:
 class Result:
     exported_program: torch.export.ExportedProgram | None
     strategy: str
-    success: bool = True
     exception: Exception | None = None
+
+    @property
+    def success(self) -> bool:
+        return self.exported_program is not None
 
 
 class CaptureStrategy(abc.ABC):
@@ -71,7 +74,7 @@ class CaptureStrategy(abc.ABC):
 
     def __call__(
         self,
-        model: torch.nn.Module,
+        model: torch.nn.Module | torch.jit.ScriptFunction,
         args: tuple[Any, ...],
         kwargs: dict[str, Any] | None,
         dynamic_shapes,
@@ -86,7 +89,6 @@ class CaptureStrategy(abc.ABC):
             return Result(
                 exported_program=None,
                 strategy=self.__call__.__name__,
-                success=False,
                 exception=e,
             )
         self._success(model)
@@ -98,13 +100,15 @@ class CaptureStrategy(abc.ABC):
     ) -> torch.export.ExportedProgram:
         raise NotImplementedError
 
-    def _enter(self, model: torch.nn.Module) -> None:
+    def _enter(self, model: torch.nn.Module | torch.jit.ScriptFunction) -> None:
         return
 
-    def _success(self, model: torch.nn.Module) -> None:
+    def _success(self, model: torch.nn.Module | torch.jit.ScriptFunction) -> None:
         return
 
-    def _failure(self, model: torch.nn.Module, e: Exception) -> None:
+    def _failure(
+        self, model: torch.nn.Module | torch.jit.ScriptFunction, e: Exception
+    ) -> None:
         return
 
 

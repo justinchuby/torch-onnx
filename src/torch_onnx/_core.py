@@ -28,6 +28,7 @@ from torch.export import graph_signature
 
 from torch_onnx import (
     _building,
+    _capture_strategies,
     _decomp,
     _dispatching,
     _fx_passes,
@@ -37,8 +38,6 @@ from torch_onnx import (
     _registration,
     _reporting,
     _tensors,
-    _torchscript_converter,
-    _capture_strategies,
     errors,
 )
 
@@ -210,7 +209,10 @@ def _get_node_namespace(node: torch.fx.Node) -> tuple[str, list[str], list[str]]
     nn_module_stack = node.meta.get("nn_module_stack")
     logger.debug("%s", nn_module_stack)
     if nn_module_stack is None:
-        logger.warning("nn_module_stack not found for node %s", node.name)
+        logger.warning(
+            "nn_module_stack not found for node '%s'. Skip adding metadata...",
+            node.name,
+        )
         return f"{node.name}: {node.target}", [str(node.target)], [node.name]
     namespaces = []
     class_hierarchy = []
@@ -823,7 +825,11 @@ def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
 
 
 def export(
-    model: torch.nn.Module | torch.export.ExportedProgram,
+    model: torch.nn.Module
+    | torch.export.ExportedProgram
+    | torch.fx.GraphModule
+    | torch.jit.ScriptModule
+    | torch.jit.ScriptFunction,
     args: tuple[Any, ...],
     kwargs: dict[str, Any] | None = None,
     *,
@@ -875,53 +881,12 @@ def export(
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
-    elif isinstance(model, (torch.jit.ScriptModule, torch.jit.ScriptFunction)):
-        model_repr = _take_first_line(repr(model))
-        verbose_print(
-            f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed..."
-        )
-        try:
-            program = _torchscript_converter.TS2EPConverter(
-                model, args, kwargs
-            ).convert()
-            verbose_print(
-                f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ✅"
-            )
-        except Exception as e:
-            verbose_print(
-                f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ❌"
-            )
-            profile_result = _maybe_stop_profiler_and_get_result(profiler)
-            export_status.torch_jit = False
-
-            if error_report:
-                error_report_path = (
-                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
-                )
-                _reporting.create_torch_export_error_report(
-                    error_report_path,
-                    _format_exception(e),
-                    export_status=export_status,
-                    profile_result=profile_result,
-                )
-            else:
-                error_report_path = None
-
-            raise errors.TorchScriptConverterError(
-                textwrap.dedent(f"""\
-                    Failed to export the model with TorchScript converter. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
-                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
-                + (
-                    f"\nError report has been saved to '{error_report_path}'."
-                    if error_report
-                    else ""
-                )
-                + _summarize_exception_stack(e)
-            ) from e
+        export_status.torch_export = True
     else:
         failed_results: list[_capture_strategies.Result] = []
         # Convert an nn.Module to an ExportedProgram
         # Try everything 🐰 (all paths for getting an ExportedProgram)
+        # When input is a JIT module, the last strategy will succeed so it is handled
         for strategy_class in _capture_strategies.CAPTURE_STRATEGIES:
             strategy = strategy_class(
                 verbose=verbose is not False,  # Treat None as verbose
@@ -939,13 +904,13 @@ def export(
             elif strategy_class is _capture_strategies.JitTraceConvertStrategy:
                 export_status.torch_jit = result.success
 
-            if result.success:
+            if result.exported_program is not None:
                 program = result.exported_program
                 break
             else:
                 failed_results.append(result)
 
-        if not result.success:
+        if result.exported_program is None:
             # If all strategies fail, produce an error report and raise the first error
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -984,7 +949,7 @@ def export(
                 + _summarize_exception_stack(first_error)
             ) from first_error
 
-    assert program
+    assert program is not None
 
     if dump_exported_program:
         verbose_print("Dumping ExportedProgram because `dump_exported_program=True`...")

@@ -858,6 +858,7 @@ def export(
 
     Raises:
         TorchExportError: If the export process fails with torch.export.
+        TorchScriptConverterError: If the export process fails with the TorchScript converter.
         OnnxConversionError: If the ExportedProgram to ONNX translation fails.
     """
     # Set up the error reporting facilities

@@ -904,13 +904,13 @@ def export(
             elif strategy_class is _capture_strategies.JitTraceConvertStrategy:
                 export_status.torch_jit = result.success
 
-            if result.success:
+            if result.exported_program is not None:
                 program = result.exported_program
                 break
             else:
                 failed_results.append(result)
 
-        if not result.success:
+        if result.exported_program is None:
             # If all strategies fail, produce an error report and raise the first error
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -949,7 +949,7 @@ def export(
                 + _summarize_exception_stack(first_error)
             ) from first_error
 
-    assert program
+    assert program is not None
 
     if dump_exported_program:
         verbose_print("Dumping ExportedProgram because `dump_exported_program=True`...")

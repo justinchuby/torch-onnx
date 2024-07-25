@@ -827,6 +827,7 @@ def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
 def export(
     model: torch.nn.Module
     | torch.export.ExportedProgram
+    | torch.fx.GraphModule
     | torch.jit.ScriptModule
     | torch.jit.ScriptFunction,
     args: tuple[Any, ...],

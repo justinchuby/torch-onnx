@@ -918,6 +918,8 @@ def export(
                 )
                 + _summarize_exception_stack(e)
             ) from e
+        else:
+            export_status.torch_jit = True
     else:
         failed_results: list[_capture_strategies.Result] = []
         # Convert an nn.Module to an ExportedProgram

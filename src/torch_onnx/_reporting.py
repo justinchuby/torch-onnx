@@ -28,7 +28,7 @@ class ExportStatus:
     output_accuracy: bool | None = None
 
 
-def status_emoji(status: bool | None) -> str:
+def _status_emoji(status: bool | None) -> str:
     if status is None:
         return "⚪"
     return "✅" if status else "❌"
@@ -37,13 +37,13 @@ def status_emoji(status: bool | None) -> str:
 def _format_export_status(status: ExportStatus) -> str:
     return (
         f"```\n"
-        f"{status_emoji(status.torch_export)} Obtain model graph with `torch.export.export`\n"
-        f"{status_emoji(status.torch_export_non_strict)} Obtain model graph with `torch.export.export(..., strict=False)`\n"
-        f"{status_emoji(status.torch_jit)} Obtain model graph with `torch.jit.trace`\n"
-        f"{status_emoji(status.onnx_translation)} Translate the graph into ONNX\n"
-        f"{status_emoji(status.onnx_checker)} Run `onnx.checker` on the ONNX model\n"
-        f"{status_emoji(status.onnx_runtime)} Execute the model with ONNX Runtime\n"
-        f"{status_emoji(status.output_accuracy)} Validate model output accuracy\n"
+        f"{_status_emoji(status.torch_export)} Obtain model graph with `torch.export.export`\n"
+        f"{_status_emoji(status.torch_export_non_strict)} Obtain model graph with `torch.export.export(..., strict=False)`\n"
+        f"{_status_emoji(status.torch_jit)} Obtain model graph with `torch.jit.trace`\n"
+        f"{_status_emoji(status.onnx_translation)} Translate the graph into ONNX\n"
+        f"{_status_emoji(status.onnx_checker)} Run `onnx.checker` on the ONNX model\n"
+        f"{_status_emoji(status.onnx_runtime)} Execute the model with ONNX Runtime\n"
+        f"{_status_emoji(status.output_accuracy)} Validate model output accuracy\n"
         f"```\n\n"
     )
 

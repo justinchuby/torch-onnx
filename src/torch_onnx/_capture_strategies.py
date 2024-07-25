@@ -46,7 +46,14 @@ class CaptureStrategy(abc.ABC):
         result = strategy(model, args, kwargs, dynamic_shapes)
     """
 
-    def __init__(self, *, verbose: bool = False, dump: bool = False, artifacts_dir: str | os.PathLike = ".", timestamp: str):
+    def __init__(
+        self,
+        *,
+        verbose: bool = False,
+        dump: bool = False,
+        artifacts_dir: str | os.PathLike = ".",
+        timestamp: str,
+    ):
         """Initialize the strategy.
 
         Args:

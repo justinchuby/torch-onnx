@@ -615,7 +615,9 @@ def _summarize_exception_stack(e: BaseException) -> str:
     )
 
 
-def _format_exceptions_for_all_strategies(results: list[_capture_strategies.Result]) -> str:
+def _format_exceptions_for_all_strategies(
+    results: list[_capture_strategies.Result],
+) -> str:
     """Format all the exceptions from the capture strategies."""
     return "\n\n".join(
         [
@@ -861,6 +863,7 @@ def export(
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     verbose_print = _verbose_printer(verbose)
+    export_status = _reporting.ExportStatus()
 
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
@@ -882,6 +885,7 @@ def export(
                 f"Obtain model graph for `{model_repr}` with `TorchScript to ExportedProgram converter` because model is jit'ed... ❌"
             )
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
+            export_status.torch_jit = False
 
             if error_report:
                 error_report_path = (
@@ -889,8 +893,8 @@ def export(
                 )
                 _reporting.create_torch_export_error_report(
                     error_report_path,
-                    # TODO(justinchuby): Check if we need to format the previous exception separately
                     _format_exception(e),
+                    export_status=export_status,
                     profile_result=profile_result,
                 )
             else:
@@ -912,8 +916,22 @@ def export(
         # Convert an nn.Module to an ExportedProgram
         # Try everything 🐰 (all paths for getting an ExportedProgram)
         for strategy_class in _capture_strategies.CAPTURE_STRATEGIES:
-            strategy = strategy_class(verbose=verbose is True, dump=dump_exported_program, artifacts_dir=artifacts_dir, timestamp=timestamp)
+            strategy = strategy_class(
+                verbose=verbose is True,
+                dump=dump_exported_program,
+                artifacts_dir=artifacts_dir,
+                timestamp=timestamp,
+            )
             result = strategy(model, args, kwargs, dynamic_shapes=dynamic_shapes)
+
+            # Record the status
+            if strategy_class is _capture_strategies.TorchExportStrategy:
+                export_status.torch_export = result.success
+            elif strategy_class is _capture_strategies.TorchExportNonStrictStrategy:
+                export_status.torch_export_non_strict = result.success
+            elif strategy_class is _capture_strategies.JitTraceConvertStrategy:
+                export_status.torch_jit = result.success
+
             if result.success:
                 program = result.exported_program
                 break
@@ -932,6 +950,7 @@ def export(
                 _reporting.create_torch_export_error_report(
                     error_report_path,
                     _format_exceptions_for_all_strategies(failed_results),
+                    export_status=export_status,
                     profile_result=profile_result,
                 )
             else:
@@ -984,9 +1003,11 @@ def export(
         _ir_passes.add_torchlib_common_imports(ir_model)
 
         onnx_program = _onnx_program.ONNXProgram(ir_model, program)
+        export_status.onnx_translation = True
         verbose_print("Translate the graph into ONNX... ✅")
 
     except Exception as e:
+        export_status.onnx_translation = False
         verbose_print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
@@ -998,7 +1019,7 @@ def export(
                 error_report_path,
                 _format_exception(e),
                 program,
-                step=1,
+                export_status=export_status,
                 profile_result=profile_result,
                 registry=registry,
             )
@@ -1029,7 +1050,7 @@ def export(
                 artifacts_dir / f"onnx_export_{timestamp}_profile.md",
                 onnx_program.exported_program,
                 profile_result,
-                step=1,
+                export_status=export_status,
             )
         return onnx_program
 
@@ -1046,19 +1067,21 @@ def export(
             _isolated.safe_call(
                 onnx.checker.check_model, onnx_program.model_proto, full_check=True
             )
+            export_status.onnx_checker = True
             verbose_print("Run `onnx.checker` on the ONNX model... ✅")
         else:
             verbose_print(
                 f"Run `onnx.checker` on the ONNX model... ⚠️ Skipped because model is too large ({byte_size})."
             )
     except Exception as e:
+        export_status.onnx_checker = False
         verbose_print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
             _reporting.create_onnx_export_error_report(
                 artifacts_dir / f"onnx_export_{timestamp}_checker.md",
                 _format_exception(e),
                 onnx_program.exported_program,
-                step=2,
+                export_status=export_status,
                 profile_result=profile_result,
                 model=onnx_program.model,
                 registry=registry,
@@ -1093,7 +1116,7 @@ def export(
             artifacts_dir / f"onnx_export_{timestamp}_profile.md",
             onnx_program.exported_program,
             profile_result,
-            step=2,  # TODO: Update the step number to 4 when validation is implemented
+            export_status=export_status,
         )
 
     return onnx_program

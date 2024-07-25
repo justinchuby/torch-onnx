@@ -1,4 +1,7 @@
 """Unit test for converting into ONNX format."""
+# ruff: noqa: F722, F821
+
+from __future__ import annotations
 
 import unittest
 import torch
@@ -64,6 +67,59 @@ class ConversionTest(unittest.TestCase):
         onnx_program = torch.onnx.dynamo_export(model, input)
         if IS_MAIN:
             onnx_program.save("list_as_empty_input.onnx")
+
+    def test_getting_metadata_should_not_fail_on_none(self):
+        class GraphModule(torch.nn.Module):
+            def forward(
+                self,
+                _lifted_tensor_constant0: i64[2, 2],
+                _lifted_tensor_constant1: i64[2],
+                _lifted_tensor_constant2: i64[2],
+                arg0_1: f32[3, 4, 5, 6, 7],
+            ):
+                lift_fresh_copy: i64[2, 2] = torch.ops.aten.lift_fresh_copy.default(
+                    _lifted_tensor_constant0
+                )
+                lift_fresh_copy_1: i64[2] = torch.ops.aten.lift_fresh_copy.default(
+                    _lifted_tensor_constant1
+                )
+                lift_fresh_copy_2: i64[2] = torch.ops.aten.lift_fresh_copy.default(
+                    _lifted_tensor_constant2
+                )
+                slice_1: f32[3, 4, 5, 6, 7] = torch.ops.aten.slice.Tensor(
+                    arg0_1, 0, 0, 9223372036854775807
+                )
+                slice_2: f32[3, 4, 5, 6, 7] = torch.ops.aten.slice.Tensor(
+                    slice_1, 2, 0, 9223372036854775807
+                )
+                index: f32[2, 2, 3, 5] = torch.ops.aten.index.Tensor(
+                    slice_2,
+                    [None, lift_fresh_copy, None, lift_fresh_copy_1, lift_fresh_copy_2],
+                )
+                return (index,)
+
+        model = GraphModule()
+        inputs = (
+            torch.randint(1, 2, (2, 2)),
+            torch.tensor([1, 2]),
+            torch.tensor([1, 2]),
+            torch.randn(3, 4, 5, 6, 7),
+        )
+        onnx_program = torch.onnx.dynamo_export(model, *inputs)
+        if IS_MAIN:
+            onnx_program.save("getting_metadata_should_not_fail_on_none.onnx")
+
+    def test_iteration_over_0d_tensor(self):
+        class GraphModule(torch.nn.Module):
+            def forward(self, arg0_1: "f32[]"):
+                zeros: "f32[]" = torch.ops.aten.zeros.default([])
+                add: "f32[]" = torch.ops.aten.add.Tensor(zeros, arg0_1)
+                return (add,)
+
+        model = GraphModule()
+        input = torch.tensor(1.0)
+        onnx_program = torch.onnx.dynamo_export(model, input)
+        assert onnx_program
 
 
 if __name__ == "__main__":

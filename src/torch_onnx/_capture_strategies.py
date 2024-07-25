@@ -1,6 +1,8 @@
 """Strategies for capturing ExportedPrograms."""
 
 from __future__ import annotations
+
+import datetime
 import os
 import pathlib
 from typing import Any, Callable
@@ -52,7 +54,7 @@ class CaptureStrategy(abc.ABC):
         verbose: bool = False,
         dump: bool = False,
         artifacts_dir: str | os.PathLike = ".",
-        timestamp: str,
+        timestamp: str | None = None,
     ):
         """Initialize the strategy.
 
@@ -63,7 +65,9 @@ class CaptureStrategy(abc.ABC):
         self._verbose_print = _verbose_printer(verbose)
         self._dump = dump
         self._artifacts_dir = pathlib.Path(artifacts_dir)
-        self._timestamp = timestamp
+        self._timestamp = timestamp or datetime.datetime.now().strftime(
+            "%Y-%m-%d_%H-%M-%S-%f"
+        )
 
     def __call__(
         self,

@@ -721,6 +721,10 @@ def exported_program_to_ir(
         persistent = spec.persistent
         value = values[value_name]
 
+        assert not isinstance(
+            value, Sequence
+        ), f"Input '{value_name}' should not be a sequence. This is unexpected."
+
         value.metadata_props["pkg.torch.export.graph_signature.InputSpec.kind"] = (
             input_kind.name
         )
@@ -751,18 +755,29 @@ def exported_program_to_ir(
         output_kind = spec.kind
         value = values[value_name]
 
-        if not isinstance(value, ir.Value):
+        if not isinstance(value, (ir.Value, Sequence)):
             raise TypeError(
                 f"Output '{value_name}' should be an ir.Value. Actual type is '{type(value)}': {value!r}. "
                 "This may be due to an incorrect implementation of the ONNX function that produced this output."
             )
 
-        value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
-            output_kind.name
-        )
+        # The output value may be a sequence, meaning the operator has multiple outputs
+        _values = (value,) if not isinstance(value, Sequence) else value
 
-        if output_kind == graph_signature.OutputKind.USER_OUTPUT:
-            model.graph.outputs.append(value)
+        if len(_values) > 1:
+            logger.warning(
+                "Model output '%s' has multiple values: %s (output spec: %s). Please make sure this is expected.",
+                value_name,
+                _values,
+                spec,
+            )
+
+        for value in _values:
+            value.metadata_props["pkg.torch.export.graph_signature.OutputSpec.kind"] = (
+                output_kind.name
+            )
+            if output_kind == graph_signature.OutputKind.USER_OUTPUT:
+                model.graph.outputs.append(value)
 
     # 4. Rename the initializers to match the tensor names
     for name, param_name in itertools.chain(

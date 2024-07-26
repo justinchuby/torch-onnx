@@ -88,7 +88,7 @@ class CaptureStrategy(abc.ABC):
             self._failure(model, e)
             return Result(
                 exported_program=None,
-                strategy=self.__call__.__name__,
+                strategy=self.__class__.__name__,
                 exception=e,
             )
         self._success(model)

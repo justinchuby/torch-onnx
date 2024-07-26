@@ -130,7 +130,7 @@ def create_onnx_export_report(
             f.write("## Error message\n\n")
             f.write("```pytb\n")
             f.write(formatted_traceback)
-            f.write("```\n\n")
+            f.write("\n```\n\n")
             f.write("## Exported program\n\n")
             f.write(_format_exported_program(program))
             if model is not None:

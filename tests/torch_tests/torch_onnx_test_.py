@@ -12156,7 +12156,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
         "ORT fails with Validating no unexpected access using an invalid node_index on torch converted model"
     )
     def test_quantized_list_of_inputs_with_cat(self):
-        class TestModel(torch.nn.Module):
+        class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
                 self.quant = torch.ao.quantization.QuantStub()
@@ -12168,7 +12168,7 @@ class TestONNXRuntime(onnx_test_common._TestONNXRuntime):
                 x = self.dequant(x)
                 return x
 
-        model = TestModel()
+        model = Model()
         model.qconfig = torch.ao.quantization.get_default_qconfig("fbgemm")
         model = torch.ao.quantization.prepare_qat(model)
         model = torch.ao.quantization.convert(model)

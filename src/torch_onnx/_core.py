@@ -1031,7 +1031,9 @@ def export(
             )
 
         # Process the exported program to run decompositions and type promotions etc.
-        decomposed_program = _prepare_exported_program_for_export(program, registry=registry)
+        decomposed_program = _prepare_exported_program_for_export(
+            program, registry=registry
+        )
     except Exception as e:
         export_status.onnx_translation = False
         verbose_print("Translate the graph into ONNX... ❌")
@@ -1077,7 +1079,9 @@ def export(
 
     try:
         # Convert the exported program to an ONNX model
-        onnx_program = _exported_program_to_onnx_program(decomposed_program, registry=registry)
+        onnx_program = _exported_program_to_onnx_program(
+            decomposed_program, registry=registry
+        )
 
         # Run the ONNX passes
         if input_names:
@@ -1145,7 +1149,7 @@ def export(
                 export_status=export_status,
                 decomp_comparison=_reporting.format_decomp_comparison(
                     pre_decomp_unique_ops, post_decomp_unique_ops
-                )
+                ),
             )
         return onnx_program
 

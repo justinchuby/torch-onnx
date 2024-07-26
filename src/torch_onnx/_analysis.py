@@ -227,8 +227,7 @@ def analyze(
 
 
 def compare_ops(
-    program_a: torch.export.ExportedProgram,
-    program_b: torch.export.ExportedProgram
+    program_a: torch.export.ExportedProgram, program_b: torch.export.ExportedProgram
 ) -> tuple[set[str], set[str]]:
     """Compare and get unique ops in two exported programs.
 

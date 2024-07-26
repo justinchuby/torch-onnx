@@ -126,6 +126,7 @@ def _torch_onnx_export(
     external_data: bool = True,
     all_tensors_to_one_file: bool = True,
     report: bool = False,
+    verify: bool = False,
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
@@ -133,6 +134,7 @@ def _torch_onnx_export(
 ) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
     report = WRITE_REPORT or report
+    verify = WRITE_REPORT or verify
     profile = PROFILE_EXECUTION or profile
     dump_exported_program = DUMP_EXPORTED_PROGRAM or dump_exported_program
     artifacts_dir = ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
@@ -158,7 +160,7 @@ def _torch_onnx_export(
         output_names=output_names,
         profile=profile,
         report=report,
-        verify=report,
+        verify=verify,
         dump_exported_program=dump_exported_program,
         artifacts_dir=artifacts_dir,
     )
@@ -205,7 +207,7 @@ _original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
 def patch_torch(
     *,
     report: bool = False,
-    error_report: bool = False,
+    error_report: bool = False,  # deprecated
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",

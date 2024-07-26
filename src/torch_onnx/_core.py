@@ -904,9 +904,9 @@ def export(
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
-    profile: bool = False,
     report: bool = False,
     verify: bool = False,
+    profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
     verbose: bool | None = None,
@@ -921,9 +921,11 @@ def export(
         dynamic_shapes: Dynamic shapes in the graph.
         input_names: If provided, rename the inputs.
         output_names: If provided, rename the outputs.
-        profile: Whether to profile the export process.
         report: Whether to generate an error report if the export fails.
         verify: Whether to verify the ONNX model after exporting.
+        profile: Whether to profile the export process. When report is True,
+            the profile result will be saved in the report. Otherwise, the profile
+            result will be printed.
         dump_exported_program: Whether to save the exported program to a file.
         artifacts_dir: The directory to save the exported program and error reports.
         verbose: Whether to print verbose messages. If None (default), some messages will be printed.
@@ -1146,9 +1148,8 @@ def export(
 
     if not verify:
         # Return if verification is not requested
-        if profile:
+        if report:
             try:
-                assert profile_result is not None
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
                 _reporting.create_onnx_export_report(
@@ -1167,6 +1168,9 @@ def export(
                 verbose_print(
                     f"Failed to save profile report due to an error: {e_report}"
                 )
+        elif profile and profile_result is not None:
+            verbose_print("Profile result:")
+            verbose_print(profile_result)
         return onnx_program
 
     # Step 3: (When error report is requested) Check the ONNX model with ONNX checker

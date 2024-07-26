@@ -17,7 +17,7 @@ torch_onnx.patch_torch(
 )
 
 
-class TestModel(torch.nn.Module):
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.linear = torch.nn.Linear(5, 10)
@@ -29,7 +29,7 @@ class TestModel(torch.nn.Module):
 class QuantizationTest(unittest.TestCase):
     def test_quantization(self):
         example_inputs = (torch.randn(1, 5),)
-        model = TestModel().eval()
+        model = Model().eval()
 
         # Step 1. program capture
         pt2e_torch_model = torch_export.capture_pre_autograd_graph(

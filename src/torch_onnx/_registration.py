@@ -90,7 +90,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             overload = "default"
         else:
             logger.warning(
-                "'%s' does not have a 'default' overload. Ignoring.",
+                "'%s' does not have a 'default' overload. This could be an error in specifying the op name. Ignoring.",
                 qualified_name,
                 stacklevel=1,
             )
@@ -102,7 +102,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             # This is a special case where we registered the function incorrectly,
             # but for BC reasons (pt<=2.4) we need to keep it.
             return None
-        logger.warning("'%s' is not found in this version of PyTorch.", qualified_name)
+        logger.info("'%s' is not found in this version of PyTorch.", qualified_name)
         return None
     except Exception:
         logger.exception("Failed to find torch op '%s'", qualified_name)

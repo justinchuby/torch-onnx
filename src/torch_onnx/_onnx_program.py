@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import pathlib
+import tempfile
 import textwrap
 from typing import IO, Sequence
+import warnings
+import functools
 
 import onnx
 import torch
@@ -12,6 +16,11 @@ from onnxscript import ir
 from torch.utils import _pytree as pytree
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache
+def _warn_once(message: str, stacklevel: int = 1) -> None:
+    warnings.warn(message, stacklevel=stacklevel + 1)
 
 
 class ONNXProgram:
@@ -95,21 +104,49 @@ ONNXProgram(
             onnx.save_model(proto, destination)
 
     def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
+        _warn_once(
+            "Calling ONNXProgram instances directly has high overhead and is for "
+            "debugging purposes only.",
+            stacklevel=2,
+        )
         import onnxruntime as ort
 
-        onnx_model = self.model_proto.SerializeToString()
-        providers = ("CPUExecutionProvider",)
-        args = _process_args(args, kwargs)
-        ort_session = ort.InferenceSession(onnx_model, providers=providers)
+        proto = ir.serde.serialize_model(self.model)
+        byte_size = proto.ByteSize()
+        model_too_large = (byte_size) >= 1 << 31
 
-        onnxruntime_input = {
-            k.name: v.numpy(force=True)  # type: ignore[union-attr]
-            for k, v in zip(self.model.graph.inputs, args)
-        }
+        if model_too_large:
+            # Save the model to a temporary file if too large
+            context_manager = tempfile.TemporaryDirectory()
+        else:
+            context_manager = contextlib.nullcontext()
 
-        # TODO: Turn off optimization
-        # TODO: Isolate the run in a separate process
-        outputs = ort_session.run(None, onnxruntime_input)
+        with context_manager as tempdir:
+            if tempdir is not None:
+                model_path = os.path.join(tempdir, "model.onnx")
+                data_path = "model.onnx.data"
+                onnx.save_model(
+                    proto,
+                    model_path,
+                    save_as_external_data=True,
+                    location=data_path,
+                )
+                model = model_path
+            else:
+                model = proto.SerializeToString()
+
+            providers = ("CPUExecutionProvider",)
+            args = _process_args(args, kwargs)
+            ort_session = ort.InferenceSession(model, providers=providers)
+
+            # TODO: Allow non tensor inputs?
+            onnxruntime_input = {
+                k.name: v.numpy(force=True)  # type: ignore[union-attr]
+                for k, v in zip(self.model.graph.inputs, args)
+            }
+            # TODO: Turn off optimization
+            # TODO: Isolate the run in a separate process
+            outputs = ort_session.run(None, onnxruntime_input)
         return tuple(torch.from_numpy(output) for output in outputs)
 
 

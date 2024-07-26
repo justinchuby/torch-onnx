@@ -181,7 +181,7 @@ def _count_fx_targets(
 
 def analyze(
     exported_program: torch.export.ExportedProgram,
-    registry: _registration.OnnxRegistry | None = None,
+    registry: _registration.ONNXRegistry | None = None,
     file=None,
 ) -> None:
     """Analyze the compatibility of the exported program."""
@@ -201,7 +201,7 @@ def analyze(
         from onnxscript.function_libs.torch_lib import ops
 
         del ops
-        registry = _registration.OnnxRegistry.from_torchlib(
+        registry = _registration.ONNXRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )
 

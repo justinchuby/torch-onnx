@@ -301,7 +301,7 @@ def _arg_has_complex_dtype(arg) -> bool:
 
 
 def dispatch(
-    node: torch.fx.Node, registry: _registration.OnnxRegistry
+    node: torch.fx.Node, registry: _registration.ONNXRegistry
 ) -> tuple[onnxscript.OnnxFunction | onnxscript.TracedOnnxFunction | None, str]:
     """Dispatch a node to an ONNX function based on the node's target and the ONNX registry.
 

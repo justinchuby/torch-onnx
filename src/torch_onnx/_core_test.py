@@ -62,7 +62,7 @@ class ExportedProgramToIrTest(unittest.TestCase):
         exported_program = torch.export.export(
             GraphModule(), (torch.rand(1), torch.rand(1))
         )
-        registry = torch_onnx.OnnxRegistry.from_torchlib()
+        registry = torch_onnx.ONNXRegistry.from_torchlib()
         registry.register_op(torch.ops.aten.add.Tensor, add)
         assert _core.exported_program_to_ir(exported_program, registry=registry)
 

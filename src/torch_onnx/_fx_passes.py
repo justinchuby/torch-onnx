@@ -16,7 +16,7 @@ _ATEN_ASSERTION_TARGETS = frozenset(
 
 
 def decompose_with_registry(
-    exported_program: torch.export.ExportedProgram, registry: _registration.OnnxRegistry
+    exported_program: torch.export.ExportedProgram, registry: _registration.ONNXRegistry
 ) -> torch.export.ExportedProgram:
     """Decompose the exported program with the given registry.
 

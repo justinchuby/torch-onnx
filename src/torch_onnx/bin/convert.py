@@ -14,9 +14,9 @@ def _parse_args():
         "--external_data", type=bool, help="Save the weights in a separate file."
     )
     parser.add_argument(
-        "--no_error_report",
+        "--report",
         type=bool,
-        help="Do not produce an error report if the conversion fails.",
+        help="Produce a conversion report.",
     )
     args = parser.parse_args()
     return args
@@ -32,9 +32,7 @@ def main():
     from torch_onnx._core import export
 
     exported_program = torch.export.load(args.model_path)
-    onnx_program = export(
-        exported_program, (), {}, error_report=not args.no_error_report
-    )
+    onnx_program = export(exported_program, (), {}, report=args.report)
     del exported_program
     onnx_program.save(args.output_path)
 

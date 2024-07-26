@@ -67,7 +67,7 @@ from torch.testing._internal.opinfo import core as opinfo_core
 
 import torch_onnx
 
-torch_onnx.patch_torch(error_report=True, profile=False)
+torch_onnx.patch_torch(report=True, profile=False)
 
 
 # NOTE: For ATen signature modifications that will break ONNX export,

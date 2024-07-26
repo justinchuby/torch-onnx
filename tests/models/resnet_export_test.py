@@ -9,7 +9,7 @@ from torch_onnx import _verification
 class ResnetTest(unittest.TestCase):
     def test_resnet(self):
         torch_onnx.patch_torch(
-            error_report=True,
+            report=True,
             profile=True,
             dump_exported_program=True,
             artifacts_dir="resnet18",

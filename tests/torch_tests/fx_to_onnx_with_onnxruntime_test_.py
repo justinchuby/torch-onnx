@@ -24,7 +24,7 @@ from torch.testing._internal import common_utils
 
 import torch_onnx
 
-torch_onnx.patch_torch(error_report=True)
+torch_onnx.patch_torch(report=True)
 
 
 def _parameterized_class_attrs_and_values():

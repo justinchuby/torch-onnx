@@ -10,9 +10,7 @@ from functorch.experimental.control_flow import cond
 
 IS_MAIN = __name__ == "__main__"
 
-torch_onnx.patch_torch(
-    error_report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN
-)
+torch_onnx.patch_torch(report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN)
 
 
 class ConversionTest(unittest.TestCase):

@@ -83,7 +83,7 @@ def format_decomp_comparison(
         The formatted comparison result.
     """
     return (
-        f"Ops exist only in the ExportedProgram before decomposition: `{sorted(pre_decomp_unique_ops)}`\n"
+        f"Ops exist only in the ExportedProgram before decomposition: `{sorted(pre_decomp_unique_ops)}`\n\n"
         f"Ops exist only in the ExportedProgram after decomposition: `{sorted(post_decomp_unique_ops)}`\n"
     )
 
@@ -141,7 +141,7 @@ def create_onnx_export_error_report(
             f.write("## Analysis\n\n")
             _analysis.analyze(program, file=f, registry=registry)
             if decomp_comparison is not None:
-                f.write("### Decomposition comparison\n\n")
+                f.write("\n### Decomposition comparison\n\n")
                 f.write(decomp_comparison)
                 f.write("\n")
             if profile_result is not None:
@@ -177,7 +177,7 @@ def crete_onnx_export_profile_report(
             f.write("## Exported program\n\n")
             f.write(_format_exported_program(program))
             if decomp_comparison is not None:
-                f.write("### Decomposition comparison\n\n")
+                f.write("\n### Decomposition comparison\n\n")
                 f.write(decomp_comparison)
                 f.write("\n")
             f.write("## Profiling result\n\n")

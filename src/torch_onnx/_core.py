@@ -63,6 +63,18 @@ _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
 _BLUE = "\033[96m"
 _END = "\033[0m"
 
+_STEP_ONE_ERROR_MESSAGE = textwrap.dedent(f"""\
+    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
+    - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
+    - Debug `torch.export.export` and summit a PR to PyTorch.
+    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+
+_STEP_TWO_ERROR_MESSAGE = textwrap.dedent(f"""\
+    Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
+    - If there is a missing ONNX function, implement it and register it to the registry.
+    - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
+    - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+
 logger = logging.getLogger(__name__)
 
 
@@ -996,11 +1008,7 @@ def export(
             # torch.jit.trace is due to the fallback and can be confusing to users.
             # We save all errors in the error report.
             raise errors.TorchExportError(
-                textwrap.dedent(f"""\
-                    Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
-                    - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
-                    - Debug `torch.export.export` and summit a PR to PyTorch.
-                    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+                _STEP_ONE_ERROR_MESSAGE
                 + (
                     f"\nError report has been saved to '{error_report_path}'."
                     if error_report
@@ -1066,11 +1074,7 @@ def export(
             error_report_path = None
 
         raise errors.OnnxConversionError(
-            textwrap.dedent(f"""\
-                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
-                - If there is a missing ONNX function, implement it and register it to the registry.
-                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+            _STEP_TWO_ERROR_MESSAGE
             + (
                 f"\nError report has been saved to '{error_report_path}'."
                 if error_report
@@ -1137,11 +1141,7 @@ def export(
             error_report_path = None
 
         raise errors.OnnxConversionError(
-            textwrap.dedent(f"""\
-                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
-                - If there is a missing ONNX function, implement it and register it to the registry.
-                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+            _STEP_TWO_ERROR_MESSAGE
             + (
                 f"\nError report has been saved to '{error_report_path}'."
                 if error_report

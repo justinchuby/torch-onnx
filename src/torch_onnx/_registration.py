@@ -60,6 +60,7 @@ class OnnxDecompMeta:
 
 def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
     """Obtain the torch op from <namespace>::<op_name>[.<overload>]"""
+    # TODO(justinchuby): Handle arbitrary custom ops
     namespace, opname_overload = qualified_name.split("::")
     op_name, *overload = opname_overload.split(".", 1)
     if namespace == "_operator":
@@ -76,8 +77,10 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
         try:
             return getattr(torchvision.ops, op_name)
         except AttributeError:
-            logger.warning("'%s' is not found in torchvision.", qualified_name)
+            logger.warning("Failed to find torchvision op '%s'", qualified_name)
             return None
+        except Exception:
+            logger.exception("Failed to find torchvision op '%s'", qualified_name)
     try:
         op_packet = getattr(getattr(torch.ops, namespace), op_name)
         if overload:
@@ -87,7 +90,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             overload = "default"
         else:
             logger.warning(
-                "'%s' does not have a 'default' overload. Ignoring.",
+                "'%s' does not have a 'default' overload. This could be an error in specifying the op name. Ignoring.",
                 qualified_name,
                 stacklevel=1,
             )
@@ -99,7 +102,10 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             # This is a special case where we registered the function incorrectly,
             # but for BC reasons (pt<=2.4) we need to keep it.
             return None
-        logger.warning("'%s' is not found in this version of PyTorch.", qualified_name)
+        logger.info("'%s' is not found in this version of PyTorch.", qualified_name)
+        return None
+    except Exception:
+        logger.exception("Failed to find torch op '%s'", qualified_name)
         return None
 
 
@@ -149,35 +155,45 @@ class OnnxRegistry:
 
             torchlib_registry = torchlib_registration.default_registry
         for qualified_name, aten_overloads_func in torchlib_registry.items():
-            if qualified_name.startswith("internal::"):
-                # Skip the custom defined internal functions
-                continue
-            target = _get_overload(qualified_name)
-            if target is None:
-                continue
-            for overload_func in aten_overloads_func.overloads:
-                overload_func.signature = _schemas.OpSignature.from_function(
-                    overload_func, overload_func.function_ir.domain, overload_func.name
-                )
-                onnx_decomposition = OnnxDecompMeta(
-                    onnx_function=overload_func,
-                    fx_target=target,
-                    is_custom=False,
-                    is_complex=False,
-                )
-                registry._register(target, onnx_decomposition)
+            try:
+                # NOTE: This is heavily guarded with try-except because we don't want
+                # to fail the entire registry population if one function fails.
+                if qualified_name.startswith("internal::"):
+                    # Skip the custom defined internal functions
+                    continue
+                target = _get_overload(qualified_name)
+                if target is None:
+                    continue
+                for overload_func in aten_overloads_func.overloads:
+                    overload_func.signature = _schemas.OpSignature.from_function(
+                        overload_func,
+                        overload_func.function_ir.domain,
+                        overload_func.name,
+                    )
+                    onnx_decomposition = OnnxDecompMeta(
+                        onnx_function=overload_func,
+                        fx_target=target,
+                        is_custom=False,
+                        is_complex=False,
+                    )
+                    registry._register(target, onnx_decomposition)
 
-            for complex_func in aten_overloads_func.complex:
-                overload_func.signature = _schemas.OpSignature.from_function(
-                    overload_func, overload_func.function_ir.domain, overload_func.name
-                )
-                onnx_decomposition = OnnxDecompMeta(
-                    onnx_function=complex_func,
-                    fx_target=target,
-                    is_custom=False,
-                    is_complex=True,
-                )
-                registry._register(target, onnx_decomposition)
+                for complex_func in aten_overloads_func.complex:
+                    overload_func.signature = _schemas.OpSignature.from_function(
+                        overload_func,
+                        overload_func.function_ir.domain,
+                        overload_func.name,
+                    )
+                    onnx_decomposition = OnnxDecompMeta(
+                        onnx_function=complex_func,
+                        fx_target=target,
+                        is_custom=False,
+                        is_complex=True,
+                    )
+                    registry._register(target, onnx_decomposition)
+            except Exception:
+                logger.exception("Failed to register '%s'. Skipped", qualified_name)
+                continue
         return registry
 
     def _register(

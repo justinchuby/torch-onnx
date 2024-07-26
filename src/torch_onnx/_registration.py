@@ -60,6 +60,7 @@ class OnnxDecompMeta:
 
 def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
     """Obtain the torch op from <namespace>::<op_name>[.<overload>]"""
+    # TODO(justinchuby): Handle arbitrary custom ops
     namespace, opname_overload = qualified_name.split("::")
     op_name, *overload = opname_overload.split(".", 1)
     if namespace == "_operator":
@@ -76,8 +77,10 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
         try:
             return getattr(torchvision.ops, op_name)
         except AttributeError:
-            logger.warning("'%s' is not found in torchvision.", qualified_name)
+            logger.warning("Failed to find torchvision op '%s'", qualified_name)
             return None
+        except Exception:
+            logger.exception("Failed to find torchvision op '%s'", qualified_name)
     try:
         op_packet = getattr(getattr(torch.ops, namespace), op_name)
         if overload:
@@ -100,6 +103,9 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
             # but for BC reasons (pt<=2.4) we need to keep it.
             return None
         logger.warning("'%s' is not found in this version of PyTorch.", qualified_name)
+        return None
+    except Exception:
+        logger.exception("Failed to find torch op '%s'", qualified_name)
         return None
 
 

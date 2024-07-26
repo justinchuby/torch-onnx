@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, Collection
 
 import torch
 from torch.utils import _pytree as pytree
@@ -71,3 +71,38 @@ def verify_onnx_program(
             )
         )
     return results
+
+
+def save_node_data_for_model_explorer(verification_infos: Collection[VerificationInfo]):
+    # https://github.com/google-ai-edge/model-explorer/wiki/4.-API-Guide#create-custom-node-data
+    # This API is unstable and may change in the future.
+    from model_explorer import node_data_builder as ndb
+
+    for field in ("absolute_difference", "relative_difference"):
+        # Populate values for the main graph in a model.
+        main_graph_results: dict[str, ndb.NodeDataResult] = {}
+        for info in verification_infos:
+            main_graph_results[info.name] = ndb.NodeDataResult(
+                value=getattr(info, field)
+            )
+
+        # Create a gradient color mapping.
+        #
+        # The minimum value in `main_graph_results` maps to the color with stop=0.
+        # The maximum value in `main_graph_results` maps to the color with stop=1.
+        # Other values maps to a interpolated color in-between.
+        gradient: list[ndb.GradientItem] = [
+            ndb.GradientItem(stop=0, bgColor="green"),
+            ndb.GradientItem(stop=1, bgColor="red"),
+        ]
+
+        # Construct the data for the main graph.
+        main_graph_data = ndb.GraphNodeData(
+            results=main_graph_results, gradient=gradient
+        )
+
+        # Construct the data for the model.
+        # "main_graph" is defined in _core.py
+        model_data = ndb.ModelNodeData(graphsData={"main_graph": main_graph_data})
+
+        model_data.save_to_file(f"{field}.json")

@@ -143,6 +143,7 @@ def create_onnx_export_error_report(
             if decomp_comparison is not None:
                 f.write("### Decomposition comparison\n\n")
                 f.write(decomp_comparison)
+                f.write("\n")
             if profile_result is not None:
                 f.write("\n## Profiling result\n\n")
                 f.write("```\n")
@@ -178,6 +179,7 @@ def crete_onnx_export_profile_report(
             if decomp_comparison is not None:
                 f.write("### Decomposition comparison\n\n")
                 f.write(decomp_comparison)
+                f.write("\n")
             f.write("## Profiling result\n\n")
             f.write("```\n")
             f.write(profile_result)

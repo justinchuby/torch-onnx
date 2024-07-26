@@ -664,9 +664,10 @@ def exported_program_to_ir(
         registry = _registration.OnnxRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )
-    exported_program = _prepare_exported_program_for_export(
-        exported_program, registry=registry
-    )
+    if lower != "none":
+        exported_program = _prepare_exported_program_for_export(
+            exported_program, registry=registry
+        )
     return _exported_program_to_onnx_program(
         exported_program, registry=registry, lower=lower
     ).model

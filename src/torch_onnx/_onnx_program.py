@@ -133,7 +133,7 @@ ONNXProgram(
                 )
                 model = model_path
             else:
-                model = proto
+                model = proto.SerializeToString()
 
             providers = ("CPUExecutionProvider",)
             args = _process_args(args, kwargs)

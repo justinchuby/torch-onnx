@@ -14,8 +14,10 @@ class VerificationInfo:
     name: str
     absolute_difference: float
     relative_difference: float
-    expected_dtype: torch.dtype | None = None
-    actual_dtype: torch.dtype | None = None
+    expected_dtype: torch.dtype
+    actual_dtype: torch.dtype
+    expected_shape: tuple[int, ...]
+    actual_shape: tuple[int, ...]
 
 
 def _compare_tensors(
@@ -64,6 +66,8 @@ def verify_onnx_program(
                 relative_difference=relative_difference,
                 expected_dtype=torch_output.dtype,
                 actual_dtype=onnx_output.dtype,
+                expected_shape=tuple(torch_output.shape),
+                actual_shape=tuple(onnx_output.shape),
             )
         )
     return results

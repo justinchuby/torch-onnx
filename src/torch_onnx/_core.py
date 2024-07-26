@@ -880,6 +880,7 @@ def export(
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    optimize: bool | Callable[[ir.Model], ir.Model] = False,
     profile: bool = False,
     error_report: bool = False,
     dump_exported_program: bool = False,
@@ -1053,6 +1054,11 @@ def export(
             )
             + _summarize_exception_stack(e)
         ) from e
+
+    if callable(optimize):
+        onnx_program.model = optimize(onnx_program.model)
+    elif optimize:
+        onnx_program.model = _ir_passes.optimize(onnx_program.model)
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
 

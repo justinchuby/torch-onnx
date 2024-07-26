@@ -10,7 +10,7 @@ from typing import Callable
 
 
 def _get_registered_ops(
-    registry: _registration.OnnxRegistry,
+    registry: _registration.ONNXRegistry,
 ) -> set[torch._ops.OperatorBase | Callable]:
     """
     Creates a set of OperatorBase and Callable objects that represent ONNX-supported PyTorch operations.

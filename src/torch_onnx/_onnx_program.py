@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import tempfile
 import textwrap
 from typing import IO, Sequence
+import warnings
+import functools
 
 import onnx
 import torch
@@ -12,6 +15,11 @@ from onnxscript import ir
 from torch.utils import _pytree as pytree
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache
+def _warn_once(message: str, stacklevel: int = 1) -> None:
+    warnings.warn(message, stacklevel=stacklevel + 1)
 
 
 class ONNXProgram:
@@ -95,21 +103,28 @@ ONNXProgram(
             onnx.save_model(proto, destination)
 
     def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
+        _warn_once(
+            "Calling ONNXProgram instances directly has high overhead and is for "
+            "debugging purposes only.",
+            stacklevel=2,
+        )
         import onnxruntime as ort
 
-        onnx_model = self.model_proto.SerializeToString()
-        providers = ("CPUExecutionProvider",)
-        args = _process_args(args, kwargs)
-        ort_session = ort.InferenceSession(onnx_model, providers=providers)
+        with tempfile.TemporaryDirectory() as tempdir:
+            model_path = os.path.join(tempdir, "model.onnx")
+            self.save(model_path)
+            providers = ("CPUExecutionProvider",)
+            args = _process_args(args, kwargs)
+            ort_session = ort.InferenceSession(model_path, providers=providers)
 
-        onnxruntime_input = {
-            k.name: v.numpy(force=True)  # type: ignore[union-attr]
-            for k, v in zip(self.model.graph.inputs, args)
-        }
+            onnxruntime_input = {
+                k.name: v.numpy(force=True)  # type: ignore[union-attr]
+                for k, v in zip(self.model.graph.inputs, args)
+            }
 
-        # TODO: Turn off optimization
-        # TODO: Isolate the run in a separate process
-        outputs = ort_session.run(None, onnxruntime_input)
+            # TODO: Turn off optimization
+            # TODO: Isolate the run in a separate process
+            outputs = ort_session.run(None, onnxruntime_input)
         return tuple(torch.from_numpy(output) for output in outputs)
 
 

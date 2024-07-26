@@ -109,7 +109,7 @@ def _get_overload(qualified_name: str) -> torch._ops.OpOverload | None:
         return None
 
 
-class OnnxRegistry:
+class ONNXRegistry:
     """Registry for ONNX functions.
 
     The registry maintains a mapping from qualified names to symbolic functions under a
@@ -141,7 +141,7 @@ class OnnxRegistry:
         cls,
         torchlib_registry: Mapping[str, torchlib_registration.OverloadedFunction]
         | None = None,
-    ) -> OnnxRegistry:
+    ) -> ONNXRegistry:
         """Populates the registry with ATen functions from torchlib.
 
         Args:

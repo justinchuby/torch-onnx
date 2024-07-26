@@ -115,7 +115,7 @@ def create_onnx_export_report(
     export_status: ExportStatus,
     profile_result: str | None,
     model: ir.Model | None = None,
-    registry: _registration.OnnxRegistry | None = None,
+    registry: _registration.ONNXRegistry | None = None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")

@@ -382,7 +382,7 @@ def _handle_call_function_node_with_lowering(
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     constant_farm: dict[Any, ir.Value],
-    registry: _registration.OnnxRegistry,
+    registry: _registration.ONNXRegistry,
     opset: onnxscript.values.Opset,
 ):
     if node.target == operator.getitem:
@@ -493,7 +493,7 @@ def _add_nodes(
     exported_program: torch.export.ExportedProgram,
     model: ir.Model,
     lower: Literal["at_conversion", "post_conversion", "none"],
-    registry: _registration.OnnxRegistry,
+    registry: _registration.ONNXRegistry,
 ) -> dict[str, ir.Value | Sequence[ir.Value]]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
     constant_farm = {}
@@ -652,7 +652,7 @@ def _format_exceptions_for_all_strategies(
 def exported_program_to_ir(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.OnnxRegistry | None = None,
+    registry: _registration.ONNXRegistry | None = None,
     lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> ir.Model:
     """Convert an exported program to an ONNX IR model.
@@ -673,7 +673,7 @@ def exported_program_to_ir(
         from onnxscript.function_libs.torch_lib import ops
 
         del ops
-        registry = _registration.OnnxRegistry.from_torchlib(
+        registry = _registration.ONNXRegistry.from_torchlib(
             onnxscript.function_libs.torch_lib.registration.default_registry
         )
     if lower != "none":
@@ -688,7 +688,7 @@ def exported_program_to_ir(
 def _prepare_exported_program_for_export(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.OnnxRegistry,
+    registry: _registration.ONNXRegistry,
 ) -> torch.export.ExportedProgram:
     """Decompose and apply pre-export transformations to the exported program."""
     # Decompose the graph given the implemented torch ops in ONNX
@@ -707,7 +707,7 @@ def _prepare_exported_program_for_export(
 def _exported_program_to_onnx_program(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.OnnxRegistry,
+    registry: _registration.ONNXRegistry,
     lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> _onnx_program.ONNXProgram:
     """Convert an exported program to an ONNX Program.
@@ -900,7 +900,7 @@ def export(
     args: tuple[Any, ...],
     kwargs: dict[str, Any] | None = None,
     *,
-    registry: _registration.OnnxRegistry | None = None,
+    registry: _registration.ONNXRegistry | None = None,
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
@@ -1042,7 +1042,7 @@ def export(
             from onnxscript.function_libs.torch_lib import ops
 
             del ops
-            registry = _registration.OnnxRegistry.from_torchlib(
+            registry = _registration.ONNXRegistry.from_torchlib(
                 onnxscript.function_libs.torch_lib.registration.default_registry
             )
 

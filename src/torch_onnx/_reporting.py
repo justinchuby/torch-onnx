@@ -112,7 +112,7 @@ def create_torch_export_error_report(
         logger.exception("Failed to write error report.")
 
 
-def create_onnx_export_error_report(
+def create_onnx_export_report(
     filename: str | os.PathLike,
     formatted_traceback: str,
     program: torch.export.ExportedProgram,
@@ -125,7 +125,7 @@ def create_onnx_export_error_report(
 ):
     try:
         with open(filename, "w", encoding="utf-8") as f:
-            f.write("# PyTorch ONNX Conversion Error Report\n\n")
+            f.write("# PyTorch ONNX Conversion Report\n\n")
             f.write(_format_export_status(export_status))
             f.write("## Error message\n\n")
             f.write("```pytb\n")
@@ -151,38 +151,3 @@ def create_onnx_export_error_report(
                 f.write("```\n")
     except Exception:
         logger.exception("Failed to write error report.")
-
-
-def crete_onnx_export_profile_report(
-    filename: str | os.PathLike,
-    program: torch.export.ExportedProgram,
-    *,
-    profile_result: str,
-    export_status: ExportStatus,
-    decomp_comparison: str | None = None,
-):
-    """Create a report for the ONNX export profiling result.
-
-    Args:
-        filename: The file to write the report to.
-        program: The exported program.
-        profile_result: The profiling result.
-        export_status: The export status.
-        decomp_comparison: The decomposition comparison result.
-    """
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("# PyTorch ONNX Conversion Report\n\n")
-            f.write(_format_export_status(export_status))
-            f.write("## Exported program\n\n")
-            f.write(_format_exported_program(program))
-            if decomp_comparison is not None:
-                f.write("\n### Decomposition comparison\n\n")
-                f.write(decomp_comparison)
-                f.write("\n")
-            f.write("## Profiling result\n\n")
-            f.write("```\n")
-            f.write(profile_result)
-            f.write("```\n")
-    except Exception:
-        logger.exception("Failed to write profiling report.")

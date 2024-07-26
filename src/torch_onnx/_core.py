@@ -932,13 +932,13 @@ def export(
 
     verbose_print = _verbose_printer(verbose)
     export_status = _reporting.ExportStatus()
+    failed_results: list[_capture_strategies.Result] = []
 
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
         export_status.torch_export = True
     else:
-        failed_results: list[_capture_strategies.Result] = []
         # Convert an nn.Module to an ExportedProgram
         # Try everything 🐰 (all paths for getting an ExportedProgram)
         # When input is a JIT module, the last strategy will succeed so it is handled
@@ -1044,9 +1044,9 @@ def export(
             error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
             # Run the analysis to get the error report
-            _reporting.create_onnx_export_error_report(
+            _reporting.create_onnx_export_report(
                 error_report_path,
-                _format_exception(e),
+                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                 program,
                 export_status=export_status,
                 profile_result=profile_result,
@@ -1107,9 +1107,9 @@ def export(
             assert post_decomp_unique_ops is not None
 
             # Run the analysis to get the error report
-            _reporting.create_onnx_export_error_report(
+            _reporting.create_onnx_export_report(
                 error_report_path,
-                _format_exception(e),
+                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                 program,
                 decomp_comparison=_reporting.format_decomp_comparison(
                     pre_decomp_unique_ops, post_decomp_unique_ops
@@ -1143,8 +1143,11 @@ def export(
             assert profile_result is not None
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
-            _reporting.crete_onnx_export_profile_report(
+            _reporting.create_onnx_export_report(
                 artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+                "No errors"
+                if not failed_results
+                else _format_exceptions_for_all_strategies(failed_results),
                 onnx_program.exported_program,
                 profile_result=profile_result,
                 export_status=export_status,
@@ -1179,9 +1182,9 @@ def export(
         if error_report:
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
-            _reporting.create_onnx_export_error_report(
+            _reporting.create_onnx_export_report(
                 artifacts_dir / f"onnx_export_{timestamp}_checker.md",
-                _format_exception(e),
+                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                 onnx_program.exported_program,
                 decomp_comparison=_reporting.format_decomp_comparison(
                     pre_decomp_unique_ops, post_decomp_unique_ops
@@ -1219,8 +1222,11 @@ def export(
         assert profile_result is not None
         assert pre_decomp_unique_ops is not None
         assert post_decomp_unique_ops is not None
-        _reporting.crete_onnx_export_profile_report(
+        _reporting.create_onnx_export_report(
             artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+            "No errors"
+            if not failed_results
+            else _format_exceptions_for_all_strategies(failed_results),
             onnx_program.exported_program,
             profile_result=profile_result,
             export_status=export_status,

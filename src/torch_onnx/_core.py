@@ -974,12 +974,17 @@ def export(
                     artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
                 )
 
-                _reporting.create_torch_export_error_report(
-                    error_report_path,
-                    _format_exceptions_for_all_strategies(failed_results),
-                    export_status=export_status,
-                    profile_result=profile_result,
-                )
+                try:
+                    _reporting.create_torch_export_error_report(
+                        error_report_path,
+                        _format_exceptions_for_all_strategies(failed_results),
+                        export_status=export_status,
+                        profile_result=profile_result,
+                    )
+                except Exception as e_report:
+                    verbose_print(
+                        f"Failed to save error report due to an error: {e_report}"
+                    )
             else:
                 error_report_path = None
 
@@ -1044,14 +1049,19 @@ def export(
             error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
             # Run the analysis to get the error report
-            _reporting.create_onnx_export_report(
-                error_report_path,
-                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
-                program,
-                export_status=export_status,
-                profile_result=profile_result,
-                registry=registry,
-            )
+            try:
+                _reporting.create_onnx_export_report(
+                    error_report_path,
+                    f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
+                    program,
+                    export_status=export_status,
+                    profile_result=profile_result,
+                    registry=registry,
+                )
+            except Exception as e_report:
+                verbose_print(
+                    f"Failed to save error report due to an error: {e_report}"
+                )
         else:
             error_report_path = None
 
@@ -1103,21 +1113,26 @@ def export(
         if error_report:
             error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
-            assert pre_decomp_unique_ops is not None
-            assert post_decomp_unique_ops is not None
+            try:
+                assert pre_decomp_unique_ops is not None
+                assert post_decomp_unique_ops is not None
 
-            # Run the analysis to get the error report
-            _reporting.create_onnx_export_report(
-                error_report_path,
-                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
-                program,
-                decomp_comparison=_reporting.format_decomp_comparison(
-                    pre_decomp_unique_ops, post_decomp_unique_ops
-                ),
-                export_status=export_status,
-                profile_result=profile_result,
-                registry=registry,
-            )
+                # Run the analysis to get the error report
+                _reporting.create_onnx_export_report(
+                    error_report_path,
+                    f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
+                    program,
+                    decomp_comparison=_reporting.format_decomp_comparison(
+                        pre_decomp_unique_ops, post_decomp_unique_ops
+                    ),
+                    export_status=export_status,
+                    profile_result=profile_result,
+                    registry=registry,
+                )
+            except Exception as e_report:
+                verbose_print(
+                    f"Failed to save error report due to an error: {e_report}"
+                )
         else:
             error_report_path = None
 
@@ -1140,21 +1155,26 @@ def export(
     if not error_report:
         # Return if error report is not requested
         if profile:
-            assert profile_result is not None
-            assert pre_decomp_unique_ops is not None
-            assert post_decomp_unique_ops is not None
-            _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_profile.md",
-                "No errors"
-                if not failed_results
-                else _format_exceptions_for_all_strategies(failed_results),
-                onnx_program.exported_program,
-                profile_result=profile_result,
-                export_status=export_status,
-                decomp_comparison=_reporting.format_decomp_comparison(
-                    pre_decomp_unique_ops, post_decomp_unique_ops
-                ),
-            )
+            try:
+                assert profile_result is not None
+                assert pre_decomp_unique_ops is not None
+                assert post_decomp_unique_ops is not None
+                _reporting.create_onnx_export_report(
+                    artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+                    "No errors"
+                    if not failed_results
+                    else _format_exceptions_for_all_strategies(failed_results),
+                    onnx_program.exported_program,
+                    profile_result=profile_result,
+                    export_status=export_status,
+                    decomp_comparison=_reporting.format_decomp_comparison(
+                        pre_decomp_unique_ops, post_decomp_unique_ops
+                    ),
+                )
+            except Exception as e_report:
+                verbose_print(
+                    f"Failed to save profile report due to an error: {e_report}"
+                )
         return onnx_program
 
     # Step 3: (When error report is requested) Check the ONNX model with ONNX checker
@@ -1180,20 +1200,25 @@ def export(
         export_status.onnx_checker = False
         verbose_print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
-            assert pre_decomp_unique_ops is not None
-            assert post_decomp_unique_ops is not None
-            _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_checker.md",
-                f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
-                onnx_program.exported_program,
-                decomp_comparison=_reporting.format_decomp_comparison(
-                    pre_decomp_unique_ops, post_decomp_unique_ops
-                ),
-                export_status=export_status,
-                profile_result=profile_result,
-                model=onnx_program.model,
-                registry=registry,
-            )
+            try:
+                assert pre_decomp_unique_ops is not None
+                assert post_decomp_unique_ops is not None
+                _reporting.create_onnx_export_report(
+                    artifacts_dir / f"onnx_export_{timestamp}_checker.md",
+                    f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
+                    onnx_program.exported_program,
+                    decomp_comparison=_reporting.format_decomp_comparison(
+                        pre_decomp_unique_ops, post_decomp_unique_ops
+                    ),
+                    export_status=export_status,
+                    profile_result=profile_result,
+                    model=onnx_program.model,
+                    registry=registry,
+                )
+            except Exception as e_report:
+                verbose_print(
+                    f"Failed to save error report due to an error: {e_report}"
+                )
         logger.warning(
             "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
             "Please create an issue "
@@ -1219,20 +1244,23 @@ def export(
     # TODO
 
     if profile:
-        assert profile_result is not None
-        assert pre_decomp_unique_ops is not None
-        assert post_decomp_unique_ops is not None
-        _reporting.create_onnx_export_report(
-            artifacts_dir / f"onnx_export_{timestamp}_profile.md",
-            "No errors"
-            if not failed_results
-            else _format_exceptions_for_all_strategies(failed_results),
-            onnx_program.exported_program,
-            profile_result=profile_result,
-            export_status=export_status,
-            decomp_comparison=_reporting.format_decomp_comparison(
-                pre_decomp_unique_ops, post_decomp_unique_ops
-            ),
-        )
+        try:
+            assert profile_result is not None
+            assert pre_decomp_unique_ops is not None
+            assert post_decomp_unique_ops is not None
+            _reporting.create_onnx_export_report(
+                artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+                "No errors"
+                if not failed_results
+                else _format_exceptions_for_all_strategies(failed_results),
+                onnx_program.exported_program,
+                profile_result=profile_result,
+                export_status=export_status,
+                decomp_comparison=_reporting.format_decomp_comparison(
+                    pre_decomp_unique_ops, post_decomp_unique_ops
+                ),
+            )
+        except Exception as e_report:
+            verbose_print(f"Failed to save profile report due to an error: {e_report}")
 
     return onnx_program

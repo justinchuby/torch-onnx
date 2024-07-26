@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import logging
 import os
 import re
 
@@ -9,8 +8,6 @@ import torch
 from onnxscript import ir
 
 from torch_onnx import _analysis, _registration
-
-logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -95,21 +92,18 @@ def create_torch_export_error_report(
     export_status: ExportStatus,
     profile_result: str | None,
 ):
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("# PyTorch ONNX Conversion Error Report\n\n")
-            f.write(_format_export_status(export_status))
-            f.write("Error message:\n\n")
-            f.write("```pytb\n")
-            f.write(formatted_traceback)
-            f.write("```\n\n")
-            if profile_result is not None:
-                f.write("## Profiling result\n\n")
-                f.write("```\n")
-                f.write(profile_result)
-                f.write("```\n")
-    except Exception:
-        logger.exception("Failed to write error report.")
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("# PyTorch ONNX Conversion Error Report\n\n")
+        f.write(_format_export_status(export_status))
+        f.write("Error message:\n\n")
+        f.write("```pytb\n")
+        f.write(formatted_traceback)
+        f.write("```\n\n")
+        if profile_result is not None:
+            f.write("## Profiling result\n\n")
+            f.write("```\n")
+            f.write(profile_result)
+            f.write("```\n")
 
 
 def create_onnx_export_report(
@@ -123,31 +117,28 @@ def create_onnx_export_report(
     model: ir.Model | None = None,
     registry: _registration.OnnxRegistry | None = None,
 ):
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("# PyTorch ONNX Conversion Report\n\n")
-            f.write(_format_export_status(export_status))
-            f.write("## Error message\n\n")
-            f.write("```pytb\n")
-            f.write(formatted_traceback)
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("# PyTorch ONNX Conversion Report\n\n")
+        f.write(_format_export_status(export_status))
+        f.write("## Error message\n\n")
+        f.write("```pytb\n")
+        f.write(formatted_traceback)
+        f.write("\n```\n\n")
+        f.write("## Exported program\n\n")
+        f.write(_format_exported_program(program))
+        if model is not None:
+            f.write("ONNX model:\n\n")
+            f.write("```python\n")
+            f.write(str(model))
             f.write("\n```\n\n")
-            f.write("## Exported program\n\n")
-            f.write(_format_exported_program(program))
-            if model is not None:
-                f.write("ONNX model:\n\n")
-                f.write("```python\n")
-                f.write(str(model))
-                f.write("\n```\n\n")
-            f.write("## Analysis\n\n")
-            _analysis.analyze(program, file=f, registry=registry)
-            if decomp_comparison is not None:
-                f.write("\n## Decomposition comparison\n\n")
-                f.write(decomp_comparison)
-                f.write("\n")
-            if profile_result is not None:
-                f.write("\n## Profiling result\n\n")
-                f.write("```\n")
-                f.write(profile_result)
-                f.write("```\n")
-    except Exception:
-        logger.exception("Failed to write error report.")
+        f.write("## Analysis\n\n")
+        _analysis.analyze(program, file=f, registry=registry)
+        if decomp_comparison is not None:
+            f.write("\n## Decomposition comparison\n\n")
+            f.write(decomp_comparison)
+            f.write("\n")
+        if profile_result is not None:
+            f.write("\n## Profiling result\n\n")
+            f.write("```\n")
+            f.write(profile_result)
+            f.write("```\n")

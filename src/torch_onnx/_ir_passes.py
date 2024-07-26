@@ -4,8 +4,6 @@ from typing import Sequence
 import logging
 
 from onnxscript import ir
-from onnxscript.function_libs.torch_lib.ops import common as common_ops
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +26,8 @@ def add_torchlib_common_imports(model: ir.Model) -> None:
 
     try:
         # TODO(justinchuby): Remove this hack and improved onnxscript
+        from onnxscript.function_libs.torch_lib.ops import common as common_ops
+
         model.opset_imports["pkg.onnxscript.torch_lib.common"] = 1
         rank_func = ir.serde.deserialize_function(common_ops.Rank.to_function_proto())
         is_scalar_func = ir.serde.deserialize_function(

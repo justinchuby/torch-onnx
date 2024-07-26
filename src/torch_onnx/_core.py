@@ -27,6 +27,7 @@ from onnxscript.ir import convenience as ir_convenience
 from torch.export import graph_signature
 
 from torch_onnx import (
+    _analysis,
     _building,
     _capture_strategies,
     _dispatching,
@@ -655,15 +656,45 @@ def exported_program_to_ir(
             none: Do not lower the graph.
         registry: The registry of all ONNX Script decomposition.
     """
+    if registry is None:
+        # Trigger op registration
+        from onnxscript.function_libs.torch_lib import ops
+
+        del ops
+        registry = _registration.OnnxRegistry.from_torchlib(
+            onnxscript.function_libs.torch_lib.registration.default_registry
+        )
+    exported_program = _prepare_exported_program_for_export(
+        exported_program, registry=registry
+    )
     return _exported_program_to_onnx_program(
         exported_program, registry=registry, lower=lower
     ).model
 
 
+def _prepare_exported_program_for_export(
+    exported_program: torch.export.ExportedProgram,
+    *,
+    registry: _registration.OnnxRegistry,
+) -> torch.export.ExportedProgram:
+    """Decompose and apply pre-export transformations to the exported program."""
+    # Decompose the graph given the implemented torch ops in ONNX
+    exported_program = _fx_passes.decompose_with_registry(exported_program, registry)
+
+    graph_module = exported_program.graph_module
+    # Include explicit type promotion nodes
+    graph_module = _fx_passes.insert_type_promotion_nodes(graph_module)
+    graph_module = _fx_passes.remove_assertion_nodes(graph_module)
+    # TODO(justinchuby): Reassigning the graph module to save some runtime.
+    # If this does not work, we need to retrace the module with torch.export
+    exported_program._graph_module = graph_module
+    return exported_program
+
+
 def _exported_program_to_onnx_program(
     exported_program: torch.export.ExportedProgram,
     *,
-    registry: _registration.OnnxRegistry | None = None,
+    registry: _registration.OnnxRegistry,
     lower: Literal["at_conversion", "post_conversion", "none"] = "at_conversion",
 ) -> _onnx_program.ONNXProgram:
     """Convert an exported program to an ONNX Program.
@@ -675,21 +706,14 @@ def _exported_program_to_onnx_program(
         - ExportedProgram spec: https://pytorch.org/docs/stable/export.ir_spec.html
 
     Args:
-        exported_program: The exported program to convert.
+        exported_program: The exported program to convert. The exported program
+            should be the one that is after decompositions have been applied.
         lower: Whether to lower the graph to core ONNX operators.
             at_conversion: Lower whe translating the FX graph to ONNX IR.
             post_conversion: Use an IR pass to lower the graph.
             none: Do not lower the graph.
         registry: The registry of all ONNX Script decomposition.
     """
-    if registry is None:
-        # Trigger op registration
-        from onnxscript.function_libs.torch_lib import ops
-
-        del ops
-        registry = _registration.OnnxRegistry.from_torchlib(
-            onnxscript.function_libs.torch_lib.registration.default_registry
-        )
     model = ir.Model(
         graph=ir.Graph(
             [],
@@ -719,19 +743,6 @@ def _exported_program_to_onnx_program(
     # NOTE: Function domains are added when translating nodes when lower="at_conversion"
 
     # 1. Add all nodes to the graph and create a dictionary of values
-    if lower != "none":
-        # Decompose the graph given the implemented torch ops in ONNX
-        exported_program = _fx_passes.decompose_with_registry(
-            exported_program, registry
-        )
-
-        graph_module = exported_program.graph_module
-        # Include explicit type promotion nodes
-        graph_module = _fx_passes.insert_type_promotion_nodes(graph_module)
-        graph_module = _fx_passes.remove_assertion_nodes(graph_module)
-        # TODO(justinchuby): Reassigning the graph module to save some runtime.
-        # If this does not work, we need to retrace the module with torch.export
-        exported_program._graph_module = graph_module
     values = _add_nodes(exported_program, model, lower=lower, registry=registry)
 
     # 2. Add user inputs and all parameters/buffers to the graph.
@@ -1005,21 +1016,22 @@ def export(
             verbose_print(f"ExportedProgram has been saved to '{program_path}'.")
 
     # Step 2: Convert the exported program to an ONNX model
+    verbose_print("Translate the graph into ONNX...")
+
+    # Step 2a: Decompose the exported program and insert type promotion nodes
     try:
-        verbose_print("Translate the graph into ONNX...")
-        onnx_program = _exported_program_to_onnx_program(program, registry=registry)
+        # Build the ONNX function registry
+        if registry is None:
+            # Trigger op registration
+            from onnxscript.function_libs.torch_lib import ops
 
-        if input_names:
-            _ir_passes.rename_inputs(onnx_program.model, input_names)
-        if output_names:
-            _ir_passes.rename_outputs(onnx_program.model, output_names)
+            del ops
+            registry = _registration.OnnxRegistry.from_torchlib(
+                onnxscript.function_libs.torch_lib.registration.default_registry
+            )
 
-        # TODO(justinchuby): Remove the hack
-        _ir_passes.add_torchlib_common_imports(onnx_program.model)
-
-        export_status.onnx_translation = True
-        verbose_print("Translate the graph into ONNX... ✅")
-
+        # Process the exported program to run decompositions and type promotions etc.
+        decomposed_program = _prepare_exported_program_for_export(program, registry=registry)
     except Exception as e:
         export_status.onnx_translation = False
         verbose_print("Translate the graph into ONNX... ❌")
@@ -1054,17 +1066,86 @@ def export(
             + _summarize_exception_stack(e)
         ) from e
 
+    # Step 2b: Translate the decomposed program to ONNX and produce ONNXProgram
+    if error_report or profile:
+        pre_decomp_unique_ops, post_decomp_unique_ops = _analysis.compare_ops(
+            program, decomposed_program
+        )
+    else:
+        pre_decomp_unique_ops = None
+        post_decomp_unique_ops = None
+
+    try:
+        # Convert the exported program to an ONNX model
+        onnx_program = _exported_program_to_onnx_program(decomposed_program, registry=registry)
+
+        # Run the ONNX passes
+        if input_names:
+            _ir_passes.rename_inputs(onnx_program.model, input_names)
+        if output_names:
+            _ir_passes.rename_outputs(onnx_program.model, output_names)
+
+        # TODO(justinchuby): Remove the hack
+        _ir_passes.add_torchlib_common_imports(onnx_program.model)
+
+        export_status.onnx_translation = True
+        verbose_print("Translate the graph into ONNX... ✅")
+    except Exception as e:
+        export_status.onnx_translation = False
+        verbose_print("Translate the graph into ONNX... ❌")
+        profile_result = _maybe_stop_profiler_and_get_result(profiler)
+
+        if error_report:
+            error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+
+            assert pre_decomp_unique_ops is not None
+            assert post_decomp_unique_ops is not None
+
+            # Run the analysis to get the error report
+            _reporting.create_onnx_export_error_report(
+                error_report_path,
+                _format_exception(e),
+                program,
+                decomp_comparison=_reporting.format_decomp_comparison(
+                    pre_decomp_unique_ops, post_decomp_unique_ops
+                ),
+                export_status=export_status,
+                profile_result=profile_result,
+                registry=registry,
+            )
+        else:
+            error_report_path = None
+
+        raise errors.OnnxConversionError(
+            textwrap.dedent(f"""\
+                Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
+                - If there is a missing ONNX function, implement it and register it to the registry.
+                - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
+                - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+            + (
+                f"\nError report has been saved to '{error_report_path}'."
+                if error_report
+                else ""
+            )
+            + _summarize_exception_stack(e)
+        ) from e
+
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
     if not error_report:
         # Return if error report is not requested
         if profile:
             assert profile_result is not None
+            assert pre_decomp_unique_ops is not None
+            assert post_decomp_unique_ops is not None
             _reporting.crete_onnx_export_profile_report(
                 artifacts_dir / f"onnx_export_{timestamp}_profile.md",
                 onnx_program.exported_program,
-                profile_result,
+                profile_result=profile_result,
                 export_status=export_status,
+                decomp_comparison=_reporting.format_decomp_comparison(
+                    pre_decomp_unique_ops, post_decomp_unique_ops
+                )
             )
         return onnx_program
 
@@ -1091,10 +1172,15 @@ def export(
         export_status.onnx_checker = False
         verbose_print("Run `onnx.checker` on the ONNX model... ❌")
         if error_report:
+            assert pre_decomp_unique_ops is not None
+            assert post_decomp_unique_ops is not None
             _reporting.create_onnx_export_error_report(
                 artifacts_dir / f"onnx_export_{timestamp}_checker.md",
                 _format_exception(e),
                 onnx_program.exported_program,
+                decomp_comparison=_reporting.format_decomp_comparison(
+                    pre_decomp_unique_ops, post_decomp_unique_ops
+                ),
                 export_status=export_status,
                 profile_result=profile_result,
                 model=onnx_program.model,
@@ -1126,11 +1212,16 @@ def export(
 
     if profile:
         assert profile_result is not None
+        assert pre_decomp_unique_ops is not None
+        assert post_decomp_unique_ops is not None
         _reporting.crete_onnx_export_profile_report(
             artifacts_dir / f"onnx_export_{timestamp}_profile.md",
             onnx_program.exported_program,
-            profile_result,
+            profile_result=profile_result,
             export_status=export_status,
+            decomp_comparison=_reporting.format_decomp_comparison(
+                pre_decomp_unique_ops, post_decomp_unique_ops
+            ),
         )
 
     return onnx_program

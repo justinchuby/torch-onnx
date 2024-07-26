@@ -4,6 +4,7 @@ from typing import Sequence
 import logging
 
 from onnxscript import ir
+import onnxscript
 
 logger = logging.getLogger(__name__)
 
@@ -37,3 +38,7 @@ def add_torchlib_common_imports(model: ir.Model) -> None:
         model.functions[is_scalar_func.identifier()] = is_scalar_func
     except Exception:
         logger.exception("Failed to add torchlib common imports to the model.")
+
+
+def optimize(model: ir.Model) -> ir.Model:
+    return onnxscript.optimizer.optimize(model)

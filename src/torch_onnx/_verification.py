@@ -26,7 +26,9 @@ def _compare_tensors(
 ) -> tuple[float, float]:
     absolute_difference = torch.abs(expected - actual).max().item()
     eps = 1e-7
-    relative_difference = torch.abs(absolute_difference / (expected + eps)).max().item()
+    relative_difference = (
+        (torch.abs(expected - actual) / (torch.abs(expected) + eps)).max().item()
+    )
     return absolute_difference, relative_difference
 
 
@@ -82,7 +84,7 @@ def save_node_data_for_model_explorer(verification_infos: Collection[Verificatio
         # Populate values for the main graph in a model.
         main_graph_results: dict[str, ndb.NodeDataResult] = {}
         for info in verification_infos:
-            main_graph_results[info.name] = ndb.NodeDataResult(
+            main_graph_results[f"[value] {info.name}"] = ndb.NodeDataResult(
                 value=getattr(info, field)
             )
 
@@ -93,6 +95,7 @@ def save_node_data_for_model_explorer(verification_infos: Collection[Verificatio
         # Other values maps to a interpolated color in-between.
         gradient: list[ndb.GradientItem] = [
             ndb.GradientItem(stop=0, bgColor="green"),
+            ndb.GradientItem(stop=1e-2, bgColor="orange"),
             ndb.GradientItem(stop=1, bgColor="red"),
         ]
 

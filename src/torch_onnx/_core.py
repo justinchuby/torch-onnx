@@ -73,7 +73,7 @@ _STEP_TWO_ERROR_MESSAGE = textwrap.dedent(f"""\
     Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
     - If there is a missing ONNX function, implement it and register it to the registry.
     - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-    - Save the ExportedProgram as a pt2 file and create an error report with `export(error_report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+    - Save the ExportedProgram as a pt2 file and create an error report with `export(..., report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
 
 logger = logging.getLogger(__name__)
 
@@ -904,8 +904,9 @@ def export(
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
+    report: bool = False,
+    verify: bool = False,
     profile: bool = False,
-    error_report: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
     verbose: bool | None = None,
@@ -920,8 +921,11 @@ def export(
         dynamic_shapes: Dynamic shapes in the graph.
         input_names: If provided, rename the inputs.
         output_names: If provided, rename the outputs.
-        profile: Whether to profile the export process.
-        error_report: Whether to generate an error report if the export fails.
+        report: Whether to generate an error report if the export fails.
+        verify: Whether to verify the ONNX model after exporting.
+        profile: Whether to profile the export process. When report is True,
+            the profile result will be saved in the report. Otherwise, the profile
+            result will be printed.
         dump_exported_program: Whether to save the exported program to a file.
         artifacts_dir: The directory to save the exported program and error reports.
         verbose: Whether to print verbose messages. If None (default), some messages will be printed.
@@ -939,7 +943,7 @@ def export(
 
     # Create the artifacts directory if it does not exist
     artifacts_dir = pathlib.Path(artifacts_dir)
-    if error_report or profile or dump_exported_program:
+    if report or profile or dump_exported_program:
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     verbose_print = _verbose_printer(verbose)
@@ -981,14 +985,12 @@ def export(
             # If all strategies fail, produce an error report and raise the first error
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-            if error_report:
-                error_report_path = (
-                    artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
-                )
+            if report:
+                report_path = artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
 
                 try:
                     _reporting.create_torch_export_error_report(
-                        error_report_path,
+                        report_path,
                         _format_exceptions_for_all_strategies(failed_results),
                         export_status=export_status,
                         profile_result=profile_result,
@@ -998,7 +1000,7 @@ def export(
                         f"Failed to save error report due to an error: {e_report}"
                     )
             else:
-                error_report_path = None
+                report_path = None
 
             first_error = failed_results[0].exception
             assert first_error is not None
@@ -1010,8 +1012,8 @@ def export(
             raise errors.TorchExportError(
                 _STEP_ONE_ERROR_MESSAGE
                 + (
-                    f"\nError report has been saved to '{error_report_path}'."
-                    if error_report
+                    f"\nError report has been saved to '{report_path}'."
+                    if report
                     else ""
                 )
                 + _summarize_exception_stack(first_error)
@@ -1053,13 +1055,13 @@ def export(
         verbose_print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-        if error_report:
-            error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+        if report:
+            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
             # Run the analysis to get the error report
             try:
                 _reporting.create_onnx_export_report(
-                    error_report_path,
+                    report_path,
                     f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                     program,
                     export_status=export_status,
@@ -1071,20 +1073,16 @@ def export(
                     f"Failed to save error report due to an error: {e_report}"
                 )
         else:
-            error_report_path = None
+            report_path = None
 
         raise errors.OnnxConversionError(
             _STEP_TWO_ERROR_MESSAGE
-            + (
-                f"\nError report has been saved to '{error_report_path}'."
-                if error_report
-                else ""
-            )
+            + (f"\nError report has been saved to '{report_path}'." if report else "")
             + _summarize_exception_stack(e)
         ) from e
 
     # Step 2b: Translate the decomposed program to ONNX and produce ONNXProgram
-    if error_report or profile:
+    if report or profile:
         pre_decomp_unique_ops, post_decomp_unique_ops = _analysis.compare_ops(
             program, decomposed_program
         )
@@ -1114,8 +1112,8 @@ def export(
         verbose_print("Translate the graph into ONNX... ❌")
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-        if error_report:
-            error_report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+        if report:
+            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
 
             try:
                 assert pre_decomp_unique_ops is not None
@@ -1123,7 +1121,7 @@ def export(
 
                 # Run the analysis to get the error report
                 _reporting.create_onnx_export_report(
-                    error_report_path,
+                    report_path,
                     f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                     program,
                     decomp_comparison=_reporting.format_decomp_comparison(
@@ -1138,25 +1136,20 @@ def export(
                     f"Failed to save error report due to an error: {e_report}"
                 )
         else:
-            error_report_path = None
+            report_path = None
 
         raise errors.OnnxConversionError(
             _STEP_TWO_ERROR_MESSAGE
-            + (
-                f"\nError report has been saved to '{error_report_path}'."
-                if error_report
-                else ""
-            )
+            + (f"\nError report has been saved to '{report_path}'." if report else "")
             + _summarize_exception_stack(e)
         ) from e
 
     profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
-    if not error_report:
-        # Return if error report is not requested
-        if profile:
+    if not verify:
+        # Return if verification is not requested
+        if report:
             try:
-                assert profile_result is not None
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
                 _reporting.create_onnx_export_report(
@@ -1175,6 +1168,9 @@ def export(
                 verbose_print(
                     f"Failed to save profile report due to an error: {e_report}"
                 )
+        elif profile and profile_result is not None:
+            verbose_print("Profile result:")
+            verbose_print(profile_result)
         return onnx_program
 
     # Step 3: (When error report is requested) Check the ONNX model with ONNX checker
@@ -1199,7 +1195,7 @@ def export(
     except Exception as e:
         export_status.onnx_checker = False
         verbose_print("Run `onnx.checker` on the ONNX model... ❌")
-        if error_report:
+        if report:
             try:
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
@@ -1243,13 +1239,12 @@ def export(
     # Step 5: (When error report is requested) Validate the output values
     # TODO
 
-    if profile:
+    if report:
         try:
-            assert profile_result is not None
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
             _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+                artifacts_dir / f"onnx_export_{timestamp}_success.md",
                 "No errors"
                 if not failed_results
                 else _format_exceptions_for_all_strategies(failed_results),
@@ -1261,6 +1256,6 @@ def export(
                 ),
             )
         except Exception as e_report:
-            verbose_print(f"Failed to save profile report due to an error: {e_report}")
+            verbose_print(f"Failed to save report due to an error: {e_report}")
 
     return onnx_program

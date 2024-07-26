@@ -30,7 +30,7 @@ onnx.save(proto, "model.onnx")
 
 # Or patch the torch.onnx export API
 # Set error_report=True to get a detailed error report if the export fails
-torch_onnx.patch_torch(error_report=True, profile=True)
+torch_onnx.patch_torch(report=True, verify=True, profile=True)
 torch.onnx.export(...)
 
 # Use the analysis API to print an analysis report for unsupported ops

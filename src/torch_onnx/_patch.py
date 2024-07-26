@@ -17,8 +17,8 @@ from torch_onnx import _onnx_program, _core
 
 logger = logging.getLogger(__name__)
 
-WRITE_ERROR_REPORT = False
-WRITE_PROFILE_REPORT = False
+WRITE_REPORT = False
+PROFILE_EXECUTION = False
 DUMP_EXPORTED_PROGRAM = False
 ARTIFACTS_DIR = "."
 
@@ -125,15 +125,17 @@ def _torch_onnx_export(
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
     external_data: bool = True,
     all_tensors_to_one_file: bool = True,
+    report: bool = False,
+    verify: bool = False,
     profile: bool = False,
-    error_report: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
     **_,
 ) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
-    error_report = WRITE_ERROR_REPORT or error_report
-    profile = WRITE_PROFILE_REPORT or profile
+    report = WRITE_REPORT or report
+    verify = WRITE_REPORT or verify
+    profile = PROFILE_EXECUTION or profile
     dump_exported_program = DUMP_EXPORTED_PROGRAM or dump_exported_program
     artifacts_dir = ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
 
@@ -157,7 +159,8 @@ def _torch_onnx_export(
         input_names=input_names,
         output_names=output_names,
         profile=profile,
-        error_report=error_report,
+        report=report,
+        verify=verify,
         dump_exported_program=dump_exported_program,
         artifacts_dir=artifacts_dir,
     )
@@ -188,8 +191,9 @@ def _torch_onnx_dynamo_export(
         model,
         model_args,
         kwargs=model_kwargs,
-        error_report=WRITE_ERROR_REPORT,
-        profile=WRITE_PROFILE_REPORT,
+        report=WRITE_REPORT,
+        verify=WRITE_REPORT,
+        profile=PROFILE_EXECUTION,
         dump_exported_program=DUMP_EXPORTED_PROGRAM,
         artifacts_dir=ARTIFACTS_DIR,
     )
@@ -201,16 +205,25 @@ _original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
 
 
 def patch_torch(
-    error_report: bool = False,
+    *,
+    report: bool = False,
+    error_report: bool = False,  # deprecated
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
     **_,
 ):
-    global WRITE_ERROR_REPORT  # noqa: PLW0603
-    WRITE_ERROR_REPORT = error_report
-    global WRITE_PROFILE_REPORT  # noqa: PLW0603
-    WRITE_PROFILE_REPORT = profile
+    if error_report:
+        warnings.warn(
+            "The 'error_report' argument is deprecated. Please use 'report' instead.",
+            DeprecationWarning,
+            stacklevel=1,
+        )
+        report = error_report
+    global WRITE_REPORT  # noqa: PLW0603
+    WRITE_REPORT = report
+    global PROFILE_EXECUTION  # noqa: PLW0603
+    PROFILE_EXECUTION = profile
     global DUMP_EXPORTED_PROGRAM  # noqa: PLW0603
     DUMP_EXPORTED_PROGRAM = dump_exported_program
     global ARTIFACTS_DIR  # noqa: PLW0603

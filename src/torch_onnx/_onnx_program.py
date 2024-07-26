@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import pathlib
@@ -110,18 +111,39 @@ ONNXProgram(
         )
         import onnxruntime as ort
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            model_path = os.path.join(tempdir, "model.onnx")
-            self.save(model_path)
+        proto = ir.serde.serialize_model(self.model)
+        byte_size = proto.ByteSize()
+        model_too_large = (byte_size) >= 1 << 31
+
+        if model_too_large:
+            # Save the model to a temporary file if too large
+            context_manager = tempfile.TemporaryDirectory()
+        else:
+            context_manager = contextlib.nullcontext()
+
+        with context_manager as tempdir:
+            if tempdir is not None:
+                model_path = os.path.join(tempdir, "model.onnx")
+                data_path = "model.onnx.data"
+                onnx.save_model(
+                    proto,
+                    model_path,
+                    save_as_external_data=True,
+                    location=data_path,
+                )
+                model = model_path
+            else:
+                model = proto
+
             providers = ("CPUExecutionProvider",)
             args = _process_args(args, kwargs)
-            ort_session = ort.InferenceSession(model_path, providers=providers)
+            ort_session = ort.InferenceSession(model, providers=providers)
 
+            # TODO: Allow non tensor inputs?
             onnxruntime_input = {
                 k.name: v.numpy(force=True)  # type: ignore[union-attr]
                 for k, v in zip(self.model.graph.inputs, args)
             }
-
             # TODO: Turn off optimization
             # TODO: Isolate the run in a separate process
             outputs = ort_session.run(None, onnxruntime_input)

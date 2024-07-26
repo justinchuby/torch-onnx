@@ -158,7 +158,11 @@ class OnnxRegistry:
             if qualified_name.startswith("internal::"):
                 # Skip the custom defined internal functions
                 continue
-            target = _get_overload(qualified_name)
+            try:
+                target = _get_overload(qualified_name)
+            except Exception:
+                logger.exception("Failed to get overload for %s", qualified_name)
+                continue
             if target is None:
                 continue
             for overload_func in aten_overloads_func.overloads:

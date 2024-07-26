@@ -141,7 +141,7 @@ def create_onnx_export_report(
             f.write("## Analysis\n\n")
             _analysis.analyze(program, file=f, registry=registry)
             if decomp_comparison is not None:
-                f.write("\n### Decomposition comparison\n\n")
+                f.write("\n## Decomposition comparison\n\n")
                 f.write(decomp_comparison)
                 f.write("\n")
             if profile_result is not None:

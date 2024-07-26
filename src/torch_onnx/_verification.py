@@ -88,20 +88,18 @@ def save_node_data_for_model_explorer(verification_infos: Collection[Verificatio
                 value=getattr(info, field)
             )
 
-        # Create a gradient color mapping.
-        #
-        # The minimum value in `main_graph_results` maps to the color with stop=0.
-        # The maximum value in `main_graph_results` maps to the color with stop=1.
-        # Other values maps to a interpolated color in-between.
-        gradient: list[ndb.GradientItem] = [
-            ndb.GradientItem(stop=0, bgColor="green"),
-            ndb.GradientItem(stop=1e-2, bgColor="orange"),
-            ndb.GradientItem(stop=1, bgColor="red"),
+        thresholds: list[ndb.ThresholdItem] = [
+            ndb.ThresholdItem(value=0.00001, bgColor="#388e3c"),
+            ndb.ThresholdItem(value=0.0001, bgColor="#8bc34a"),
+            ndb.ThresholdItem(value=0.001, bgColor="#c8e6c9"),
+            ndb.ThresholdItem(value=0.01, bgColor="#ffa000"),
+            ndb.ThresholdItem(value=1, bgColor="#ff5722"),
+            ndb.ThresholdItem(value=100, bgColor="#d32f2f"),
         ]
 
         # Construct the data for the main graph.
         main_graph_data = ndb.GraphNodeData(
-            results=main_graph_results, gradient=gradient
+            results=main_graph_results, thresholds=thresholds
         )
 
         # Construct the data for the model.

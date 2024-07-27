@@ -66,6 +66,27 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
     return text
 
 
+def construct_report_file_name(timestamp: str, status: ExportStatus) -> str:
+    # Status could be None. So we need to check for False explicitly.
+    if not (status.torch_export or status.torch_export_non_strict or status.torch_jit):
+        # All strategies failed
+        postfix = "pt_export"
+    elif status.onnx_translation is False:
+        postfix = "conversion"
+    elif status.onnx_checker is False:
+        postfix = "checker"
+    elif status.onnx_runtime is False:
+        postfix = "runtime"
+    elif status.output_accuracy is False:
+        postfix = "accuracy"
+    elif status.torch_export is False or status.torch_export_non_strict is False:
+        # Some strategies failed
+        postfix = "strategies"
+    else:
+        postfix = "success"
+    return f"onnx_export_{timestamp}_{postfix}.md"
+
+
 def format_decomp_comparison(
     pre_decomp_unique_ops: set[str],
     post_decomp_unique_ops: set[str],

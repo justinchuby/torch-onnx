@@ -987,7 +987,9 @@ def export(
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if report:
-                report_path = artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                report_path = artifacts_dir / _reporting.construct_report_file_name(
+                    timestamp, export_status
+                )
 
                 try:
                     _reporting.create_torch_export_error_report(
@@ -1057,7 +1059,9 @@ def export(
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if report:
-            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+            report_path = artifacts_dir / _reporting.construct_report_file_name(
+                timestamp, export_status
+            )
 
             # Run the analysis to get the error report
             try:
@@ -1112,7 +1116,9 @@ def export(
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if report:
-            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+            report_path = artifacts_dir / _reporting.construct_report_file_name(
+                timestamp, export_status
+            )
 
             try:
                 assert pre_decomp_unique_ops is not None
@@ -1149,9 +1155,9 @@ def export(
             try:
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
-                postfix = "strategies" if failed_results else "success"
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_{postfix}.md",
+                    artifacts_dir
+                    / _reporting.construct_report_file_name(timestamp, export_status),
                     "No errors"
                     if not failed_results
                     else _format_exceptions_for_all_strategies(failed_results),
@@ -1197,7 +1203,8 @@ def export(
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_checker.md",
+                    artifacts_dir
+                    / _reporting.construct_report_file_name(timestamp, export_status),
                     f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                     onnx_program.exported_program,
                     decomp_comparison=_reporting.format_decomp_comparison(
@@ -1264,12 +1271,6 @@ def export(
         try:
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
-            if export_status.onnx_runtime is False:
-                postfix = "runtime"
-            elif export_status.output_accuracy is False:
-                postfix = "accuracy"
-            else:
-                postfix = "success"
 
             traceback_lines = []
             if failed_results:
@@ -1283,7 +1284,8 @@ def export(
                 traceback_lines.append("No errors")
 
             _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_{postfix}.md",
+                artifacts_dir
+                / _reporting.construct_report_file_name(timestamp, export_status),
                 "\n\n".join(traceback_lines),
                 onnx_program.exported_program,
                 profile_result=profile_result,

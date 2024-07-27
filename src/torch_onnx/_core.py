@@ -987,7 +987,9 @@ def export(
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
             if report:
-                report_path = artifacts_dir / f"onnx_export_{timestamp}_pt_export.md"
+                report_path = artifacts_dir / _reporting.construct_report_file_name(
+                    timestamp, export_status
+                )
 
                 try:
                     _reporting.create_torch_export_error_report(
@@ -1057,7 +1059,9 @@ def export(
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if report:
-            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+            report_path = artifacts_dir / _reporting.construct_report_file_name(
+                timestamp, export_status
+            )
 
             # Run the analysis to get the error report
             try:
@@ -1112,7 +1116,9 @@ def export(
         profile_result = _maybe_stop_profiler_and_get_result(profiler)
 
         if report:
-            report_path = artifacts_dir / f"onnx_export_{timestamp}_conversion.md"
+            report_path = artifacts_dir / _reporting.construct_report_file_name(
+                timestamp, export_status
+            )
 
             try:
                 assert pre_decomp_unique_ops is not None
@@ -1130,6 +1136,7 @@ def export(
                     profile_result=profile_result,
                     registry=registry,
                 )
+                verbose_print(f"Export report has been saved to '{report_path}'.")
             except Exception:
                 logger.exception("Failed to save report due to an error.")
         else:
@@ -1149,8 +1156,11 @@ def export(
             try:
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
+                report_path = artifacts_dir / _reporting.construct_report_file_name(
+                    timestamp, export_status
+                )
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_success.md",
+                    report_path,
                     "No errors"
                     if not failed_results
                     else _format_exceptions_for_all_strategies(failed_results),
@@ -1162,6 +1172,7 @@ def export(
                     ),
                     registry=registry,
                 )
+                verbose_print(f"Export report has been saved to '{report_path}'.")
             except Exception:
                 logger.exception("Failed to save report due to an error.")
         elif profile and profile_result is not None:
@@ -1195,8 +1206,11 @@ def export(
             try:
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
+                report_path = artifacts_dir / _reporting.construct_report_file_name(
+                    timestamp, export_status
+                )
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_checker.md",
+                    report_path,
                     f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
                     onnx_program.exported_program,
                     decomp_comparison=_reporting.format_decomp_comparison(
@@ -1207,6 +1221,7 @@ def export(
                     model=onnx_program.model,
                     registry=registry,
                 )
+                verbose_print(f"Export report has been saved to '{report_path}'.")
             except Exception:
                 logger.exception("Failed to save report due to an error.")
         logger.warning(
@@ -1263,11 +1278,24 @@ def export(
         try:
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
+
+            traceback_lines = []
+            if failed_results:
+                traceback_lines.append(
+                    _format_exceptions_for_all_strategies(failed_results)
+                )
+            if onnx_runtime_error_message:
+                traceback_lines.append("# ⚠️ ONNX Runtime error -----------------------")
+                traceback_lines.append(onnx_runtime_error_message)
+            if not traceback_lines:
+                traceback_lines.append("No errors")
+
+            report_path = artifacts_dir / _reporting.construct_report_file_name(
+                timestamp, export_status
+            )
             _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_success.md",
-                "No errors"
-                if not failed_results
-                else _format_exceptions_for_all_strategies(failed_results),
+                report_path,
+                "\n\n".join(traceback_lines),
                 onnx_program.exported_program,
                 profile_result=profile_result,
                 export_status=export_status,
@@ -1276,9 +1304,9 @@ def export(
                 ),
                 model=onnx_program.model,
                 registry=registry,
-                onnx_runtime_error_message=onnx_runtime_error_message,
                 verification_result=verification_message,
             )
+            verbose_print(f"Export report has been saved to '{report_path}'.")
         except Exception:
             logger.exception("Failed to save report due to an error.")
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+__all__ = ["ONNXProgram"]
+
 import logging
 import os
 import pathlib
 import tempfile
 import textwrap
-from typing import IO, TYPE_CHECKING, Sequence
+from typing import IO, TYPE_CHECKING, Callable, Sequence
 
 import onnx
 import torch
@@ -16,6 +18,25 @@ if TYPE_CHECKING:
     import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
+
+
+def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
+    """Initialize an ONNX Runtime inference session with the specified model."""
+    import onnxruntime as ort
+
+    session_options = ort.SessionOptions()
+    session_options.log_severity_level = 3  # 3: Error
+    possible_providers = (
+        "CUDAExecutionProvider",
+        "CPUExecutionProvider",
+    )
+    available_providers = set(ort.get_available_providers())
+    providers = [
+        provider for provider in possible_providers if provider in available_providers
+    ]
+    return ort.InferenceSession(
+        model, providers=providers, sess_options=session_options
+    )
 
 
 class ONNXProgram:
@@ -45,20 +66,20 @@ ONNXProgram(
         flatten_args = _process_args(args, kwargs)
 
         if self._inference_session is None:
-            self._initialize_inference_session()
+            self.initialize_inference_session()
 
         assert self._inference_session is not None
 
         # We don't expect non-tensor as inputs
-        onnxruntime_input = {
-            k.name: v.numpy(force=True)
-            for k, v in zip(self.model.graph.inputs, flatten_args)
+        ort_input = {
+            k.name: v.numpy() for k, v in zip(self.model.graph.inputs, flatten_args)
         }
         run_options = ort.RunOptions()
         run_options.log_severity_level = 3  # 3: Error
-        outputs = self._inference_session.run(
-            None, onnxruntime_input, run_options=run_options
-        )
+        logger.debug("Running the inference session with %s arguments.", len(ort_input))
+        outputs = self._inference_session.run(None, ort_input, run_options=run_options)
+        logger.debug("Inference session run completed.")
+        # TODO(justinchuby): Maybe output complex tensors as needed
         return tuple(torch.from_numpy(output) for output in outputs)
 
     @property
@@ -123,16 +144,29 @@ ONNXProgram(
         else:
             onnx.save_model(proto, destination)
 
-    def _initialize_inference_session(self) -> None:
-        """Initialize the ONNX Runtime inference session."""
-        # TODO(justinchuby): Allow different inference options
-        import onnxruntime as ort
+    def initialize_inference_session(
+        self,
+        initializer: Callable[
+            [str | bytes], ort.InferenceSession
+        ] = _ort_session_initializer,
+    ) -> None:
+        """Initialize the ONNX Runtime inference session.
 
+        Args:
+            initializer: The function to initialize the ONNX Runtime inference
+                session with the specified model. By default, it uses the
+                :func:`_ort_session_initializer` function.
+        """
+        # TODO(justinchuby): Allow different inference options
+        logger.debug("Initializing the inference session.")
         proto = ir.serde.serialize_model(self.model)
         byte_size = proto.ByteSize()
         model_too_large = (byte_size) >= 1 << 31
 
         if model_too_large:
+            logger.debug(
+                "The serialized ONNX model is larger than 2GB (%s).", byte_size
+            )
             # Save the model to a temporary file if too large
             self._tempdir = tempfile.TemporaryDirectory()
             model_path = os.path.join(self._tempdir.name, "model.onnx")
@@ -147,11 +181,8 @@ ONNXProgram(
         else:
             model = proto.SerializeToString()
 
-        session_options = ort.SessionOptions()
-        session_options.log_severity_level = 3  # 3: Error
-        self._inference_session = ort.InferenceSession(
-            model, providers=("CPUExecutionProvider",), sess_options=session_options
-        )
+        self._inference_session = initializer(model)
+        logger.debug("Inference session initialized.")
 
     def release(self) -> None:
         """Release the inference session.

@@ -58,6 +58,7 @@ ONNXProgram(
         logger.debug("Running the inference session with %s arguments.", len(ort_input))
         outputs = self._inference_session.run(None, ort_input, run_options=run_options)
         logger.debug("Inference session run completed.")
+        # TODO(justinchuby): Maybe output complex tensors as needed
         return tuple(torch.from_numpy(output) for output in outputs)
 
     @property

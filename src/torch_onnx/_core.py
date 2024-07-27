@@ -1149,8 +1149,9 @@ def export(
             try:
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
+                postfix = "strategies" if failed_results else "success"
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_success.md",
+                    artifacts_dir / f"onnx_export_{timestamp}_{postfix}.md",
                     "No errors"
                     if not failed_results
                     else _format_exceptions_for_all_strategies(failed_results),
@@ -1263,11 +1264,24 @@ def export(
         try:
             assert pre_decomp_unique_ops is not None
             assert post_decomp_unique_ops is not None
+            if export_status.onnx_runtime is False:
+                postfix = "runtime"
+            elif export_status.output_accuracy is False:
+                postfix = "accuracy"
+            else:
+                postfix = "success"
+
+            traceback_lines = []
+            if failed_results:
+                traceback_lines.append(_format_exceptions_for_all_strategies(failed_results))
+            if onnx_runtime_error_message:
+                traceback_lines.append(onnx_runtime_error_message)
+            if not traceback_lines:
+                traceback_lines.append("No errors")
+
             _reporting.create_onnx_export_report(
-                artifacts_dir / f"onnx_export_{timestamp}_success.md",
-                "No errors"
-                if not failed_results
-                else _format_exceptions_for_all_strategies(failed_results),
+                artifacts_dir / f"onnx_export_{timestamp}_{postfix}.md",
+                "\n\n".join(traceback_lines),
                 onnx_program.exported_program,
                 profile_result=profile_result,
                 export_status=export_status,
@@ -1276,7 +1290,6 @@ def export(
                 ),
                 model=onnx_program.model,
                 registry=registry,
-                onnx_runtime_error_message=onnx_runtime_error_message,
                 verification_result=verification_message,
             )
         except Exception:

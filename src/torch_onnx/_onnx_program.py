@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
     """Initialize an ONNX Runtime inference session with the specified model."""
+    import onnxruntime as ort
+
     session_options = ort.SessionOptions()
     session_options.log_severity_level = 3  # 3: Error
     possible_providers = (

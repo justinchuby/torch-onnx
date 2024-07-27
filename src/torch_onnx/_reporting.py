@@ -133,7 +133,6 @@ def create_onnx_export_report(
     profile_result: str | None,
     model: ir.Model | None = None,
     registry: _registration.ONNXRegistry | None = None,
-    onnx_runtime_error_message: str | None = None,
     verification_result: str | None = None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
@@ -156,11 +155,6 @@ def create_onnx_export_report(
             f.write("\n## Decomposition comparison\n\n")
             f.write(decomp_comparison)
             f.write("\n")
-        if onnx_runtime_error_message is not None:
-            f.write("\n## ONNX Runtime error message\n\n")
-            f.write("```pytb\n")
-            f.write(onnx_runtime_error_message)
-            f.write("\n```\n")
         if verification_result is not None:
             f.write("\n## Verification results\n\n")
             f.write(verification_result)

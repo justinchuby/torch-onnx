@@ -38,6 +38,7 @@ from torch_onnx import (
     _registration,
     _reporting,
     _tensors,
+    _verification,
     errors,
 )
 
@@ -1068,10 +1069,8 @@ def export(
                     profile_result=profile_result,
                     registry=registry,
                 )
-            except Exception as e_report:
-                verbose_print(
-                    f"Failed to save error report due to an error: {e_report}"
-                )
+            except Exception:
+                logger.exception("Failed to save report due to an error.")
         else:
             report_path = None
 
@@ -1131,10 +1130,8 @@ def export(
                     profile_result=profile_result,
                     registry=registry,
                 )
-            except Exception as e_report:
-                verbose_print(
-                    f"Failed to save error report due to an error: {e_report}"
-                )
+            except Exception:
+                logger.exception("Failed to save report due to an error.")
         else:
             report_path = None
 
@@ -1163,17 +1160,16 @@ def export(
                     decomp_comparison=_reporting.format_decomp_comparison(
                         pre_decomp_unique_ops, post_decomp_unique_ops
                     ),
+                    registry=registry,
                 )
-            except Exception as e_report:
-                verbose_print(
-                    f"Failed to save profile report due to an error: {e_report}"
-                )
+            except Exception:
+                logger.exception("Failed to save report due to an error.")
         elif profile and profile_result is not None:
             verbose_print("Profile result:")
             verbose_print(profile_result)
         return onnx_program
 
-    # Step 3: (When error report is requested) Check the ONNX model with ONNX checker
+    # Step 3: (verify=True) Check the ONNX model with ONNX checker
     try:
         verbose_print("Run `onnx.checker` on the ONNX model...")
 
@@ -1211,10 +1207,8 @@ def export(
                     model=onnx_program.model,
                     registry=registry,
                 )
-            except Exception as e_report:
-                verbose_print(
-                    f"Failed to save error report due to an error: {e_report}"
-                )
+            except Exception:
+                logger.exception("Failed to save report due to an error.")
         logger.warning(
             "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
             "Please create an issue "
@@ -1224,20 +1218,48 @@ def export(
         )
         return onnx_program
 
-    # Step 4: (When error report is requested) Execute the model with ONNX Runtime
-    # try:
-    #     verbose_print("Execute the model with ONNX Runtime... ")
-    #     verbose_print("✅")
-    # except Exception as e:
-    #     raise errors.OnnxConversionError(
-    #         "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "
-    #         "Please create an issue "
-    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-    #         "attach the full error stack as well as reproduction scripts. "
-    #     ) from e
-
-    # Step 5: (When error report is requested) Validate the output values
-    # TODO
+    # Step 4: (verify=True) Execute the model with ONNX Runtime
+    try:
+        verbose_print("Execute the model with ONNX Runtime...")
+        verification_results = _verification.verify_onnx_program(onnx_program)
+        verbose_print("Execute the model with ONNX Runtime... ✅")
+        export_status.onnx_runtime = True
+    except Exception as e:
+        verbose_print("Execute the model with ONNX Runtime... ❌")
+        export_status.onnx_runtime = False
+        verification_result = None
+        logger.warning(
+            "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "  # noqa: G004
+            "Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. ",
+            exc_info=e,
+        )
+    else:
+        # Step 5: (verify=True) Validate the output values
+        verbose_print("Verify output accuracy...")
+        export_status.output_accuracy = True
+        for result in verification_results:
+            # TODO(justinchuby): The threshold is arbitrary right now
+            if result.absolute_difference >= 5e-3:
+                logger.warning(
+                    "    Output '%s' has a large absolute difference of %f. ",
+                    result.name,
+                    result.absolute_difference,
+                )
+                export_status.output_accuracy = False
+            if result.relative_difference >= 1e-1:
+                logger.warning(
+                    "    Output '%s' has a large relative difference of %f. ",
+                    result.name,
+                    result.relative_difference,
+                )
+                export_status.output_accuracy = False
+        if export_status.output_accuracy:
+            verbose_print("Verify output accuracy... ✅")
+        else:
+            verbose_print("Verify output accuracy... ❌")
+        verification_result = _reporting.format_verification_infos(verification_results)
 
     if report:
         try:
@@ -1254,8 +1276,11 @@ def export(
                 decomp_comparison=_reporting.format_decomp_comparison(
                     pre_decomp_unique_ops, post_decomp_unique_ops
                 ),
+                model=onnx_program.model,
+                registry=registry,
+                verification_result=verification_result,
             )
-        except Exception as e_report:
-            verbose_print(f"Failed to save report due to an error: {e_report}")
+        except Exception:
+            logger.exception("Failed to save report due to an error.")
 
     return onnx_program

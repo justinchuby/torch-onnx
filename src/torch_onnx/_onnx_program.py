@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ["ONNXProgram"]
 
+import gc
 import logging
 import os
 import pathlib
@@ -26,6 +27,9 @@ def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
 
     session_options = ort.SessionOptions()
     session_options.log_severity_level = 3  # 3: Error
+    session_options.graph_optimization_level = (
+        ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+    )
     possible_providers = (
         "CUDAExecutionProvider",
         "CPUExecutionProvider",
@@ -168,7 +172,7 @@ ONNXProgram(
                 "The serialized ONNX model is larger than 2GB (%s).", byte_size
             )
             # Save the model to a temporary file if too large
-            self._tempdir = tempfile.TemporaryDirectory()
+            self._tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
             model_path = os.path.join(self._tempdir.name, "model.onnx")
             data_path = "model.onnx.data"
             onnx.save_model(
@@ -189,8 +193,10 @@ ONNXProgram(
 
         You may call this method to release the resources used by the inference session.
         """
+        # Release the inference session first so that the model file can be deleted
         if self._inference_session is not None:
             self._inference_session = None
+        gc.collect()
         if self._tempdir is not None:
             self._tempdir.cleanup()
             self._tempdir = None

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+__all__ = ["ONNXProgram"]
+
 import logging
 import os
 import pathlib
 import tempfile
 import textwrap
-from typing import IO, TYPE_CHECKING, Sequence
+from typing import IO, TYPE_CHECKING, Callable, Sequence
 
 import onnx
 import torch
@@ -16,6 +18,23 @@ if TYPE_CHECKING:
     import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
+
+
+def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
+    """Initialize an ONNX Runtime inference session with the specified model."""
+    session_options = ort.SessionOptions()
+    session_options.log_severity_level = 3  # 3: Error
+    possible_providers = (
+        "CUDAExecutionProvider",
+        "CPUExecutionProvider",
+    )
+    available_providers = set(ort.get_available_providers())
+    providers = [
+        provider for provider in possible_providers if provider in available_providers
+    ]
+    return ort.InferenceSession(
+        model, providers=providers, sess_options=session_options
+    )
 
 
 class ONNXProgram:
@@ -45,7 +64,7 @@ ONNXProgram(
         flatten_args = _process_args(args, kwargs)
 
         if self._inference_session is None:
-            self._initialize_inference_session()
+            self.initialize_inference_session()
 
         assert self._inference_session is not None
 
@@ -123,12 +142,21 @@ ONNXProgram(
         else:
             onnx.save_model(proto, destination)
 
-    def _initialize_inference_session(self) -> None:
-        """Initialize the ONNX Runtime inference session."""
+    def initialize_inference_session(
+        self,
+        initializer: Callable[
+            [str | bytes], ort.InferenceSession
+        ] = _ort_session_initializer,
+    ) -> None:
+        """Initialize the ONNX Runtime inference session.
+
+        Args:
+            initializer: The function to initialize the ONNX Runtime inference
+                session with the specified model. By default, it uses the
+                :func:`_ort_session_initializer` function.
+        """
         # TODO(justinchuby): Allow different inference options
         logger.debug("Initializing the inference session.")
-        import onnxruntime as ort
-
         proto = ir.serde.serialize_model(self.model)
         byte_size = proto.ByteSize()
         model_too_large = (byte_size) >= 1 << 31
@@ -151,11 +179,7 @@ ONNXProgram(
         else:
             model = proto.SerializeToString()
 
-        session_options = ort.SessionOptions()
-        session_options.log_severity_level = 3  # 3: Error
-        self._inference_session = ort.InferenceSession(
-            model, providers=("CPUExecutionProvider",), sess_options=session_options
-        )
+        self._inference_session = initializer(model)
         logger.debug("Inference session initialized.")
 
     def release(self) -> None:

@@ -52,7 +52,11 @@ ONNXProgram(
             k.name: v.numpy(force=True)
             for k, v in zip(self.model.graph.inputs, flatten_args)
         }
-        outputs = self._inference_session.run(None, onnxruntime_input)
+        run_options = ort.RunOptions()
+        run_options.log_severity_level = 3  # 3: Error
+        outputs = self._inference_session.run(
+            None, onnxruntime_input, run_options=run_options
+        )
         return tuple(torch.from_numpy(output) for output in outputs)
 
     @property
@@ -141,8 +145,10 @@ ONNXProgram(
         else:
             model = proto.SerializeToString()
 
+        session_options = ort.SessionOptions()
+        session_options.log_severity_level = 3  # 3: Error
         self._inference_session = ort.InferenceSession(
-            model, providers=("CPUExecutionProvider",)
+            model, providers=("CPUExecutionProvider",), sess_options=session_options
         )
 
     def release(self) -> None:

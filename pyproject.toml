@@ -48,6 +48,7 @@ select = [
     "EXE",
     "F",
     "G",
+    "I",
     "LOG",
     "NPY",
     "PERF",

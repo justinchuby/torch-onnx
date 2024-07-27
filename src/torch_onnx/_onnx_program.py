@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = ["ONNXProgram"]
 
+import gc
 import logging
 import os
 import pathlib
@@ -189,8 +190,10 @@ ONNXProgram(
 
         You may call this method to release the resources used by the inference session.
         """
+        # Release the inference session first so that the model file can be deleted
         if self._inference_session is not None:
             self._inference_session = None
+        gc.collect()
         if self._tempdir is not None:
             self._tempdir.cleanup()
             self._tempdir = None

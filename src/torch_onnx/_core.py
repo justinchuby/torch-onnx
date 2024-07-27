@@ -1224,17 +1224,13 @@ def export(
         verification_results = _verification.verify_onnx_program(onnx_program)
         verbose_print("Execute the model with ONNX Runtime... ✅")
         export_status.onnx_runtime = True
+        onnx_runtime_error_message = None
     except Exception as e:
         verbose_print("Execute the model with ONNX Runtime... ❌")
         export_status.onnx_runtime = False
-        verification_result = None
-        logger.warning(
-            "Conversion successful but the ONNX model fails to execute with ONNX Runtime. "  # noqa: G004
-            "Please create an issue "
-            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-            "attach the full error stack as well as reproduction scripts. ",
-            exc_info=e,
-        )
+        onnx_runtime_error_message = _format_exception(e)
+        verification_message = None
+
     else:
         # Step 5: (verify=True) Validate the output values
         verbose_print("Verify output accuracy...")
@@ -1259,7 +1255,9 @@ def export(
             verbose_print("Verify output accuracy... ✅")
         else:
             verbose_print("Verify output accuracy... ❌")
-        verification_result = _reporting.format_verification_infos(verification_results)
+        verification_message = _reporting.format_verification_infos(
+            verification_results
+        )
 
     if report:
         try:
@@ -1278,7 +1276,8 @@ def export(
                 ),
                 model=onnx_program.model,
                 registry=registry,
-                verification_result=verification_result,
+                onnx_runtime_error_message=onnx_runtime_error_message,
+                verification_result=verification_message,
             )
         except Exception:
             logger.exception("Failed to save report due to an error.")

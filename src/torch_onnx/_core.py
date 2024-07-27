@@ -1186,7 +1186,7 @@ def export(
             verbose_print("Run `onnx.checker` on the ONNX model... ✅")
         else:
             verbose_print(
-                f"Run `onnx.checker` on the ONNX model... ⚠️ Skipped because model is too large ({byte_size})."
+                f"Run `onnx.checker` on the ONNX model... ⚠️  Skipped because model is too large ({byte_size})."
             )
     except Exception as e:
         export_status.onnx_checker = False

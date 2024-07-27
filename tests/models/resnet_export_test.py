@@ -11,6 +11,7 @@ class ResnetTest(unittest.TestCase):
         torch_onnx.patch_torch(
             report=True,
             profile=True,
+            verify=True,
             dump_exported_program=True,
             artifacts_dir="resnet18",
         )

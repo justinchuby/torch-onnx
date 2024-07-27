@@ -1150,7 +1150,7 @@ def export(
                 assert pre_decomp_unique_ops is not None
                 assert post_decomp_unique_ops is not None
                 _reporting.create_onnx_export_report(
-                    artifacts_dir / f"onnx_export_{timestamp}_profile.md",
+                    artifacts_dir / f"onnx_export_{timestamp}_success.md",
                     "No errors"
                     if not failed_results
                     else _format_exceptions_for_all_strategies(failed_results),

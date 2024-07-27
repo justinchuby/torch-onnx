@@ -1310,4 +1310,6 @@ def export(
         except Exception:
             logger.exception("Failed to save report due to an error.")
 
+    # Release the inference session created during verification
+    onnx_program.release()
     return onnx_program

@@ -168,7 +168,7 @@ ONNXProgram(
                 "The serialized ONNX model is larger than 2GB (%s).", byte_size
             )
             # Save the model to a temporary file if too large
-            self._tempdir = tempfile.TemporaryDirectory()
+            self._tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
             model_path = os.path.join(self._tempdir.name, "model.onnx")
             data_path = "model.onnx.data"
             onnx.save_model(

@@ -51,14 +51,17 @@ ONNXProgram(
 
         # We don't expect non-tensor as inputs
         onnxruntime_input = {
-            k.name: v.numpy(force=True)
-            for k, v in zip(self.model.graph.inputs, flatten_args)
+            k.name: v.numpy() for k, v in zip(self.model.graph.inputs, flatten_args)
         }
         run_options = ort.RunOptions()
         run_options.log_severity_level = 3  # 3: Error
+        logger.debug(
+            "Running the inference session with %s arguments.", len(onnxruntime_input)
+        )
         outputs = self._inference_session.run(
             None, onnxruntime_input, run_options=run_options
         )
+        logger.debug("Inference session run completed.")
         return tuple(torch.from_numpy(output) for output in outputs)
 
     @property
@@ -126,6 +129,7 @@ ONNXProgram(
     def _initialize_inference_session(self) -> None:
         """Initialize the ONNX Runtime inference session."""
         # TODO(justinchuby): Allow different inference options
+        logger.debug("Initializing the inference session.")
         import onnxruntime as ort
 
         proto = ir.serde.serialize_model(self.model)
@@ -133,6 +137,9 @@ ONNXProgram(
         model_too_large = (byte_size) >= 1 << 31
 
         if model_too_large:
+            logger.debug(
+                "The serialized ONNX model is larger than 2GB (%s).", byte_size
+            )
             # Save the model to a temporary file if too large
             self._tempdir = tempfile.TemporaryDirectory()
             model_path = os.path.join(self._tempdir.name, "model.onnx")
@@ -152,6 +159,7 @@ ONNXProgram(
         self._inference_session = ort.InferenceSession(
             model, providers=("CPUExecutionProvider",), sess_options=session_options
         )
+        logger.debug("Inference session initialized.")
 
     def release(self) -> None:
         """Release the inference session.

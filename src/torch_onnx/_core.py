@@ -1273,8 +1273,11 @@ def export(
 
             traceback_lines = []
             if failed_results:
-                traceback_lines.append(_format_exceptions_for_all_strategies(failed_results))
+                traceback_lines.append(
+                    _format_exceptions_for_all_strategies(failed_results)
+                )
             if onnx_runtime_error_message:
+                traceback_lines.append("# ⚠️ ONNX Runtime error -----------------------")
                 traceback_lines.append(onnx_runtime_error_message)
             if not traceback_lines:
                 traceback_lines.append("No errors")

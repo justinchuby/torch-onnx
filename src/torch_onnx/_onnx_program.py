@@ -1,26 +1,21 @@
 from __future__ import annotations
 
-import contextlib
-import functools
 import logging
 import os
 import pathlib
 import tempfile
 import textwrap
-import warnings
-from typing import IO, Sequence
+from typing import IO, TYPE_CHECKING, Sequence
 
 import onnx
 import torch
 from onnxscript import ir
 from torch.utils import _pytree as pytree
 
+if TYPE_CHECKING:
+    import onnxruntime as ort
+
 logger = logging.getLogger(__name__)
-
-
-@functools.lru_cache
-def _warn_once(message: str, stacklevel: int = 1) -> None:
-    warnings.warn(message, stacklevel=stacklevel + 1)
 
 
 class ONNXProgram:
@@ -29,6 +24,8 @@ class ONNXProgram:
     def __init__(self, model: ir.Model, exported_program: torch.export.ExportedProgram):
         self.model: ir.Model = model
         self.exported_program = exported_program
+        self._inference_session: ort.InferenceSession | None = None
+        self._tempdir: tempfile.TemporaryDirectory | None = None
 
     def __repr__(self) -> str:
         return f"""\
@@ -40,6 +37,23 @@ ONNXProgram(
 {textwrap.indent(str(self.exported_program), ' ' * 8)}
 )
 """
+
+    def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
+        """Run the ONNX model with the same arguments you would provide to the GraphModule."""
+        flatten_args = _process_args(args, kwargs)
+
+        if self._inference_session is None:
+            self._initialize_inference_session()
+
+        assert self._inference_session is not None
+
+        # We don't expect non-tensor as inputs
+        onnxruntime_input = {
+            k.name: v.numpy(force=True)
+            for k, v in zip(self.model.graph.inputs, flatten_args)
+        }
+        outputs = self._inference_session.run(None, onnxruntime_input)
+        return tuple(torch.from_numpy(output) for output in outputs)
 
     @property
     def model_proto(self) -> onnx.ModelProto:
@@ -103,12 +117,9 @@ ONNXProgram(
         else:
             onnx.save_model(proto, destination)
 
-    def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
-        _warn_once(
-            "Calling ONNXProgram instances directly has high overhead and is for "
-            "debugging purposes only.",
-            stacklevel=2,
-        )
+    def _initialize_inference_session(self) -> None:
+        """Initialize the ONNX Runtime inference session."""
+        # TODO(justinchuby): Allow different inference options
         import onnxruntime as ort
 
         proto = ir.serde.serialize_model(self.model)
@@ -117,37 +128,33 @@ ONNXProgram(
 
         if model_too_large:
             # Save the model to a temporary file if too large
-            context_manager = tempfile.TemporaryDirectory()
+            self._tempdir = tempfile.TemporaryDirectory()
+            model_path = os.path.join(self._tempdir.name, "model.onnx")
+            data_path = "model.onnx.data"
+            onnx.save_model(
+                proto,
+                model_path,
+                save_as_external_data=True,
+                location=data_path,
+            )
+            model = model_path
         else:
-            context_manager = contextlib.nullcontext()
+            model = proto.SerializeToString()
 
-        with context_manager as tempdir:
-            if tempdir is not None:
-                model_path = os.path.join(tempdir, "model.onnx")
-                data_path = "model.onnx.data"
-                onnx.save_model(
-                    proto,
-                    model_path,
-                    save_as_external_data=True,
-                    location=data_path,
-                )
-                model = model_path
-            else:
-                model = proto.SerializeToString()
+        self._inference_session = ort.InferenceSession(
+            model, providers=("CPUExecutionProvider",)
+        )
 
-            providers = ("CPUExecutionProvider",)
-            args = _process_args(args, kwargs)
-            ort_session = ort.InferenceSession(model, providers=providers)
+    def release(self) -> None:
+        """Release the inference session.
 
-            # TODO: Allow non tensor inputs?
-            onnxruntime_input = {
-                k.name: v.numpy(force=True)  # type: ignore[union-attr]
-                for k, v in zip(self.model.graph.inputs, args)
-            }
-            # TODO: Turn off optimization
-            # TODO: Isolate the run in a separate process
-            outputs = ort_session.run(None, onnxruntime_input)
-        return tuple(torch.from_numpy(output) for output in outputs)
+        You may call this method to release the resources used by the inference session.
+        """
+        if self._inference_session is not None:
+            self._inference_session = None
+        if self._tempdir is not None:
+            self._tempdir.cleanup()
+            self._tempdir = None
 
 
 def _process_args(args, kwargs) -> tuple[torch.Tensor, ...]:

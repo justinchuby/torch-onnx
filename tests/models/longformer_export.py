@@ -2,7 +2,9 @@ import torch
 import torch_onnx
 from transformers import LongformerModel, LongformerTokenizer
 
-torch_onnx.patch_torch(report=True, profile=True, dump_exported_program=True)
+torch_onnx.patch_torch(
+    report=True, profile=True, verify=True, dump_exported_program=True
+)
 
 tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")
 model = LongformerModel.from_pretrained("allenai/longformer-base-4096")

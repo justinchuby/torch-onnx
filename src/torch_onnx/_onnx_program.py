@@ -40,6 +40,8 @@ ONNXProgram(
 
     def __call__(self, *args, **kwargs) -> Sequence[torch.Tensor]:
         """Run the ONNX model with the same arguments you would provide to the GraphModule."""
+        import onnxruntime as ort
+
         flatten_args = _process_args(args, kwargs)
 
         if self._inference_session is None:

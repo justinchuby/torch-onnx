@@ -6,12 +6,11 @@ import os
 import random
 import sys
 import unittest
-from enum import auto, Enum
+from enum import Enum, auto
 
 import numpy as np
 import packaging.version
 import pytest
-
 import torch
 from torch.autograd import function
 from torch.onnx._internal import diagnostics

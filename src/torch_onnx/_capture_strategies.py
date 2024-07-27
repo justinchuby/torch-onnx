@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import abc
+import dataclasses
 import datetime
 import os
 import pathlib
 from typing import Any, Callable
 
 import torch
-import abc
-import dataclasses
 
 from torch_onnx import _torchscript_converter
 

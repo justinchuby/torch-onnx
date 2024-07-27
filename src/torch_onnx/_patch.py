@@ -12,15 +12,15 @@ from typing import Any, Mapping, Sequence
 import torch
 import torch.export
 
-from torch_onnx import _onnx_program, _core
-
+from torch_onnx import _core, _onnx_program
 
 logger = logging.getLogger(__name__)
 
-WRITE_REPORT = False
-PROFILE_EXECUTION = False
-DUMP_EXPORTED_PROGRAM = False
-ARTIFACTS_DIR = "."
+_WRITE_REPORT = False
+_PROFILE_EXECUTION = False
+_DUMP_EXPORTED_PROGRAM = False
+_VERIFY_ONNX_PROGRAM = False
+_ARTIFACTS_DIR = "."
 
 
 def _signature(model) -> inspect.Signature:
@@ -133,11 +133,11 @@ def _torch_onnx_export(
     **_,
 ) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
-    report = WRITE_REPORT or report
-    verify = WRITE_REPORT or verify
-    profile = PROFILE_EXECUTION or profile
-    dump_exported_program = DUMP_EXPORTED_PROGRAM or dump_exported_program
-    artifacts_dir = ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
+    report = _WRITE_REPORT or report
+    verify = _VERIFY_ONNX_PROGRAM or verify
+    profile = _PROFILE_EXECUTION or profile
+    dump_exported_program = _DUMP_EXPORTED_PROGRAM or dump_exported_program
+    artifacts_dir = _ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
 
     if isinstance(model, torch.export.ExportedProgram):
         # We the model is already exported program, so the args, kwargs, and dynamic_shapes
@@ -191,11 +191,11 @@ def _torch_onnx_dynamo_export(
         model,
         model_args,
         kwargs=model_kwargs,
-        report=WRITE_REPORT,
-        verify=WRITE_REPORT,
-        profile=PROFILE_EXECUTION,
-        dump_exported_program=DUMP_EXPORTED_PROGRAM,
-        artifacts_dir=ARTIFACTS_DIR,
+        report=_WRITE_REPORT,
+        verify=_VERIFY_ONNX_PROGRAM,
+        profile=_PROFILE_EXECUTION,
+        dump_exported_program=_DUMP_EXPORTED_PROGRAM,
+        artifacts_dir=_ARTIFACTS_DIR,
     )
 
 
@@ -208,6 +208,7 @@ def patch_torch(
     *,
     report: bool = False,
     error_report: bool = False,  # deprecated
+    verify: bool = False,
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
@@ -220,14 +221,16 @@ def patch_torch(
             stacklevel=1,
         )
         report = error_report
-    global WRITE_REPORT  # noqa: PLW0603
-    WRITE_REPORT = report
-    global PROFILE_EXECUTION  # noqa: PLW0603
-    PROFILE_EXECUTION = profile
-    global DUMP_EXPORTED_PROGRAM  # noqa: PLW0603
-    DUMP_EXPORTED_PROGRAM = dump_exported_program
-    global ARTIFACTS_DIR  # noqa: PLW0603
-    ARTIFACTS_DIR = artifacts_dir
+    global _WRITE_REPORT  # noqa: PLW0603
+    _WRITE_REPORT = report
+    global _PROFILE_EXECUTION  # noqa: PLW0603
+    _PROFILE_EXECUTION = profile
+    global _VERIFY_ONNX_PROGRAM  # noqa: PLW0603
+    _VERIFY_ONNX_PROGRAM = verify
+    global _DUMP_EXPORTED_PROGRAM  # noqa: PLW0603
+    _DUMP_EXPORTED_PROGRAM = dump_exported_program
+    global _ARTIFACTS_DIR  # noqa: PLW0603
+    _ARTIFACTS_DIR = artifacts_dir
     torch.onnx.export = _torch_onnx_export
     torch.onnx.utils._export = _torch_onnx_export
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export

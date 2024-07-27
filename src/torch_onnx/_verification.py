@@ -36,7 +36,7 @@ def verify_onnx_program(
     onnx_program: _onnx_program.ONNXProgram,
     args: tuple[Any, ...] | None = None,
     kwargs: dict[str, Any] | None = None,
-):
+) -> list[VerificationInfo]:
     exported_program = onnx_program.exported_program
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs

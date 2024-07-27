@@ -7,7 +7,7 @@ import re
 import torch
 from onnxscript import ir
 
-from torch_onnx import _analysis, _registration
+from torch_onnx import _analysis, _registration, _verification
 
 
 @dataclasses.dataclass
@@ -85,6 +85,23 @@ def format_decomp_comparison(
     )
 
 
+def format_verification_infos(
+    verification_infos: list[_verification.VerificationInfo],
+) -> str:
+    """Format the verification result.
+
+    Args:
+        verification_infos: The verification result.
+
+    Returns:
+        The formatted verification result.
+    """
+    return "\n".join(
+        f"`{info.name}`: `abs_diff={info.absolute_difference:e}`, `rel_diff={info.relative_difference:e}`"
+        for info in verification_infos
+    )
+
+
 def create_torch_export_error_report(
     filename: str | os.PathLike,
     formatted_traceback: str,
@@ -116,18 +133,19 @@ def create_onnx_export_report(
     profile_result: str | None,
     model: ir.Model | None = None,
     registry: _registration.ONNXRegistry | None = None,
+    verification_result: str | None = None,
 ):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(export_status))
-        f.write("## Error message\n\n")
+        f.write("## Error messages\n\n")
         f.write("```pytb\n")
         f.write(formatted_traceback)
         f.write("\n```\n\n")
         f.write("## Exported program\n\n")
         f.write(_format_exported_program(program))
         if model is not None:
-            f.write("ONNX model:\n\n")
+            f.write("## ONNX model\n\n")
             f.write("```python\n")
             f.write(str(model))
             f.write("\n```\n\n")
@@ -136,6 +154,10 @@ def create_onnx_export_report(
         if decomp_comparison is not None:
             f.write("\n## Decomposition comparison\n\n")
             f.write(decomp_comparison)
+            f.write("\n")
+        if verification_result is not None:
+            f.write("\n## Verification results\n\n")
+            f.write(verification_result)
             f.write("\n")
         if profile_result is not None:
             f.write("\n## Profiling result\n\n")

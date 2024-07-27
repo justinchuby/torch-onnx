@@ -1,12 +1,13 @@
 """Build decomp table from PyTorch."""
 
 from __future__ import annotations
+
+from typing import Callable
+
 import torch
 import torch._ops
 
 from torch_onnx import _registration
-
-from typing import Callable
 
 
 def _get_registered_ops(

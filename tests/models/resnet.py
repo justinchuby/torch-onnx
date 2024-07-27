@@ -1,8 +1,8 @@
-import torch
-import torchvision
-import torch_onnx
-from onnxscript import ir
 import onnx
+import torch
+import torch_onnx
+import torchvision
+from onnxscript import ir
 
 lower = "at_conversion"
 resnet18 = torchvision.models.resnet18(

@@ -10,11 +10,9 @@ import time
 import traceback
 
 import numpy as np
-
 import onnx
 import onnxruntime as ort
 import onnxscript
-
 import torch
 
 _MISMATCH_MARKDOWN_TEMPLATE = """\

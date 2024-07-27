@@ -14,16 +14,15 @@ from __future__ import annotations
 import dataclasses
 import logging
 import math
-import types
-from typing import Callable, Literal, Mapping, Union
 import operator
+import types
 import typing
-
-from typing_extensions import TypeAlias
+from typing import Callable, Literal, Mapping, Union
 
 import onnxscript
 import torch
 import torch._ops
+from typing_extensions import TypeAlias
 
 from torch_onnx import _schemas
 

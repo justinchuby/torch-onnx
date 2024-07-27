@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import torch
 import torch.export
-from torch.onnx._internal.fx import diagnostics, passes
 import torch.fx
+from torch.onnx._internal.fx import diagnostics, passes
 
 from torch_onnx import _decomp, _registration
 

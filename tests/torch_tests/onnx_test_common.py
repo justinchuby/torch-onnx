@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-
 import copy
 import dataclasses
 import io
@@ -23,21 +22,18 @@ from typing import (
 )
 
 import numpy as np
-
 import onnxruntime
 import pytest
 import pytorch_test_common
-
 import torch
+import torch_onnx
+import torch_onnx.errors
 from torch import export as torch_export
 from torch.onnx import _constants, verification
 from torch.onnx._internal import _beartype
 from torch.testing._internal import common_utils
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.types import Number
-
-import torch_onnx
-import torch_onnx.errors
 
 _NumericType = Union[Number, torch.Tensor, np.ndarray]
 _ModelType = Union[torch.nn.Module, Callable, torch_export.ExportedProgram]

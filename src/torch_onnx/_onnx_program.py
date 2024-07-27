@@ -50,17 +50,13 @@ ONNXProgram(
         assert self._inference_session is not None
 
         # We don't expect non-tensor as inputs
-        onnxruntime_input = {
+        ort_input = {
             k.name: v.numpy() for k, v in zip(self.model.graph.inputs, flatten_args)
         }
         run_options = ort.RunOptions()
         run_options.log_severity_level = 3  # 3: Error
-        logger.debug(
-            "Running the inference session with %s arguments.", len(onnxruntime_input)
-        )
-        outputs = self._inference_session.run(
-            None, onnxruntime_input, run_options=run_options
-        )
+        logger.debug("Running the inference session with %s arguments.", len(ort_input))
+        outputs = self._inference_session.run(None, ort_input, run_options=run_options)
         logger.debug("Inference session run completed.")
         return tuple(torch.from_numpy(output) for output in outputs)
 

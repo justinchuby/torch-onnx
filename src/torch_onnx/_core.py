@@ -1243,14 +1243,14 @@ def export(
             # TODO(justinchuby): The threshold is arbitrary right now
             if result.absolute_difference >= 5e-3:
                 logger.warning(
-                    "    Output '%s' has a large absolute difference of %f. ",
+                    "Output '%s' has a large absolute difference of %f. ",
                     result.name,
                     result.absolute_difference,
                 )
                 export_status.output_accuracy = False
             if result.relative_difference >= 1e-1:
                 logger.warning(
-                    "    Output '%s' has a large relative difference of %f. ",
+                    "Output '%s' has a large relative difference of %f. ",
                     result.name,
                     result.relative_difference,
                 )

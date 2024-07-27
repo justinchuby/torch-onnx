@@ -85,7 +85,9 @@ def format_decomp_comparison(
     )
 
 
-def format_verification_infos(verification_infos: list[_verification.VerificationInfo]) -> str:
+def format_verification_infos(
+    verification_infos: list[_verification.VerificationInfo],
+) -> str:
     """Format the verification result.
 
     Args:
@@ -98,6 +100,7 @@ def format_verification_infos(verification_infos: list[_verification.Verificatio
         f"`{info.name}`: `abs_diff={info.absolute_difference:e}`, `rel_diff={info.relative_difference:e}`"
         for info in verification_infos
     )
+
 
 def create_torch_export_error_report(
     filename: str | os.PathLike,

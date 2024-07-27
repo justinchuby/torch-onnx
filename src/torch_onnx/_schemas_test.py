@@ -3,17 +3,16 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 from __future__ import annotations
+
 import unittest
 from typing import Any, Optional, Sequence, TypeVar, Union
 
-import parameterized
-
 import onnxscript
 import onnxscript.testing
-from onnxscript import FLOAT, INT64
-from torch_onnx import _schemas
-from onnxscript import ir
+import parameterized
+from onnxscript import FLOAT, INT64, ir
 
+from torch_onnx import _schemas
 
 _TestTypeVarConstraints = TypeVar("_TestTypeVarConstraints", INT64, FLOAT)
 _TestTypeVarOneBound = TypeVar("_TestTypeVarOneBound", bound=INT64)

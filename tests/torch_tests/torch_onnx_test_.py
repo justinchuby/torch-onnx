@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-
 import io
 import itertools
 import os
@@ -13,6 +12,8 @@ from collections import OrderedDict
 import numpy as np
 import onnx
 import onnx_test_common
+import torch
+import torch_onnx
 import torchvision
 from pytorch_test_common import (
     BATCH_SIZE,
@@ -23,15 +24,10 @@ from pytorch_test_common import (
     skipScriptTest,
     skipTraceTest,
 )
-
-import torch
-
 from torch import Tensor
 from torch.onnx import errors, verification
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_utils import skipIfNoLapack
-
-import torch_onnx
 
 torch_onnx.patch_torch(report=True, profile=False)
 

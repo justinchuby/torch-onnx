@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import collections.abc
-import inspect
 import dataclasses
+import inspect
+import logging
 import types
+import typing
 from typing import (
     Any,
     Iterator,
@@ -14,12 +16,9 @@ from typing import (
     Union,
 )
 
-from onnxscript import ir
 import onnx
-import logging
-import typing
-
 import onnxscript
+from onnxscript import ir
 
 logger = logging.getLogger(__name__)
 

@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import unittest
 
-import torch_onnx
-from torch_onnx import _core
 import torch
-
 from onnxscript import FLOAT
 
+import torch_onnx
+from torch_onnx import _core
 
 bf16 = torch.bfloat16
 f64 = torch.float64

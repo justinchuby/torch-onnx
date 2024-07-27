@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Sequence
 import logging
+from typing import Sequence
 
 from onnxscript import ir
 

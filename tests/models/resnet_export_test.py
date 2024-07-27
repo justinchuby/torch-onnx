@@ -1,8 +1,8 @@
 import unittest
 
 import torch
-import torchvision
 import torch_onnx
+import torchvision
 from torch_onnx import _verification
 
 

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import os
 import pathlib
 import tempfile
 import textwrap
-from typing import IO, Sequence
 import warnings
-import functools
+from typing import IO, Sequence
 
 import onnx
 import torch

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from onnxscript import ir
 import onnxscript
+from onnxscript import ir
 
 
 class SymbolicTensor(ir.Value):

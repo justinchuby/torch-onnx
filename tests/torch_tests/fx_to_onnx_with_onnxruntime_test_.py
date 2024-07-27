@@ -10,19 +10,14 @@ import onnx_test_common
 import onnxruntime  # type: ignore[import]
 import parameterized  # type: ignore[import]
 import pytorch_test_common
-
-from torch.utils import _pytree as pytree
-
-import transformers  # type: ignore[import]
-
 import torch
 import torch.onnx
-from torch import nn
-
-import torchvision
-from torch.testing._internal import common_utils
-
 import torch_onnx
+import torchvision
+import transformers  # type: ignore[import]
+from torch import nn
+from torch.testing._internal import common_utils
+from torch.utils import _pytree as pytree
 
 torch_onnx.patch_torch(report=True)
 

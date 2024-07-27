@@ -46,17 +46,14 @@ from typing import (
 )
 
 import error_reproduction
-
 import onnx_test_common
-
 import parameterized
 import pytest
 import pytorch_test_common
-from onnx_test_common import skip, skip_slow, xfail
-from torch.utils import _pytree as pytree
-import torch.fx
-
 import torch
+import torch.fx
+import torch_onnx
+from onnx_test_common import skip, skip_slow, xfail
 from torch.onnx._internal.diagnostics import _rules
 from torch.testing._internal import (
     common_device_type,
@@ -64,8 +61,7 @@ from torch.testing._internal import (
     common_utils,
 )
 from torch.testing._internal.opinfo import core as opinfo_core
-
-import torch_onnx
+from torch.utils import _pytree as pytree
 
 torch_onnx.patch_torch(report=True, profile=False)
 

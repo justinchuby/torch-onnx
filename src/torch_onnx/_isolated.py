@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import multiprocessing
-from typing import Callable
 import os
 import warnings
-
+from typing import Callable
 
 _IS_WINDOWS = os.name == "nt"
 

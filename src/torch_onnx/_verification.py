@@ -24,6 +24,9 @@ def _compare_tensors(
     expected: torch.Tensor,
     actual: torch.Tensor,
 ) -> tuple[float, float]:
+    # Move tensors to the same device
+    expected = expected.detach().cpu()
+    actual = actual.detach().cpu()
     absolute_difference = torch.abs(expected - actual).max().item()
     eps = 1e-7
     relative_difference = (

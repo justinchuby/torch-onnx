@@ -76,7 +76,7 @@ ONNXProgram(
 
         # We don't expect non-tensor as inputs
         ort_input = {
-            k.name: v.detach().cpu().numpy()
+            k.name: v.numpy(force=True)
             for k, v in zip(self.model.graph.inputs, flatten_args)
         }
         run_options = ort.RunOptions()

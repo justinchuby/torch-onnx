@@ -27,9 +27,6 @@ def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
 
     session_options = ort.SessionOptions()
     session_options.log_severity_level = 3  # 3: Error
-    session_options.graph_optimization_level = (
-        ort.GraphOptimizationLevel.ORT_DISABLE_ALL
-    )
     possible_providers = (
         "CUDAExecutionProvider",
         "CPUExecutionProvider",

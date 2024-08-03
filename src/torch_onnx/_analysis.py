@@ -49,8 +49,8 @@ def _count_weights(
 ) -> tuple[defaultdict[torch.dtype, int], defaultdict[torch.dtype, int]]:
     """Count the size of the parameters in the exported program."""
 
-    parameter_count = defaultdict(int)
-    buffer_count = defaultdict(int)
+    parameter_count: defaultdict[torch.dtype, int] = defaultdict(int)
+    buffer_count: defaultdict[torch.dtype, int] = defaultdict(int)
     for parameter in exported_program.parameters():
         dtype = parameter.dtype
         parameter_count[dtype] += parameter.numel()

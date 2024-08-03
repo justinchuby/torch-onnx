@@ -85,5 +85,5 @@ init_command = [
     'run',
     'pip_init',
     '--dry-run={{DRYRUN}}',
-    'mypy==1.10.0',
+    'mypy==1.11.0',
 ]

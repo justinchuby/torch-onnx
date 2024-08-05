@@ -65,10 +65,11 @@ class ExportedProgramToIrTest(unittest.TestCase):
         registry.register_op(torch.ops.aten.add.Tensor, add)
         assert _core.exported_program_to_ir(exported_program, registry=registry)
 
-    @unittest.expectedFailure  # Not working yet
     def test_process_python_constants_supports_tuple_input_with_mixed_tensor_and_python_constants(
         self,
     ):
+        # This test is no longer valid as the implementation for diagonal was updated to
+        # remove mixed tensor and python constants call, (effectively op.Max(a, 1))
         class GraphModule(torch.nn.Module):
             def forward(self, arg0_1: "f32[3, 5, 5]"):
                 diagonal: "f32[3, 5]" = torch.ops.aten.diagonal.default(arg0_1, 0, 1, 2)

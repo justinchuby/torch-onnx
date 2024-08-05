@@ -228,6 +228,7 @@ class LegacyDynamoStrategy(CaptureStrategy):
         graph_module, _ = torch._dynamo.export(
             model,
             tracing_mode="symbolic",
+            dynamic_shapes=dynamic_shapes,
         )(
             *args,
             **kwargs,
@@ -247,7 +248,7 @@ class LegacyDynamoStrategy(CaptureStrategy):
         graph_module = passes.Functionalize(
             diagnostic_context,
             graph_module,
-            enable_dynamic_axes=False,
+            enable_dynamic_axes=bool(dynamic_shapes),
         ).run(*flattened_args)
 
         # Input mutations are detected and distilled after `Functionalize` pass.

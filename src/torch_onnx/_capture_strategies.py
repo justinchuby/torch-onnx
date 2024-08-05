@@ -247,7 +247,7 @@ class LegacyDynamoStrategy(CaptureStrategy):
         graph_module = passes.Functionalize(
             diagnostic_context,
             graph_module,
-            enable_dynamic_axes=bool(dynamic_shapes),
+            enable_dynamic_axes=False,
         ).run(*flattened_args)
 
         # Input mutations are detected and distilled after `Functionalize` pass.
@@ -264,4 +264,5 @@ CAPTURE_STRATEGIES = (
     TorchExportStrategy,
     TorchExportNonStrictStrategy,
     JitTraceConvertStrategy,
+    LegacyDynamoStrategy,
 )

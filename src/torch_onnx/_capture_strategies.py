@@ -7,7 +7,7 @@ import dataclasses
 import datetime
 import os
 import pathlib
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 

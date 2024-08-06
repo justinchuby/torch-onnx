@@ -801,7 +801,7 @@ def _exported_program_to_onnx_program(
         else:
             model.graph.initializers[value_name] = value
 
-    # 3. Add outputs to the graph. Put the user outputs first.
+    # 3. Add user outputs to the graph.
     user_outputs = [
         spec
         for spec in exported_program.graph_signature.output_specs

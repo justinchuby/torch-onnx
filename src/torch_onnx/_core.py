@@ -794,8 +794,11 @@ def _exported_program_to_onnx_program(
             "pkg.torch.export.graph_signature.InputSpec.persistent"
         ] = str(persistent)
 
-        model.graph.inputs.append(value)  # type: ignore
-        if input_kind != graph_signature.InputKind.USER_INPUT:
+        if input_kind == graph_signature.InputKind.USER_INPUT:
+            # Add only user inputs to the graph
+            # Subsequent passes can decide if they want to add initializers as inputs
+            model.graph.inputs.append(value)  # type: ignore
+        else:
             model.graph.initializers[value_name] = value
 
     # 3. Add outputs to the graph. Put the user outputs first.

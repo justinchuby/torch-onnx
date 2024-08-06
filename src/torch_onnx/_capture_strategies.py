@@ -10,6 +10,7 @@ import pathlib
 from typing import TYPE_CHECKING, Any, Callable
 
 import torch
+from torch.utils import _pytree
 
 from torch_onnx import _torchscript_converter
 
@@ -177,8 +178,27 @@ class JitTraceConvertStrategy(CaptureStrategy):
     ) -> torch.export.ExportedProgram:
         del dynamic_shapes  # Unused
 
+        flattened_args, spec = _pytree.tree_flatten((args, kwargs))
+        flattened_args = tuple(flattened_args)
+
+        class WrappedModel(torch.nn.Module):
+            """Wrap the model so that it takes flattened arguments."""
+
+            def __init__(self, m):
+                super().__init__()
+                self.model = m
+
+            def forward(self, *_args):
+                unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(
+                    _args, spec
+                )
+                return self.model(*unflattened_args, **unflattened_kwargs)
+
         jit_model = torch.jit.trace(
-            model, example_inputs=args, check_trace=False, strict=False
+            WrappedModel(model),
+            example_inputs=flattened_args,
+            check_trace=False,
+            strict=False,
         )
         if self._dump:
             program_path = self._artifacts_dir / f"onnx_export_{self._timestamp}.pt"
@@ -192,7 +212,9 @@ class JitTraceConvertStrategy(CaptureStrategy):
                 self._verbose_print(
                     f"Torch Script model has been saved to '{program_path}'."
                 )
-        return _torchscript_converter.TS2EPConverter(jit_model, args, kwargs).convert()
+        return _torchscript_converter.TS2EPConverter(
+            jit_model, flattened_args
+        ).convert()
 
     def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))
@@ -223,7 +245,6 @@ class LegacyDynamoStrategy(CaptureStrategy):
         # Adapted from https://github.com/pytorch/pytorch/blob/ea42027e0ed7530386ae4222dc599fcaf84a8a05/torch/onnx/_internal/_exporter_legacy.py#L1491
         # NOTE: Import here to prevent circular dependency
         from torch.onnx._internal.fx import diagnostics, passes
-        from torch.utils import _pytree
 
         graph_module, _ = torch._dynamo.export(
             model,
@@ -259,6 +280,25 @@ class LegacyDynamoStrategy(CaptureStrategy):
 
         # Use torch.export to recapture the GraphModule into an ExportedProgram.
         return torch.export.export(graph_module, flattened_args)
+
+    def _enter(self, model) -> None:
+        model_repr = _take_first_line(repr(model))
+        self._verbose_print(
+            f"Obtain model graph for `{model_repr}` with internal Dynamo apis..."
+        )
+
+    def _success(self, model) -> None:
+        model_repr = _take_first_line(repr(model))
+        self._verbose_print(
+            f"Obtain model graph for `{model_repr}` with internal Dynamo apis... ✅"
+        )
+
+    def _failure(self, model, e) -> None:
+        del e  # Unused
+        model_repr = _take_first_line(repr(model))
+        self._verbose_print(
+            f"Obtain model graph for `{model_repr}` with internal Dynamo apis... ❌"
+        )
 
 
 CAPTURE_STRATEGIES = (

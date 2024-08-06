@@ -179,15 +179,19 @@ class JitTraceConvertStrategy(CaptureStrategy):
         del dynamic_shapes  # Unused
 
         flattened_args, spec = _pytree.tree_flatten((args, kwargs))
+        flattened_args = tuple(flattened_args)
 
         class WrappedModel(torch.nn.Module):
             """Wrap the model so that it takes flattened arguments."""
+
             def __init__(self, m):
                 super().__init__()
                 self.model = m
 
             def forward(self, *_args):
-                unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(_args, spec)
+                unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(
+                    _args, spec
+                )
                 return self.model(*unflattened_args, **unflattened_kwargs)
 
         jit_model = torch.jit.trace(

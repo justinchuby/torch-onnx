@@ -302,8 +302,8 @@ class LegacyDynamoStrategy(CaptureStrategy):
 
 
 CAPTURE_STRATEGIES = (
-    # TorchExportStrategy,
-    # TorchExportNonStrictStrategy,
+    TorchExportStrategy,
+    TorchExportNonStrictStrategy,
     JitTraceConvertStrategy,
-    # LegacyDynamoStrategy,
+    LegacyDynamoStrategy,
 )

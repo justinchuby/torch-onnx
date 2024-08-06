@@ -180,14 +180,18 @@ class JitTraceConvertStrategy(CaptureStrategy):
 
         flattened_args, spec = _pytree.tree_flatten((args, kwargs))
 
-        def wrapped_model(*_args):
+        class WrappedModel(torch.nn.Module):
             """Wrap the model so that it takes flattened arguments."""
+            def __init__(self, m):
+                super().__init__()
+                self.model = m
 
-            unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(_args, spec)
-            return model(*unflattened_args, **unflattened_kwargs)
+            def forward(self, *_args):
+                unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(_args, spec)
+                return self.model(*unflattened_args, **unflattened_kwargs)
 
         jit_model = torch.jit.trace(
-            wrapped_model,
+            WrappedModel(model),
             example_inputs=flattened_args,
             check_trace=False,
             strict=False,
@@ -294,8 +298,8 @@ class LegacyDynamoStrategy(CaptureStrategy):
 
 
 CAPTURE_STRATEGIES = (
-    TorchExportStrategy,
-    TorchExportNonStrictStrategy,
+    # TorchExportStrategy,
+    # TorchExportNonStrictStrategy,
     JitTraceConvertStrategy,
-    LegacyDynamoStrategy,
+    # LegacyDynamoStrategy,
 )

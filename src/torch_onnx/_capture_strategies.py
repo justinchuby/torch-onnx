@@ -181,6 +181,18 @@ class JitTraceConvertStrategy(CaptureStrategy):
         flattened_args, spec = _pytree.tree_flatten((args, kwargs))
         flattened_args = tuple(flattened_args)
 
+        # Since torch.jit.trace only accepts Tensors as inputs, we filter
+        # out non-Tensor arguments and reconstruct the arguments after entering
+        # the WrappedModel.
+        tensor_placeholder = object()
+        non_tensor_args = [
+            arg if not isinstance(arg, torch.Tensor) else tensor_placeholder
+            for arg in flattened_args
+        ]
+        tensor_args = tuple(
+            arg for arg in flattened_args if isinstance(arg, torch.Tensor)
+        )
+
         class WrappedModel(torch.nn.Module):
             """Wrap the model so that it takes flattened arguments."""
 
@@ -189,14 +201,23 @@ class JitTraceConvertStrategy(CaptureStrategy):
                 self.model = m
 
             def forward(self, *_args):
+                # Take the non-Tensor arguments list as a starting point and
+                # replace the tensor_placeholder with the actual tensor arguments
+                # from _args.
+                reconstructed_flattened_args = non_tensor_args.copy()
+                _args_iter = iter(_args)
+                for i, arg in enumerate(reconstructed_flattened_args):
+                    if arg is tensor_placeholder:
+                        reconstructed_flattened_args[i] = next(_args_iter)
+                # Unflatten the arguments and kwargs to pass to the model.
                 unflattened_args, unflattened_kwargs = _pytree.tree_unflatten(
-                    _args, spec
+                    reconstructed_flattened_args, spec
                 )
                 return self.model(*unflattened_args, **unflattened_kwargs)
 
         jit_model = torch.jit.trace(
             WrappedModel(model),
-            example_inputs=flattened_args,
+            example_inputs=tensor_args,
             check_trace=False,
             strict=False,
         )

@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+# flake8: noqa: B950 We do not need flake8 as it complains line length
 from __future__ import annotations
 
 import ctypes
@@ -6,7 +8,6 @@ import inspect
 import itertools
 import logging
 import operator
-import os
 import pathlib
 import textwrap
 import traceback
@@ -42,6 +43,13 @@ from torch_onnx import (
     errors,
 )
 
+
+if typing.TYPE_CHECKING:
+    import os
+
+    import numpy as np
+
+
 # Define utilities to convert PyTorch data types so users do not need to specify manually
 _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
     torch.bfloat16: ir.DataType.BFLOAT16,
@@ -64,17 +72,21 @@ _TORCH_DTYPE_TO_ONNX: dict[torch.dtype, ir.DataType] = {
 _BLUE = "\033[96m"
 _END = "\033[0m"
 
-_STEP_ONE_ERROR_MESSAGE = textwrap.dedent(f"""\
+_STEP_ONE_ERROR_MESSAGE = textwrap.dedent(
+    f"""\
     Failed to export the model with torch.export. {_BLUE}This is step 1/2{_END} of exporting the model to ONNX. Next steps:
     - Modify the model code for `torch.export.export` to succeed. Refer to https://pytorch.org/docs/stable/generated/exportdb/index.html for more information.
     - Debug `torch.export.export` and summit a PR to PyTorch.
-    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts.""")
+    - Create an issue in the PyTorch GitHub repository against the {_BLUE}*torch.export*{_END} component and attach the full error stack as well as reproduction scripts."""
+)
 
-_STEP_TWO_ERROR_MESSAGE = textwrap.dedent(f"""\
+_STEP_TWO_ERROR_MESSAGE = textwrap.dedent(
+    f"""\
     Failed to convert the exported program to an ONNX model. {_BLUE}This is step 2/2{_END} of exporting the model to ONNX. Next steps:
     - If there is a missing ONNX function, implement it and register it to the registry.
     - If there is an internal error during ONNX conversion, debug the error and summit a PR to PyTorch.
-    - Save the ExportedProgram as a pt2 file and create an error report with `export(..., report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report.""")
+    - Save the ExportedProgram as a pt2 file and create an error report with `export(..., report=True)`. Create an issue in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component. Attach the pt2 model and the error report."""
+)
 
 logger = logging.getLogger(__name__)
 
@@ -293,12 +305,19 @@ def _handle_call_function_node(
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
 ):
+    """Handle a call_function node.
+
+    Args:
+        graph: The ONNX graph at construction.
+        node: The FX node to translate.
+        node_name_to_values: A mapping of FX node names to their produced ir.Value.
+    """
     if node.target == operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
-    inputs = []
+    inputs: list[ir.Value | None] = []
     for i, input_ in enumerate(fx_inputs):
         if input_ is None:
             inputs.append(None)
@@ -307,7 +326,9 @@ def _handle_call_function_node(
                 actual_input = _handle_getitem_node(input_, node_name_to_values)
                 inputs.append(actual_input)
             else:
-                inputs.append(node_name_to_values[input_.name])
+                value = node_name_to_values[input_.name]
+                assert not isinstance(value, Sequence)
+                inputs.append(value)
         else:
             attributes[f"arg_{i}"] = input_
 
@@ -497,7 +518,7 @@ def _add_nodes(
     registry: _registration.ONNXRegistry,
 ) -> dict[str, ir.Value | Sequence[ir.Value]]:
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]] = {}
-    constant_farm = {}
+    constant_farm: dict[Any, ir.Value] = {}
     opset = _get_onnxscript_opset(registry.opset_version)
     for node in exported_program.graph.nodes:
         logger.debug(
@@ -545,7 +566,7 @@ def _get_inputs_and_attributes(
     """
     if inspect.isbuiltin(node.target) or isinstance(node.target, str):
         inputs = list(node.args)
-        return inputs, {}, [], [node.name]
+        return inputs, {}, [], [node.name]  # type: ignore[return-value]
 
     # The target should be an ATen operator now
     assert hasattr(
@@ -555,9 +576,9 @@ def _get_inputs_and_attributes(
 
     # This function assumes the order of arguments in FX op is the
     # same as the order of arguments in TorchScript op.
-    inputs = []
-    input_names = []
-    attributes = {}
+    inputs: list[Any] = []
+    input_names: list[str] = []
+    attributes: dict[str, Any] = {}
 
     if inspect.isbuiltin(node.target):
         inputs = list(node.args)
@@ -675,7 +696,7 @@ def exported_program_to_ir(
 
         del ops
         registry = _registration.ONNXRegistry.from_torchlib(
-            onnxscript.function_libs.torch_lib.registration.default_registry
+            onnxscript.function_libs.torch_lib.registration.default_registry  # type: ignore[arg-type]
         )
     if lower != "none":
         exported_program = _prepare_exported_program_for_export(
@@ -954,6 +975,7 @@ def export(
     export_status = _reporting.ExportStatus()
     failed_results: list[_capture_strategies.Result] = []
 
+    program: torch.export.ExportedProgram | None = None
     # Step 1: Export the model with torch.export.export if the model is not already an ExportedProgram
     if isinstance(model, torch.export.ExportedProgram):
         program = model
@@ -962,8 +984,9 @@ def export(
         # Convert an nn.Module to an ExportedProgram
         # Try everything 🐰 (all paths for getting an ExportedProgram)
         # When input is a JIT module, the last strategy will succeed so it is handled
+        result: _capture_strategies.Result | None = None
         for strategy_class in _capture_strategies.CAPTURE_STRATEGIES:
-            strategy = strategy_class(
+            strategy = strategy_class(  # type: ignore[abstract]
                 verbose=verbose is not False,  # Treat None as verbose
                 dump=dump_exported_program,
                 artifacts_dir=artifacts_dir,
@@ -985,6 +1008,7 @@ def export(
             else:
                 failed_results.append(result)
 
+        assert result is not None
         if result.exported_program is None:
             # If all strategies fail, produce an error report and raise the first error
             profile_result = _maybe_stop_profiler_and_get_result(profiler)
@@ -1049,7 +1073,7 @@ def export(
 
             del ops
             registry = _registration.ONNXRegistry.from_torchlib(
-                onnxscript.function_libs.torch_lib.registration.default_registry
+                onnxscript.function_libs.torch_lib.registration.default_registry  # type: ignore[arg-type]
             )
 
         # Process the exported program to run decompositions and type promotions etc.
@@ -1194,7 +1218,7 @@ def export(
         if byte_size < 2 * 1024 * 1024 * 1024:
             # The checker may segfault so we need to run it in a separate process
             _isolated.safe_call(
-                onnx.checker.check_model, onnx_program.model_proto, full_check=True
+                onnx.checker.check_model, onnx_program.model_proto, full_check=True  # type: ignore[attr-defined]
             )
             export_status.onnx_checker = True
             verbose_print("Run `onnx.checker` on the ONNX model... ✅")
@@ -1253,20 +1277,20 @@ def export(
         # Step 5: (verify=True) Validate the output values
         verbose_print("Verify output accuracy...")
         export_status.output_accuracy = True
-        for result in verification_results:
+        for verification_result in verification_results:
             # TODO(justinchuby): The threshold is arbitrary right now
-            if result.absolute_difference >= 5e-3:
+            if verification_result.absolute_difference >= 5e-3:
                 logger.warning(
                     "Output '%s' has a large absolute difference of %f. ",
-                    result.name,
-                    result.absolute_difference,
+                    verification_result.name,
+                    verification_result.absolute_difference,
                 )
                 export_status.output_accuracy = False
-            if result.relative_difference >= 1e-1:
+            if verification_result.relative_difference >= 1e-1:
                 logger.warning(
                     "Output '%s' has a large relative difference of %f. ",
-                    result.name,
-                    result.relative_difference,
+                    verification_result.name,
+                    verification_result.relative_difference,
                 )
                 export_status.output_accuracy = False
         if export_status.output_accuracy:

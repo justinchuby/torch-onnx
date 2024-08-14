@@ -132,7 +132,7 @@ def _torch_onnx_export(
     artifacts_dir: str | os.PathLike = ".",
     fallback: bool = False,
     **_,
-) -> _onnx_program.ONNXProgram:
+) -> _onnx_program.ONNXProgram | None:
     # Set up the error reporting facilities
     report = _WRITE_REPORT or report
     verify = _VERIFY_ONNX_PROGRAM or verify
@@ -182,7 +182,7 @@ def _torch_onnx_export(
                 f"Falling back to legacy torch.onnx.export due to the following error: {e}",
                 stacklevel=1,
             )
-            torch.onnx.export(
+            return _original_torch_onnx_export(
                 model,
                 args,
                 f,
@@ -190,12 +190,11 @@ def _torch_onnx_export(
                 export_params=export_params,
                 input_names=input_names,
                 output_names=output_names,
-                opset_version=opset_version,
+                opset_version=17,  # TODO: Hard coded to 17, change
                 dynamic_axes=dynamic_axes,
                 keep_initializers_as_inputs=keep_initializers_as_inputs,
             )
-        else:
-            raise
+        raise
 
     return onnx_program
 
@@ -255,11 +254,9 @@ def patch_torch(
     global _ARTIFACTS_DIR  # noqa: PLW0603
     _ARTIFACTS_DIR = artifacts_dir
     torch.onnx.export = _torch_onnx_export
-    torch.onnx.utils._export = _torch_onnx_export
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export
 
 
 def unpatch_torch():
     torch.onnx.export = _original_torch_onnx_export
-    torch.onnx.utils._export = _original_torch_onnx_utils_export
     torch.onnx.dynamo_export = _original_torch_onnx_dynamo_export

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import inspect
-import io
 import logging
 import os
 import warnings
 from typing import Any, Mapping, Sequence
 
+import onnx
 import torch
 import torch.export
 
@@ -21,6 +21,7 @@ _PROFILE_EXECUTION = False
 _DUMP_EXPORTED_PROGRAM = False
 _VERIFY_ONNX_PROGRAM = False
 _ARTIFACTS_DIR = "."
+_FALLBACK_TO_LEGACY_EXPORT = False
 
 
 def _signature(model) -> inspect.Signature:
@@ -109,10 +110,17 @@ def _get_torch_export_args(
     return args, kwargs
 
 
+def _convert_version(path: str | os.PathLike, opset_version: int) -> None:
+    """Convert the ONNX file to a specific version."""
+    model = onnx.load(path, load_external_data=False)
+    model = onnx.version_converter.convert_version(model, opset_version)
+    onnx.save(model, path)
+
+
 def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
-    f: str | io.BytesIO | None = None,
+    f: str | os.PathLike | None = None,
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
@@ -123,21 +131,23 @@ def _torch_onnx_export(
     | Mapping[str, Sequence[int]]
     | None = None,
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
+    keep_initializers_as_inputs: bool = False,
     external_data: bool = True,
-    all_tensors_to_one_file: bool = True,
     report: bool = False,
     verify: bool = False,
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
+    fallback: bool = False,
     **_,
-) -> _onnx_program.ONNXProgram:
+) -> _onnx_program.ONNXProgram | None:
     # Set up the error reporting facilities
     report = _WRITE_REPORT or report
     verify = _VERIFY_ONNX_PROGRAM or verify
     profile = _PROFILE_EXECUTION or profile
     dump_exported_program = _DUMP_EXPORTED_PROGRAM or dump_exported_program
     artifacts_dir = _ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
+    fallback = _FALLBACK_TO_LEGACY_EXPORT or fallback
 
     if isinstance(model, torch.export.ExportedProgram):
         # We the model is already exported program, so the args, kwargs, and dynamic_shapes
@@ -150,29 +160,67 @@ def _torch_onnx_export(
                 model, dynamic_axes, input_names
             )
 
-    onnx_program = _core.export(
-        model,
-        args,
-        kwargs,
-        registry=None,
-        dynamic_shapes=dynamic_shapes,
-        input_names=input_names,
-        output_names=output_names,
-        profile=profile,
-        report=report,
-        verify=verify,
-        dump_exported_program=dump_exported_program,
-        artifacts_dir=artifacts_dir,
-    )
+    should_convert_version = False
 
-    if f is not None:
-        # Always save the initializers as external data to reduce the size of the ONNX file
-        onnx_program.save(
-            f,
-            include_initializers=export_params,
-            external_data=external_data,
-            all_tensors_to_one_file=all_tensors_to_one_file,
+    try:
+        onnx_program = _core.export(
+            model,
+            args,
+            kwargs,
+            registry=None,
+            dynamic_shapes=dynamic_shapes,
+            input_names=input_names,
+            output_names=output_names,
+            profile=profile,
+            report=report,
+            verify=verify,
+            dump_exported_program=dump_exported_program,
+            artifacts_dir=artifacts_dir,
         )
+
+        if f is not None:
+            # Always save the initializers as external data to reduce the size of the ONNX file
+            onnx_program.save(
+                f,
+                include_initializers=export_params,
+                keep_initializers_as_inputs=keep_initializers_as_inputs,
+                external_data=external_data,
+            )
+            if opset_version is not None and opset_version != 18:
+                # TODO(justinchuby): Update the hardcoded opset version
+                should_convert_version = True
+
+    except Exception as e:
+        if fallback:
+            print(
+                f"[torch.onnx] Falling back to legacy torch.onnx.export due to the following error: {e}",
+            )
+            _original_torch_onnx_export(
+                model,
+                args,
+                f,
+                kwargs=kwargs,
+                export_params=export_params,
+                input_names=input_names,
+                output_names=output_names,
+                opset_version=17,  # TODO: Hard coded to 17 for now
+                dynamic_axes=dynamic_axes,
+                keep_initializers_as_inputs=keep_initializers_as_inputs,
+            )
+            onnx_program = None
+            if opset_version is None:
+                opset_version = 18
+            if opset_version != 17:
+                should_convert_version = True
+        else:
+            raise
+
+    if f is not None and should_convert_version:
+        assert opset_version is not None
+        print(
+            f"[torch.onnx] Converting the ONNX file to opset version {opset_version}..."
+        )
+        _convert_version(f, opset_version)
 
     return onnx_program
 
@@ -212,6 +260,7 @@ def patch_torch(
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
+    fallback: bool = False,
     **_,
 ):
     if error_report:
@@ -231,12 +280,12 @@ def patch_torch(
     _DUMP_EXPORTED_PROGRAM = dump_exported_program
     global _ARTIFACTS_DIR  # noqa: PLW0603
     _ARTIFACTS_DIR = artifacts_dir
+    global _FALLBACK_TO_LEGACY_EXPORT  # noqa: PLW0603
+    _FALLBACK_TO_LEGACY_EXPORT = fallback
     torch.onnx.export = _torch_onnx_export
-    torch.onnx.utils._export = _torch_onnx_export
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export
 
 
 def unpatch_torch():
     torch.onnx.export = _original_torch_onnx_export
-    torch.onnx.utils._export = _original_torch_onnx_utils_export
     torch.onnx.dynamo_export = _original_torch_onnx_dynamo_export

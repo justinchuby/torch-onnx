@@ -8,6 +8,7 @@ import os
 import warnings
 from typing import Any, Mapping, Sequence
 
+import onnx
 import torch
 import torch.export
 
@@ -109,10 +110,17 @@ def _get_torch_export_args(
     return args, kwargs
 
 
+def _convert_version(path: str | os.PathLike, opset_version: int) -> None:
+    """Convert the ONNX file to a specific version."""
+    model = onnx.load(path, load_external_data=False)
+    model = onnx.version_converter.convert_version(model, opset_version)
+    onnx.save(model, path)
+
+
 def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
-    f: str | None = None,
+    f: str | os.PathLike | None = None,
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
@@ -152,6 +160,8 @@ def _torch_onnx_export(
                 model, dynamic_axes, input_names
             )
 
+    should_convert_version = False
+
     try:
         onnx_program = _core.export(
             model,
@@ -176,13 +186,17 @@ def _torch_onnx_export(
                 keep_initializers_as_inputs=keep_initializers_as_inputs,
                 external_data=external_data,
             )
+            if opset_version is not None and opset_version != 18:
+                # TODO(justinchuby): Update the hardcoded opset version
+                should_convert_version = True
+
     except Exception as e:
         if fallback:
             warnings.warn(
                 f"Falling back to legacy torch.onnx.export due to the following error: {e}",
                 stacklevel=1,
             )
-            return _original_torch_onnx_export(
+            _original_torch_onnx_export(
                 model,
                 args,
                 f,
@@ -190,11 +204,19 @@ def _torch_onnx_export(
                 export_params=export_params,
                 input_names=input_names,
                 output_names=output_names,
-                opset_version=17,  # TODO: Hard coded to 17, change
+                opset_version=17,  # TODO: Hard coded to 17 for now
                 dynamic_axes=dynamic_axes,
                 keep_initializers_as_inputs=keep_initializers_as_inputs,
             )
-        raise
+            onnx_program = None
+            if opset_version is not None and opset_version != 17:
+                should_convert_version = True
+        else:
+            raise
+
+    if f is not None and should_convert_version:
+        assert opset_version is not None
+        _convert_version(f, opset_version)
 
     return onnx_program
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import io
 import logging
 import os
 import warnings
@@ -21,6 +20,7 @@ _PROFILE_EXECUTION = False
 _DUMP_EXPORTED_PROGRAM = False
 _VERIFY_ONNX_PROGRAM = False
 _ARTIFACTS_DIR = "."
+_FALLBACK_TO_LEGACY_EXPORT = False
 
 
 def _signature(model) -> inspect.Signature:
@@ -112,7 +112,7 @@ def _get_torch_export_args(
 def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
-    f: str | io.BytesIO | None = None,
+    f: str | None = None,
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
@@ -123,13 +123,14 @@ def _torch_onnx_export(
     | Mapping[str, Sequence[int]]
     | None = None,
     dynamic_shapes: dict[str, Any] | tuple[Any, ...] | list[Any] | None = None,
+    keep_initializers_as_inputs: bool = False,
     external_data: bool = True,
-    all_tensors_to_one_file: bool = True,
     report: bool = False,
     verify: bool = False,
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
+    fallback: bool = False,
     **_,
 ) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
@@ -138,6 +139,7 @@ def _torch_onnx_export(
     profile = _PROFILE_EXECUTION or profile
     dump_exported_program = _DUMP_EXPORTED_PROGRAM or dump_exported_program
     artifacts_dir = _ARTIFACTS_DIR if artifacts_dir == "." else artifacts_dir
+    fallback = _FALLBACK_TO_LEGACY_EXPORT or fallback
 
     if isinstance(model, torch.export.ExportedProgram):
         # We the model is already exported program, so the args, kwargs, and dynamic_shapes
@@ -150,29 +152,50 @@ def _torch_onnx_export(
                 model, dynamic_axes, input_names
             )
 
-    onnx_program = _core.export(
-        model,
-        args,
-        kwargs,
-        registry=None,
-        dynamic_shapes=dynamic_shapes,
-        input_names=input_names,
-        output_names=output_names,
-        profile=profile,
-        report=report,
-        verify=verify,
-        dump_exported_program=dump_exported_program,
-        artifacts_dir=artifacts_dir,
-    )
-
-    if f is not None:
-        # Always save the initializers as external data to reduce the size of the ONNX file
-        onnx_program.save(
-            f,
-            include_initializers=export_params,
-            external_data=external_data,
-            all_tensors_to_one_file=all_tensors_to_one_file,
+    try:
+        onnx_program = _core.export(
+            model,
+            args,
+            kwargs,
+            registry=None,
+            dynamic_shapes=dynamic_shapes,
+            input_names=input_names,
+            output_names=output_names,
+            profile=profile,
+            report=report,
+            verify=verify,
+            dump_exported_program=dump_exported_program,
+            artifacts_dir=artifacts_dir,
         )
+
+        if f is not None:
+            # Always save the initializers as external data to reduce the size of the ONNX file
+            onnx_program.save(
+                f,
+                include_initializers=export_params,
+                keep_initializers_as_inputs=keep_initializers_as_inputs,
+                external_data=external_data,
+            )
+    except Exception as e:
+        if fallback:
+            warnings.warn(
+                f"Falling back to legacy torch.onnx.export due to the following error: {e}",
+                stacklevel=1,
+            )
+            torch.onnx.export(
+                model,
+                args,
+                f,
+                kwargs=kwargs,
+                export_params=export_params,
+                input_names=input_names,
+                output_names=output_names,
+                opset_version=opset_version,
+                dynamic_axes=dynamic_axes,
+                keep_initializers_as_inputs=keep_initializers_as_inputs,
+            )
+        else:
+            raise
 
     return onnx_program
 

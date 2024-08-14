@@ -94,8 +94,8 @@ ONNXProgram(
         destination: str | os.PathLike | IO[bytes],
         *,
         include_initializers: bool = True,
+        keep_initializers_as_inputs: bool = False,
         external_data: bool | None = None,
-        all_tensors_to_one_file: bool = True,
         **_,
     ):
         """Save the ONNX model to the specified destination.
@@ -107,7 +107,6 @@ ONNXProgram(
             destination: The path to save the ONNX model to.
             include_initializers: Whether to include the initializers in the saved model.
             external_data: Whether to save the weights as external data in a separate file.
-            all_tensors_to_one_file: Whether to save all tensors to one file when saving as external data.
 
         Raises:
             TypeError: If `external_data` is `True` and `destination` is not a file path.
@@ -116,6 +115,12 @@ ONNXProgram(
             self.model.graph.initializers.clear()
             logger.warning(
                 "The initializers have been removed from the model. This is destructive. "
+                "Developers: Please implement ir.Model copy() and remove initializers on the copied model."
+            )
+        if keep_initializers_as_inputs:
+            self.model.graph.inputs.extend(self.model.graph.initializers.values())
+            logger.warning(
+                "The initializers have been added as inputs to the model. This is destructive. "
                 "Developers: Please implement ir.Model copy() and remove initializers on the copied model."
             )
         proto = ir.serde.serialize_model(self.model)
@@ -140,7 +145,6 @@ ONNXProgram(
                 proto,
                 destination,
                 save_as_external_data=True,
-                all_tensors_to_one_file=all_tensors_to_one_file,
                 location=data_path,
             )
         else:

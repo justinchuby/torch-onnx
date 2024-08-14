@@ -354,7 +354,7 @@ def _handle_call_function_node(
 
 def _convert_fx_arg_to_onnx_arg(
     arg, node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]]
-) -> None:
+) -> Any:
     """Convert an FX argument to an ONNX compatible argument.
 
     This function

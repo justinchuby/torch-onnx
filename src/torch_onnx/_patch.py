@@ -192,9 +192,8 @@ def _torch_onnx_export(
 
     except Exception as e:
         if fallback:
-            warnings.warn(
-                f"Falling back to legacy torch.onnx.export due to the following error: {e}",
-                stacklevel=1,
+            print(
+                f"[torch.onnx] Falling back to legacy torch.onnx.export due to the following error: {e}",
             )
             _original_torch_onnx_export(
                 model,
@@ -209,13 +208,18 @@ def _torch_onnx_export(
                 keep_initializers_as_inputs=keep_initializers_as_inputs,
             )
             onnx_program = None
-            if opset_version is not None and opset_version != 17:
+            if opset_version is None:
+                opset_version = 18
+            if opset_version != 17:
                 should_convert_version = True
         else:
             raise
 
     if f is not None and should_convert_version:
         assert opset_version is not None
+        print(
+            f"[torch.onnx] Converting the ONNX file to opset version {opset_version}..."
+        )
         _convert_version(f, opset_version)
 
     return onnx_program
@@ -256,6 +260,7 @@ def patch_torch(
     profile: bool = False,
     dump_exported_program: bool = False,
     artifacts_dir: str | os.PathLike = ".",
+    fallback: bool = False,
     **_,
 ):
     if error_report:
@@ -275,6 +280,8 @@ def patch_torch(
     _DUMP_EXPORTED_PROGRAM = dump_exported_program
     global _ARTIFACTS_DIR  # noqa: PLW0603
     _ARTIFACTS_DIR = artifacts_dir
+    global _FALLBACK_TO_LEGACY_EXPORT  # noqa: PLW0603
+    _FALLBACK_TO_LEGACY_EXPORT = fallback
     torch.onnx.export = _torch_onnx_export
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export
 

@@ -25,8 +25,10 @@ def _torch_older_than(version: str) -> bool:
         < packaging.version.parse(version).release
     )
 
+
 # The _preserve_ops argument is only available in torch>=2.5
-TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = _torch_older_than("2.5")
+_TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = _torch_older_than("2.5")
+
 
 def decompose_with_registry(
     exported_program: torch.export.ExportedProgram, registry: _registration.ONNXRegistry
@@ -36,7 +38,7 @@ def decompose_with_registry(
     This function is needed so it shows clearly on the profiler results.
     """
     decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-    if not TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM:
+    if not _TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM:
         # torch 2.4 or older
         return exported_program.run_decompositions(decomp_table)
 
@@ -65,9 +67,7 @@ def decompose_with_registry(
     }
     # We can only preserve implemented ops
     can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))
-    return exported_program.run_decompositions(
-        decomp_table, _preserve_ops=can_preserve
-    )
+    return exported_program.run_decompositions(decomp_table, _preserve_ops=can_preserve)
 
 
 def insert_type_promotion_nodes(

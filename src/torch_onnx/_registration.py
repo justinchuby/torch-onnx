@@ -2,6 +2,7 @@
 
 https://github.com/pytorch/pytorch/blob/6aa5bb1a76dee8112f1a9e7c194c790b5cdc6462/torch/onnx/_internal/fx/registration.py
 """
+# mypy: allow-untyped-defs
 
 # NOTE: Why do we need a different registry than the one in torchlib?
 # The registry in torchlib is used to register functions that are already implemented in

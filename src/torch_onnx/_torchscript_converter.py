@@ -1,6 +1,8 @@
 # Sync with https://github.com/pytorch/pytorch/blob/fdd0a7f9b4fb80c4d4870569909505a9beb6ccb3/torch/_export/converter.py
 # PyTorch License
 # mypy: allow-untyped-defs
+from __future__ import annotations
+
 import builtins
 import logging
 import operator
@@ -23,7 +25,6 @@ from torch.export.graph_signature import (
     TensorArgument,
 )
 from torch.fx import subgraph_rewriter
-
 
 log = logging.getLogger(__name__)
 

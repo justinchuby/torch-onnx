@@ -1,5 +1,6 @@
 """Patch torch.onnx.export to use the exported program"""
 
+# mypy: allow-untyped-defs
 from __future__ import annotations
 
 import inspect

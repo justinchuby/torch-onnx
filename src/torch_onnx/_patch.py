@@ -17,12 +17,12 @@ from torch_onnx import _core, _onnx_program
 
 logger = logging.getLogger(__name__)
 
-_WRITE_REPORT = False
-_PROFILE_EXECUTION = False
-_DUMP_EXPORTED_PROGRAM = False
-_VERIFY_ONNX_PROGRAM = False
-_ARTIFACTS_DIR = "."
-_FALLBACK_TO_LEGACY_EXPORT = False
+_WRITE_REPORT: bool = False
+_PROFILE_EXECUTION: bool = False
+_DUMP_EXPORTED_PROGRAM: bool = False
+_VERIFY_ONNX_PROGRAM: bool = False
+_ARTIFACTS_DIR: str | os.PathLike = "."
+_FALLBACK_TO_LEGACY_EXPORT: bool = False
 
 
 def _signature(model) -> inspect.Signature:
@@ -95,7 +95,7 @@ def _from_dynamic_axes_to_dynamic_shapes(
     # for all input tensors, so we need to add them with None
     for input_name in sig.parameters:
         if input_name not in dynamic_shapes_to_exported_program:
-            dynamic_shapes_to_exported_program[input_name] = None
+            dynamic_shapes_to_exported_program[input_name] = None  # type: ignore[assignment]
 
     return dynamic_shapes_to_exported_program
 
@@ -199,7 +199,7 @@ def _torch_onnx_export(
             _original_torch_onnx_export(
                 model,
                 args,
-                f,
+                f,  # type: ignore[arg-type]
                 kwargs=kwargs,
                 export_params=export_params,
                 input_names=input_names,
@@ -283,8 +283,8 @@ def patch_torch(
     _ARTIFACTS_DIR = artifacts_dir
     global _FALLBACK_TO_LEGACY_EXPORT  # noqa: PLW0603
     _FALLBACK_TO_LEGACY_EXPORT = fallback
-    torch.onnx.export = _torch_onnx_export
-    torch.onnx.dynamo_export = _torch_onnx_dynamo_export
+    torch.onnx.export = _torch_onnx_export  # type: ignore[assignment]
+    torch.onnx.dynamo_export = _torch_onnx_dynamo_export  # type: ignore[assignment]
 
 
 def unpatch_torch():

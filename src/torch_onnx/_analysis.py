@@ -7,14 +7,17 @@ import dataclasses
 import textwrap
 import traceback
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 import onnxscript
 import torch
 import torch._export.serde.schema
-import torch.fx
 from torch.export import graph_signature
 
 from torch_onnx import _dispatching, _registration
+
+if TYPE_CHECKING:
+    import torch.fx
 
 
 @dataclasses.dataclass
@@ -50,8 +53,8 @@ def _count_weights(
 ) -> tuple[defaultdict[torch.dtype, int], defaultdict[torch.dtype, int]]:
     """Count the size of the parameters in the exported program."""
 
-    parameter_count = defaultdict(int)
-    buffer_count = defaultdict(int)
+    parameter_count: defaultdict[torch.dtype, int] = defaultdict(int)
+    buffer_count: defaultdict[torch.dtype, int] = defaultdict(int)
     for parameter in exported_program.parameters():
         dtype = parameter.dtype
         parameter_count[dtype] += parameter.numel()
@@ -173,7 +176,7 @@ def _count_fx_targets(
     exported_program: torch.export.ExportedProgram,
 ) -> defaultdict[str, int]:
     """Count the number of targets for each node in the exported program."""
-    fx_node_target_count = defaultdict(int)
+    fx_node_target_count: defaultdict[str, int] = defaultdict(int)
     for node in exported_program.graph.nodes:
         if node.op == "call_function":
             fx_node_target_count[str(node.target)] += 1
@@ -203,7 +206,7 @@ def analyze(
 
         del ops
         registry = _registration.ONNXRegistry.from_torchlib(
-            onnxscript.function_libs.torch_lib.registration.default_registry
+            onnxscript.function_libs.torch_lib.registration.default_registry  # type: ignore[arg-type]
         )
 
     # Try to find ops for every node in the graph

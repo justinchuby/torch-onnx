@@ -17,7 +17,7 @@ from onnxscript import ir
 from torch.utils import _pytree as pytree
 
 if TYPE_CHECKING:
-    import onnxruntime as ort
+    import onnxruntime as ort  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +122,7 @@ ONNXProgram(
                 "Developers: Please implement ir.Model copy() and remove initializers on the copied model."
             )
         if keep_initializers_as_inputs:
-            self.model.graph.inputs.extend(self.model.graph.initializers.values())
+            self.model.graph.inputs.extend(self.model.graph.initializers.values())  # type: ignore[arg-type]
             logger.warning(
                 "The initializers have been added as inputs to the model. This is destructive. "
                 "Developers: Please implement ir.Model copy() and remove initializers on the copied model."

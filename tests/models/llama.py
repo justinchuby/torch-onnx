@@ -20,8 +20,7 @@ def main():
     )
     # program.save("llama31.onnx", include_initializers=False)
 
-    verification_infos = torch_onnx.verify_onnx_program(program)
-    torch_onnx._verification.save_node_data_for_model_explorer(verification_infos)
+    torch_onnx.verify_onnx_program(program)
 
 
 if __name__ == "__main__":

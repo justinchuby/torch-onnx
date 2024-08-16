@@ -46,6 +46,7 @@ def decompose_with_registry(
             aten._upsample_nearest_exact1d.vec,
             aten._upsample_nearest_exact2d.vec,
             aten._upsample_nearest_exact3d.vec,
+            aten.group_norm.default,
             aten.linear.default,
             aten.upsample_bilinear2d.default,
             aten.upsample_bilinear2d.vec,

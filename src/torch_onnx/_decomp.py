@@ -70,32 +70,3 @@ def create_onnx_friendly_decomposition_table(
         decomposition_table[op_overload] = decomp_fn
 
     return decomposition_table
-
-
-def valid_to_preserve(op_overload: torch._ops.OperatorBase) -> bool:
-    # Adapted from https://github.com/pytorch/pytorch/blob/611c1043709dc04ed500c551aeb40f69e56a1a4f/torch/export/exported_program.py#L177
-    # PyTorch License
-    # TODO(justinchuby): Update when the source changes
-    from torch._subclasses.functional_tensor import FunctionalTensor
-
-    if op_overload in FunctionalTensor.maybe_aliasing_or_mutating_ops:
-        return False
-    if op_overload in FunctionalTensor.metadata_fns:
-        return False
-
-    if not isinstance(op_overload, torch._ops.OpOverload):
-        return False
-
-    alias_info = len(
-        [i for i in op_overload._schema.arguments if i.alias_info is not None]
-    )
-
-    is_mutating_or_aliasing = alias_info != 0 or op_overload._schema.is_mutable
-
-    if is_mutating_or_aliasing:
-        return False
-
-    if not torch._C._dispatch_has_kernel(op_overload.name()):
-        return False
-
-    return True

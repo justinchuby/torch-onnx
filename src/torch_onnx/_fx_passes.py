@@ -38,12 +38,31 @@ def decompose_with_registry(
         return exported_program.run_decompositions(decomp_table)
     else:
         # The _preserve_ops argument is only available in torch>=2.5
-        implemented_ops = _decomp.get_onnx_implemented_overloads(registry)
-        to_preserve: tuple[torch._ops.OpOverload] = tuple(
-            op for op in implemented_ops if _decomp.valid_to_preserve(op)
-        )
+        onnx_registered_ops = set(_decomp.get_onnx_implemented_overloads(registry))
+        # Try to preserve some known CompositeImplicitAutograd ops
+        aten = torch.ops.aten
+        to_preserve = {
+            aten._upsample_nearest_exact1d.vec,
+            aten._upsample_nearest_exact2d.vec,
+            aten._upsample_nearest_exact3d.vec,
+            aten.linear.default,
+            aten.upsample_bilinear2d_aa.default,
+            aten.upsample_bilinear2d.default,
+            aten.upsample_linear1d_aa.default,
+            aten.upsample_linear1d.default,
+            aten.upsample_nearest1d.default,
+            aten.upsample_nearest1d.vec,
+            aten.upsample_nearest2d.default,
+            aten.upsample_nearest2d.vec,
+            aten.upsample_nearest3d.default,
+            aten.upsample_nearest3d.vec,
+            aten.upsample_trilinear3d_aa.default,
+            aten.upsample_trilinear3d.default,
+        }
+        # We can only preserve implemented ops
+        can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))
         return exported_program.run_decompositions(
-            decomp_table, _preserve_ops=to_preserve
+            decomp_table, _preserve_ops=can_preserve
         )
 
 

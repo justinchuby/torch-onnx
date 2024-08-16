@@ -26,6 +26,10 @@ def _torch_older_than(version: str) -> bool:
     )
 
 
+# The _preserve_ops argument is only available in torch>=2.5
+_TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = not _torch_older_than("2.5")
+
+
 def decompose_with_registry(
     exported_program: torch.export.ExportedProgram, registry: _registration.ONNXRegistry
 ) -> torch.export.ExportedProgram:
@@ -34,38 +38,36 @@ def decompose_with_registry(
     This function is needed so it shows clearly on the profiler results.
     """
     decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-    if _torch_older_than("2.5"):
+    if not _TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM:
+        # torch 2.4 or older
         return exported_program.run_decompositions(decomp_table)
-    else:
-        # The _preserve_ops argument is only available in torch>=2.5
-        onnx_registered_ops = set(_decomp.get_onnx_implemented_overloads(registry))
-        # Try to preserve some known CompositeImplicitAutograd ops
-        aten = torch.ops.aten
-        to_preserve = {
-            aten._upsample_bilinear2d_aa.default,
-            aten._upsample_nearest_exact1d.vec,
-            aten._upsample_nearest_exact2d.vec,
-            aten._upsample_nearest_exact3d.vec,
-            aten.group_norm.default,
-            aten.linear.default,
-            aten.upsample_bilinear2d.default,
-            aten.upsample_bilinear2d.vec,
-            aten.upsample_linear1d.default,
-            aten.upsample_linear1d.vec,
-            aten.upsample_nearest1d.default,
-            aten.upsample_nearest1d.vec,
-            aten.upsample_nearest2d.default,
-            aten.upsample_nearest2d.vec,
-            aten.upsample_nearest3d.default,
-            aten.upsample_nearest3d.vec,
-            aten.upsample_trilinear3d.default,
-            aten.upsample_trilinear3d.vec,
-        }
-        # We can only preserve implemented ops
-        can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))
-        return exported_program.run_decompositions(
-            decomp_table, _preserve_ops=can_preserve
-        )
+
+    onnx_registered_ops = set(_decomp.get_onnx_implemented_overloads(registry))
+    # Try to preserve some known CompositeImplicitAutograd ops
+    aten = torch.ops.aten
+    to_preserve = {
+        aten._upsample_bilinear2d_aa.default,
+        aten._upsample_nearest_exact1d.vec,
+        aten._upsample_nearest_exact2d.vec,
+        aten._upsample_nearest_exact3d.vec,
+        aten.group_norm.default,
+        aten.linear.default,
+        aten.upsample_bilinear2d.default,
+        aten.upsample_bilinear2d.vec,
+        aten.upsample_linear1d.default,
+        aten.upsample_linear1d.vec,
+        aten.upsample_nearest1d.default,
+        aten.upsample_nearest1d.vec,
+        aten.upsample_nearest2d.default,
+        aten.upsample_nearest2d.vec,
+        aten.upsample_nearest3d.default,
+        aten.upsample_nearest3d.vec,
+        aten.upsample_trilinear3d.default,
+        aten.upsample_trilinear3d.vec,
+    }
+    # We can only preserve implemented ops
+    can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))
+    return exported_program.run_decompositions(decomp_table, _preserve_ops=can_preserve)
 
 
 def insert_type_promotion_nodes(

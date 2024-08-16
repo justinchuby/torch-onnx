@@ -1,3 +1,4 @@
+# mypy: allow-untyped-defs
 from __future__ import annotations
 
 import collections.abc
@@ -173,7 +174,7 @@ def _get_type_from_str(
             type_ = ir.OptionalType(type_)
         else:
             raise ValueError(f"Unknown type part: '{type_part}' in type '{type_str}'")
-    return type_
+    return type_  # type: ignore[return-value]
 
 
 def _convert_formal_parameter(
@@ -275,8 +276,10 @@ def _get_allowed_types_from_type_annotation(
         # Any tensor type
         return {ir.TensorType(dtype) for dtype in ir.DataType}
 
+    allowed_types: set[ir.TypeProtocol]
+
     if isinstance(type_, TypeVar):
-        allowed_types: set[ir.TypeProtocol] = set()
+        allowed_types = set()
         if constraints := type_.__constraints__:
             for constraint in constraints:
                 allowed_types.update(
@@ -293,7 +296,7 @@ def _get_allowed_types_from_type_annotation(
         # A single tensor type like INT64, FLOAT, etc.
         return {ir.TensorType(ir.DataType(type_.dtype))}
     if _is_optional(type_):
-        allowed_types: set[ir.TypeProtocol] = set()
+        allowed_types = set()
         subtypes = typing.get_args(type_)
         for subtype in subtypes:
             if subtype is type(None):
@@ -304,7 +307,7 @@ def _get_allowed_types_from_type_annotation(
 
     origin_type = typing.get_origin(type_)
     if origin_type is Union:
-        allowed_types: set[ir.TypeProtocol] = set()
+        allowed_types = set()
         subtypes = typing.get_args(type_)
         for subtype in subtypes:
             assert (
@@ -408,9 +411,9 @@ class OpSignature:
             params.append(
                 AttributeParameter(
                     name=param.name,
-                    type=ir.AttributeType(param.type),
+                    type=ir.AttributeType(param.type),  # type: ignore[arg-type]
                     required=param.required,
-                    default=default_attr,  # type: ignore
+                    default=default_attr,  # type: ignore[arg-type]
                 )
             )
 
@@ -493,7 +496,7 @@ class OpSignature:
                         type_constraints[type_constraint_name] = type_constraint
                     # 4. Create Parameter
                     params.append(
-                        Parameter(
+                        Parameter(  # type: ignore[arg-type]
                             name=param.name,
                             type_constraint=type_constraint,
                             required=param.default is inspect.Parameter.empty,
@@ -516,7 +519,7 @@ class OpSignature:
                 # Multiple returns
                 return_types = typing.get_args(return_type)
             else:
-                return_types = [return_type]
+                return_types = [return_type]  # type: ignore[assignment]
 
             for i, return_type_i in enumerate(return_types):
                 if (

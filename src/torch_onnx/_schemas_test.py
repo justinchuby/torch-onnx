@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
+# mypy: allow-untyped-defs
 from __future__ import annotations
 
 import unittest

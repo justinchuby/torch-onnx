@@ -62,10 +62,11 @@ is_formatter = true
 [[linter]]
 code = 'MYPY'
 include_patterns = [
-    '**/*.py',
-    '**/*.pyi',
+    'src/**/*.py',
+    'src/**/*.pyi',
 ]
 exclude_patterns = [
+    '**/*_test.py',
 ]
 command = [
     'python',

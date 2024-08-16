@@ -1,4 +1,5 @@
 """Subclass of ir.Value that supports Python operators."""
+# mypy: allow-untyped-defs
 
 from __future__ import annotations
 

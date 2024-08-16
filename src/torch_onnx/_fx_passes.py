@@ -22,8 +22,11 @@ def decompose_with_registry(
 
     This function is needed so it shows clearly on the profiler results.
     """
-    decomp_table = _decomp.create_onnx_friendly_decomposition_table(registry)
-    return exported_program.run_decompositions(decomp_table)
+    decomp_table = _decomp.full_decomposition_table()
+    registered_ops = _decomp.get_onnx_implemented_overloads(registry)
+    return exported_program.run_decompositions(
+        decomp_table, _preserve_ops=tuple(registered_ops)
+    )
 
 
 def insert_type_promotion_nodes(

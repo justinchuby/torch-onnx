@@ -27,7 +27,7 @@ def _torch_older_than(version: str) -> bool:
 
 
 # The _preserve_ops argument is only available in torch>=2.5
-_TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = _torch_older_than("2.5")
+_TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = not _torch_older_than("2.5")
 
 
 def decompose_with_registry(

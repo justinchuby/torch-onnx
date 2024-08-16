@@ -66,6 +66,7 @@ include_patterns = [
     'src/**/*.pyi',
 ]
 exclude_patterns = [
+    '**/*_test.py',
 ]
 command = [
     'python',

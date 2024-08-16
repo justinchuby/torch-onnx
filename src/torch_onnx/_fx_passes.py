@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import packaging.version
 import torch
 import torch.export
 import torch.fx
 from torch.onnx._internal.fx import diagnostics, passes
-import packaging.version
 
 from torch_onnx import _decomp, _registration
 
@@ -42,22 +42,23 @@ def decompose_with_registry(
         # Try to preserve some known CompositeImplicitAutograd ops
         aten = torch.ops.aten
         to_preserve = {
+            aten._upsample_bilinear2d_aa.default,
             aten._upsample_nearest_exact1d.vec,
             aten._upsample_nearest_exact2d.vec,
             aten._upsample_nearest_exact3d.vec,
             aten.linear.default,
-            aten.upsample_bilinear2d_aa.default,
             aten.upsample_bilinear2d.default,
-            aten.upsample_linear1d_aa.default,
+            aten.upsample_bilinear2d.vec,
             aten.upsample_linear1d.default,
+            aten.upsample_linear1d.vec,
             aten.upsample_nearest1d.default,
             aten.upsample_nearest1d.vec,
             aten.upsample_nearest2d.default,
             aten.upsample_nearest2d.vec,
             aten.upsample_nearest3d.default,
             aten.upsample_nearest3d.vec,
-            aten.upsample_trilinear3d_aa.default,
             aten.upsample_trilinear3d.default,
+            aten.upsample_trilinear3d.vec,
         }
         # We can only preserve implemented ops
         can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))

@@ -18,8 +18,8 @@ def main():
     ).eval()
     data = torch.randn(1, 4, 224, 224, 128)
 
-    program = torch.onnx.export(model, (data,))
-    print(program)
+    # Check that the upsample op is not decomposed
+    torch.onnx.export(model, (data,), "upsample.onnx")
 
 
 if __name__ == "__main__":

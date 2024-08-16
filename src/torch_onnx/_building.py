@@ -7,6 +7,7 @@ torch.ops.aten.add(1.0, Tensor) as well, which means we need a mechanism to`
 """
 
 # mypy: allow-untyped-defs
+# mypy: disable-error-code=union-attr
 from __future__ import annotations
 
 import copy

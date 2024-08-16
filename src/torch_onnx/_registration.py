@@ -251,6 +251,7 @@ class ONNXRegistry:
             A list of OnnxDecompMeta corresponding to the given name, or None if
             the name is not in the registry.
         """
+        target_or_name: str | TorchOp
         if isinstance(target, torch._ops.OpOverload):
             # Get the qualified name of the aten op because torch._ops.OpOverload lookup in
             # a dictionary is unreliable for some reason.

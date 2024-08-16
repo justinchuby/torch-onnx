@@ -174,7 +174,7 @@ def _get_type_from_str(
             type_ = ir.OptionalType(type_)
         else:
             raise ValueError(f"Unknown type part: '{type_part}' in type '{type_str}'")
-    return type_
+    return type_  # type: ignore[return-value]
 
 
 def _convert_formal_parameter(
@@ -275,6 +275,8 @@ def _get_allowed_types_from_type_annotation(
     if type_ is onnxscript.onnx_types.TensorType:
         # Any tensor type
         return {ir.TensorType(dtype) for dtype in ir.DataType}
+
+    allowed_types: set[ir.TypeProtocol]
 
     if isinstance(type_, TypeVar):
         allowed_types: set[ir.TypeProtocol] = set()

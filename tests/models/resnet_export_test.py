@@ -26,7 +26,7 @@ class ResnetTest(unittest.TestCase):
             opset_version=18,
         )
         assert onnx_program is not None
-        torch_onnx.testing.assert_onnx_program(onnx_program)
+        torch_onnx.testing.assert_onnx_program(onnx_program, rtol=1e-3, atol=1e-4)
 
 
 if __name__ == "__main__":

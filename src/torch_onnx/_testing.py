@@ -15,12 +15,22 @@ from torch_onnx import _onnx_program
 def assert_onnx_program(
     program: _onnx_program.ONNXProgram,
     *,
-    atol: float | None = None,
     rtol: float | None = None,
+    atol: float | None = None,
     args: tuple[Any, ...] | None = None,
     kwargs: dict[str, Any] | None = None,
 ) -> None:
-    """Assert that the ONNX model produces the same output as the PyTorch ExportedProgram."""
+    """Assert that the ONNX model produces the same output as the PyTorch ExportedProgram.
+
+    Args:
+        program: The :class:`torch_onnx.ONNXProgram` to verify.
+        rtol: Relative tolerance.
+        atol: Absolute tolerance.
+        args: The positional arguments to pass to the program.
+            If None, the default example inputs in the ExportedProgram will be used.
+        kwargs: The keyword arguments to pass to the program.
+            If None, the default example inputs in the ExportedProgram will be used.
+    """
     exported_program = program.exported_program
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs
@@ -39,10 +49,10 @@ def assert_onnx_program(
     onnx_outputs = program(*args, **kwargs)
     # TODO(justinchuby): Include output names in the error message
     torch.testing.assert_close(
-        tuple(torch_outputs),
         tuple(onnx_outputs),
-        atol=atol,
+        tuple(torch_outputs),
         rtol=rtol,
+        atol=atol,
         equal_nan=True,
         check_device=False,
     )

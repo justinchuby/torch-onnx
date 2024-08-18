@@ -17,7 +17,7 @@ class ResnetTest(unittest.TestCase):
 
         resnet18 = torchvision.models.resnet18(
             weights=torchvision.models.ResNet18_Weights.DEFAULT
-        )
+        ).eval()
         sample_input = (torch.randn(4, 3, 224, 224),)
         onnx_program = torch.onnx.export(
             resnet18,
@@ -26,6 +26,7 @@ class ResnetTest(unittest.TestCase):
             opset_version=18,
         )
         assert onnx_program is not None
+        print(onnx_program)
         torch_onnx.testing.assert_onnx_program(onnx_program, rtol=1e-3, atol=1e-4)
 
 

@@ -8,13 +8,6 @@ from torch.onnx._internal.fx import diagnostics, passes
 
 from torch_onnx import _decomp, _registration
 
-_ATEN_ASSERTION_TARGETS = frozenset(
-    {
-        torch.ops.aten.sym_constrain_range_for_size.default,
-        torch.ops.aten._assert_async.msg,
-    }
-)
-
 
 def _torch_older_than(version: str) -> bool:
     """Returns True if the torch version is older than the given version."""
@@ -63,8 +56,12 @@ def insert_type_promotion_nodes(
 
 def remove_assertion_nodes(graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
     """Remove all assertion and check nodes from the FX graph"""
+    aten_assertion_targets = {
+        torch.ops.aten.sym_constrain_range_for_size.default,
+        torch.ops.aten._assert_async.msg,
+    }
     for node in graph_module.graph.nodes:
-        if node.op == "call_function" and node.target in _ATEN_ASSERTION_TARGETS:
+        if node.op == "call_function" and node.target in aten_assertion_targets:
             graph_module.graph.erase_node(node)
     graph_module.recompile()
     return graph_module

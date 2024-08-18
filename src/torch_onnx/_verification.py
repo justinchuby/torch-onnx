@@ -5,7 +5,7 @@ import dataclasses
 from typing import Any
 
 import torch
-from torch.utils import _pytree as pytree
+from torch.utils import _pytree
 
 from torch_onnx import _onnx_program
 
@@ -55,7 +55,7 @@ def verify_onnx_program(
     if kwargs is None:
         kwargs = {}
     torch_module = exported_program.module()
-    torch_outputs, _ = pytree.tree_flatten(torch_module(*args, **kwargs))
+    torch_outputs, _ = _pytree.tree_flatten(torch_module(*args, **kwargs))
     onnx_outputs = onnx_program(*args, **kwargs)
     results = []
     for torch_output, onnx_output, output_val in zip(

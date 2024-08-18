@@ -20,7 +20,7 @@ def main():
     )
     # program.save("llama31.onnx", include_initializers=False)
 
-    torch_onnx.verify_onnx_program(program)
+    torch_onnx.testing.assert_onnx_program(program)
 
 
 if __name__ == "__main__":

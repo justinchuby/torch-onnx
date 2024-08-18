@@ -7,8 +7,10 @@ __all__ = [
     "patch_torch",
     "unpatch_torch",
     "verify_onnx_program",
+    "testing",
 ]
 
+from . import _testing as testing
 from ._analysis import analyze
 from ._core import export, exported_program_to_ir
 from ._onnx_program import ONNXProgram

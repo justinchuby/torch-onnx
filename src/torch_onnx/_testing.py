@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["assert_onnx_program"]
+
 from typing import Any
 
 import torch
@@ -18,8 +20,7 @@ def assert_onnx_program(
     args: tuple[Any, ...] | None = None,
     kwargs: dict[str, Any] | None = None,
 ) -> None:
-    """Asserts that the ONNX model produces the same output as the PyTorch ExportedProgram."""
-
+    """Assert that the ONNX model produces the same output as the PyTorch ExportedProgram."""
     exported_program = program.exported_program
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs

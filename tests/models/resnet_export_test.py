@@ -3,7 +3,6 @@ import unittest
 import torch
 import torch_onnx
 import torchvision
-from torch_onnx import _verification
 
 
 class ResnetTest(unittest.TestCase):
@@ -26,7 +25,8 @@ class ResnetTest(unittest.TestCase):
             "resnet18.onnx",
             opset_version=18,
         )
-        _verification.verify_onnx_program(onnx_program)
+        assert onnx_program is not None
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
 
 if __name__ == "__main__":

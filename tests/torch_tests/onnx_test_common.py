@@ -182,7 +182,7 @@ class DecorateMeta:
     test_behavior: str
     matcher: Callable[[Any], bool] | None = None
     enabled_if: bool = True
-    model_type: pytorch_test_common.TorchModelType | None = None
+    model_type: str | None = None
 
     def contains_opset(self, opset: int) -> bool:
         if self.opsets is None:
@@ -202,7 +202,7 @@ def xfail(
     dtypes: Collection[torch.dtype] | None = None,
     matcher: Callable[[Any], bool] | None = None,
     enabled_if: bool = True,
-    model_type: pytorch_test_common.TorchModelType | None = None,
+    model_type: str | None = None,
 ):
     """Expects a OpInfo test to fail.
 
@@ -240,7 +240,7 @@ def skip(
     dtypes: Collection[torch.dtype] | None = None,
     matcher: Callable[[Any], Any] | None = None,
     enabled_if: bool = True,
-    model_type: pytorch_test_common.TorchModelType | None = None,
+    model_type: str | None = None,
 ):
     """Skips a test case in OpInfo that we don't care about.
 
@@ -279,7 +279,7 @@ def skip_slow(
     opsets: Collection[int | Callable[[int], bool]] | None = None,
     dtypes: Collection[torch.dtype] | None = None,
     matcher: Callable[[Any], Any] | None = None,
-    model_type: pytorch_test_common.TorchModelType | None = None,
+    model_type: str | None = None,
 ):
     """Skips a test case in OpInfo that is too slow.
 

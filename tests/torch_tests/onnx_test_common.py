@@ -4,13 +4,8 @@
 from __future__ import annotations
 
 import contextlib
-import copy
 import dataclasses
-import io
-import logging
-import os
 import unittest
-import warnings
 from typing import (
     Any,
     Callable,
@@ -25,10 +20,7 @@ from typing import (
 import numpy as np
 import onnxruntime
 import pytest
-import pytorch_test_common
 import torch
-import torch_onnx
-import torch_onnx.errors
 from torch.testing._internal import common_utils
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.types import Number
@@ -39,28 +31,6 @@ _InputArgsType = Optional[
     Union[torch.Tensor, int, float, bool, Sequence[Any], Mapping[str, Any]]
 ]
 _OutputsType = Sequence[_NumericType]
-
-
-def run_model_test(test_suite: _TestONNXRuntime, *args, **kwargs):
-    options = verification.VerificationOptions()
-
-    kwargs["opset_version"] = test_suite.opset_version
-    kwargs["keep_initializers_as_inputs"] = test_suite.keep_initializers_as_inputs
-    if hasattr(test_suite, "check_shape"):
-        options.check_shape = test_suite.check_shape
-    if hasattr(test_suite, "check_dtype"):
-        options.check_dtype = test_suite.check_dtype
-
-    names = {f.name for f in dataclasses.fields(options)}
-    keywords_to_pop = []
-    for k, v in kwargs.items():
-        if k in names:
-            setattr(options, k, v)
-            keywords_to_pop.append(k)
-    for k in keywords_to_pop:
-        kwargs.pop(k)
-
-    return verification.verify(*args, options=options, **kwargs)
 
 
 def assert_dynamic_shapes(onnx_program: torch.onnx.ONNXProgram, dynamic_shapes: bool):
@@ -137,6 +107,7 @@ class _TestONNXRuntime(common_utils.TestCase):
 
         # TODO: Here
         return
+
 
 # The min onnx opset version to test for
 FX_MIN_ONNX_OPSET_VERSION = 18

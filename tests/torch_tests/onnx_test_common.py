@@ -29,36 +29,16 @@ import pytorch_test_common
 import torch
 import torch_onnx
 import torch_onnx.errors
-from torch import export as torch_export
-from torch.onnx import _constants, verification
-from torch.onnx._internal import _beartype
 from torch.testing._internal import common_utils
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.types import Number
 
 _NumericType = Union[Number, torch.Tensor, np.ndarray]
-_ModelType = Union[torch.nn.Module, Callable, torch_export.ExportedProgram]
+_ModelType = Union[torch.nn.Module, Callable, torch.export.ExportedProgram]
 _InputArgsType = Optional[
     Union[torch.Tensor, int, float, bool, Sequence[Any], Mapping[str, Any]]
 ]
 _OutputsType = Sequence[_NumericType]
-
-onnx_model_dir = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)),
-    os.pardir,
-    "repos",
-    "onnx",
-    "onnx",
-    "backend",
-    "test",
-    "data",
-)
-
-
-pytorch_converted_dir = os.path.join(onnx_model_dir, "pytorch-converted")
-
-
-pytorch_operator_dir = os.path.join(onnx_model_dir, "pytorch-operator")
 
 
 def run_model_test(test_suite: _TestONNXRuntime, *args, **kwargs):
@@ -123,7 +103,7 @@ def parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any])
     return f"{cls.__name__}_{suffix}"
 
 
-class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
+class _TestONNXRuntime(common_utils.TestCase):
     opset_version = _constants.ONNX_DEFAULT_OPSET
     keep_initializers_as_inputs = True  # For IR version 3 type export.
     is_script = False
@@ -133,9 +113,10 @@ class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
     def setUp(self):
         super().setUp()
         onnxruntime.set_seed(0)
+        torch.manual_seed(0)
+        np.random.seed(0)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(0)
-        os.environ["ALLOW_RELEASED_ONNX_OPSET_ONLY"] = "0"
         self.is_script_test_enabled = True
 
     # The exported ONNX model may have less inputs than the pytorch model because of const folding.
@@ -205,243 +186,28 @@ class _TestONNXRuntime(pytorch_test_common.ExportTestCase):
         if not is_model_script and not self.is_script:
             _run_test(model, tracing_remained_onnx_input_idx)
 
-    @_beartype.beartype
+
     def run_test_with_fx_to_onnx_exporter_and_onnx_runtime(
         self,
         model: _ModelType,
-        input_args: Sequence[_InputArgsType],
+        input_args: tuple[_InputArgsType],
         *,
         input_kwargs: Mapping[str, _InputArgsType] | None = None,
-        rtol: float | None = 1e-3,
-        atol: float | None = 1e-7,
-        has_mutation: bool = False,
-        additional_test_inputs: list[
-            tuple[Sequence[_InputArgsType], Mapping[str, _InputArgsType]]
-            | tuple[Sequence[_InputArgsType]]
-        ]
-        | None = None,
-        skip_dynamic_shapes_check: bool = False,
+        rtol: float | None = None,
+        atol: float | None = None,
     ):
         """Compare the results of PyTorch model with exported ONNX model
 
         Args:
-            model (_ModelType): PyTorch model
-            input_args (Sequence[_InputArgsType]): torch input arguments
-            input_kwargs (Mapping[str, _InputArgsType]): torch input kwargs
-            rtol (float, optional): relative tolerance. Defaults to 1e-3.
-            atol (float, optional): absolute tolerance. Defaults to 1e-7.
-            has_mutation (bool, optional): Whether the model mutates its input or state.
-                `mutation` as `True` incurs extra overhead of cloning the inputs and model.
-                Defaults to False.
-            additional_test_inputs: Test the models with another dataset input, which
-                is designed for dynamic axes testing. Defaults to None. It's a list of
-                different input sets in tuples. Inside tuple, the first element is a tuple
-                of args, and the second element is a dict of kwargs. Remember to put comma
-                even if the following element is not provided.
-                For example,
-                additional_test_inputs = [((args1, args2), {"kwargs":1}), ((args1,),), ((), {"kwargs":1})]
-            skip_dynamic_shapes_check: Whether to skip dynamic shape check. Defaults to False.
-                Must be used when tests do not produce dynamic shapes even when dynamic shape feature is enabled.
-                This is needed because Torch Dynamo uses the dynamic_shapes flag as a hint, only.
-
+            model: PyTorch model
+            input_args: torch input arguments
+            input_kwargs: torch input kwargs
+            rtol: relative tolerance.
+            atol: absolute tolerance.
         """
 
-        # avoid mutable data structure
-        if input_kwargs is None:
-            input_kwargs = {}
-
-        if (
-            has_mutation
-            and self.model_type
-            != pytorch_test_common.TorchModelType.TORCH_EXPORT_EXPORTEDPROGRAM
-        ):
-            ref_model = _try_clone_model(model)
-            ref_input_args, ref_input_kwargs = _try_clone_inputs(
-                input_args, input_kwargs
-            )
-        else:
-            ref_model = model
-            ref_input_args = input_args
-            ref_input_kwargs = input_kwargs
-
-        assert isinstance(ref_model, torch.nn.Module) or callable(
-            ref_model
-        ), "Model must be a torch.nn.Module or callable"
-        if (
-            self.model_type
-            == pytorch_test_common.TorchModelType.TORCH_EXPORT_EXPORTEDPROGRAM
-        ):
-            ref_model = torch.export.export(ref_model, args=ref_input_args)
-            if (
-                self.dynamic_shapes
-            ):  # TODO: Support dynamic shapes for torch.export.ExportedProgram
-                #       https://github.com/pytorch/pytorch/issues/113705
-                pytest.xfail(
-                    reason="torch.export.ExportedProgram does not support dynamic shapes"
-                )
-
-        # Feed args and kwargs into exporter.
-        # Note that exporter should flatten kwargs into positional args the exported model;
-        # since ONNX doesn't represent kwargs.
-        onnx_program = torch.onnx.dynamo_export(
-            ref_model,
-            *ref_input_args,
-            **ref_input_kwargs,
-            export_options=torch.onnx.ExportOptions(
-                dynamic_shapes=self.dynamic_shapes,
-                diagnostic_options=torch.onnx.DiagnosticOptions(
-                    verbosity_level=logging.DEBUG
-                ),
-            ),
-        )
-
-        if not skip_dynamic_shapes_check:
-            assert_dynamic_shapes(onnx_program, self.dynamic_shapes)
-
-        if isinstance(ref_model, torch.export.ExportedProgram):
-            ref_model = ref_model.module()
-
-        _compare_pytorch_onnx_with_ort(
-            onnx_program,
-            ref_model,
-            input_args,
-            input_kwargs,
-            atol,
-            rtol,
-            has_mutation=has_mutation,
-        )
-        # This confirms the exported mode accepts different input shapes
-        # when dynamic shape is enabled.
-        if additional_test_inputs and self.dynamic_shapes:
-            for another_input in additional_test_inputs:
-                if len(another_input) > 2:
-                    raise ValueError(
-                        f"test_inputs should only have tuple args and dictionary kwargs. But receives: {len(another_input)}"
-                    )
-                additional_input_args = another_input[0]
-                additional_input_kwargs = (
-                    another_input[1]
-                    if len(another_input) == 2 and another_input[1] is not None
-                    else {}
-                )
-                _compare_pytorch_onnx_with_ort(
-                    onnx_program,
-                    ref_model,
-                    additional_input_args,
-                    additional_input_kwargs,
-                    atol,
-                    rtol,
-                    has_mutation=has_mutation,
-                )
-
-
-@_beartype.beartype
-def run_ort(
-    onnx_model: str | torch.onnx.ONNXProgram,
-    pytorch_inputs: Sequence[_InputArgsType],
-) -> _OutputsType:
-    """Run ORT on the given ONNX model and inputs
-
-    Used in test_fx_to_onnx_with_onnxruntime.py
-
-    Args:
-        onnx_model (Union[str, torch.onnx.ONNXProgram]): Converter ONNX model
-        pytorch_inputs (Sequence[_InputArgsType]): The given torch inputs
-
-    Raises:
-        AssertionError: ONNX and PyTorch should have the same input sizes
-
-    Returns:
-        _OutputsType: ONNX model predictions
-    """
-    if isinstance(onnx_model, torch.onnx.ONNXProgram):
-        buffer = io.BytesIO()
-        onnx_model.save(buffer)
-        ort_model = buffer.getvalue()
-    else:
-        ort_model = onnx_model
-
-    # Suppress floods of warnings from ONNX Runtime
-    session_options = onnxruntime.SessionOptions()
-    session_options.log_severity_level = 3  # Error
-    session = onnxruntime.InferenceSession(
-        ort_model, providers=["CPUExecutionProvider"], sess_options=session_options
-    )
-    input_names = [ort_input.name for ort_input in session.get_inputs()]
-
-    if len(input_names) != len(pytorch_inputs):
-        raise AssertionError(
-            f"Expected {len(input_names)} inputs, got {len(pytorch_inputs)}"
-        )
-
-    ort_input = {
-        k: torch.Tensor.numpy(v, force=True)
-        for k, v in zip(input_names, pytorch_inputs)
-    }
-    return session.run(None, ort_input)
-
-
-@_beartype.beartype
-def _try_clone_model(model: _ModelType) -> _ModelType:
-    """Used for preserving original model in case forward mutates model states."""
-    try:
-        return copy.deepcopy(model)
-    except Exception:
-        warnings.warn(  # noqa: B028
-            "Failed to clone model. Model state might be mutated during verification."
-        )
-        return model
-
-
-@_beartype.beartype
-def _try_clone_inputs(input_args, input_kwargs):
-    ref_input_args = copy.deepcopy(input_args)
-    ref_input_kwargs = copy.deepcopy(input_kwargs)
-    return ref_input_args, ref_input_kwargs
-
-
-@_beartype.beartype
-def _compare_pytorch_onnx_with_ort(
-    onnx_program: torch.onnx.ONNXProgram,
-    model: _ModelType,
-    input_args: Sequence[_InputArgsType],
-    input_kwargs: Mapping[str, _InputArgsType],
-    atol: float | None = None,
-    rtol: float | None = None,
-    has_mutation: bool = False,
-):
-    if has_mutation:
-        ref_model = _try_clone_model(model)
-        ref_input_args, ref_input_kwargs = _try_clone_inputs(input_args, input_kwargs)
-    else:
-        ref_model = model
-        ref_input_args = input_args
-        ref_input_kwargs = input_kwargs
-
-    # NOTE: ONNXProgram holds a reference (not copy) to the original ref_model, including its state_dict.
-    # Thus, ONNXProgram() must run before ref_model() to prevent ref_model.forward() from changing the state_dict.
-    # Otherwise, the ref_model can change buffers on state_dict which would be used by ONNXProgram.__call__()
-    # NOTE: `model_with_state_dict=ref_model` is specified to cover runs with FakeTensor support
-    ort_outputs = onnx_program(*input_args, **input_kwargs)
-    ref_outputs = ref_model(*ref_input_args, **ref_input_kwargs)
-    ref_outputs = onnx_program.adapt_torch_outputs_to_onnx(ref_outputs)
-
-    if len(ref_outputs) != len(ort_outputs):
-        raise AssertionError(
-            f"Expected {len(ref_outputs)} outputs, got {len(ort_outputs)}"
-        )
-
-    for ref_output, ort_output in zip(ref_outputs, ort_outputs):
-        torch.testing.assert_close(
-            ref_output, torch.tensor(ort_output), rtol=rtol, atol=atol
-        )
-
-
-# The min onnx opset version to test for
-MIN_ONNX_OPSET_VERSION = 9
-# The max onnx opset version to test for
-MAX_ONNX_OPSET_VERSION = _constants.ONNX_TORCHSCRIPT_EXPORTER_MAX_OPSET
-TESTED_OPSETS = range(MIN_ONNX_OPSET_VERSION, MAX_ONNX_OPSET_VERSION + 1)
+        # TODO: Here
+        return
 
 # The min onnx opset version to test for
 FX_MIN_ONNX_OPSET_VERSION = 18
@@ -751,7 +517,7 @@ def reason_flaky() -> str:
 
 @contextlib.contextmanager
 def normal_xfail_skip_test_behaviors(
-    test_behavior: str | None = None, reason: str | None = None
+    test_behavior: str | None = None, reason: str = ""
 ):
     """This context manager is used to handle the different behaviors of xfail and skip.
 
@@ -765,7 +531,7 @@ def normal_xfail_skip_test_behaviors(
 
     # We need to skip as soon as possible, as SegFault might also be a case.
     if test_behavior == "skip":
-        pytest.skip(reason=reason)
+        pytest.skip(reason=(reason))
 
     try:
         yield

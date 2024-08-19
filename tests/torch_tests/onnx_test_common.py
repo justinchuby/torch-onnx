@@ -104,11 +104,8 @@ def parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any])
 
 
 class _TestONNXRuntime(common_utils.TestCase):
-    opset_version = _constants.ONNX_DEFAULT_OPSET
-    keep_initializers_as_inputs = True  # For IR version 3 type export.
+    opset_version = None
     is_script = False
-    check_shape = True
-    check_dtype = True
 
     def setUp(self):
         super().setUp()
@@ -119,75 +116,7 @@ class _TestONNXRuntime(common_utils.TestCase):
             torch.cuda.manual_seed_all(0)
         self.is_script_test_enabled = True
 
-    # The exported ONNX model may have less inputs than the pytorch model because of const folding.
-    # This mostly happens in unit test, where we widely use torch.size or torch.shape.
-    # So the output is only dependent on the input shape, not value.
-    # remained_onnx_input_idx is used to indicate which pytorch model input idx is remained in ONNX model.
     def run_test(
-        self,
-        model,
-        input_args,
-        input_kwargs=None,
-        rtol=1e-3,
-        atol=1e-7,
-        do_constant_folding=True,
-        dynamic_axes=None,
-        additional_test_inputs=None,
-        input_names=None,
-        output_names=None,
-        fixed_batch_size=False,
-        training=torch.onnx.TrainingMode.EVAL,
-        remained_onnx_input_idx=None,
-        verbose=False,
-    ):
-        def _run_test(m, remained_onnx_input_idx, flatten=True, ignore_none=True):
-            try:
-                return run_model_test(
-                    self,
-                    m,
-                    input_args=input_args,
-                    input_kwargs=input_kwargs,
-                    rtol=rtol,
-                    atol=atol,
-                    do_constant_folding=do_constant_folding,
-                    dynamic_axes=dynamic_axes,
-                    additional_test_inputs=additional_test_inputs,
-                    input_names=input_names,
-                    output_names=output_names,
-                    fixed_batch_size=fixed_batch_size,
-                    training=training,
-                    remained_onnx_input_idx=remained_onnx_input_idx,
-                    flatten=flatten,
-                    ignore_none=ignore_none,
-                    verbose=verbose,
-                )
-            except torch_onnx.errors.TorchExportError:
-                self.skipTest("torch.export errors are skipped")
-
-        if isinstance(remained_onnx_input_idx, dict):
-            scripting_remained_onnx_input_idx = remained_onnx_input_idx["scripting"]
-            tracing_remained_onnx_input_idx = remained_onnx_input_idx["tracing"]
-        else:
-            scripting_remained_onnx_input_idx = remained_onnx_input_idx
-            tracing_remained_onnx_input_idx = remained_onnx_input_idx
-
-        is_model_script = isinstance(
-            model, (torch.jit.ScriptModule, torch.jit.ScriptFunction)
-        )
-
-        if self.is_script_test_enabled and self.is_script:
-            script_model = model if is_model_script else torch.jit.script(model)
-            _run_test(
-                script_model,
-                scripting_remained_onnx_input_idx,
-                flatten=False,
-                ignore_none=False,
-            )
-        if not is_model_script and not self.is_script:
-            _run_test(model, tracing_remained_onnx_input_idx)
-
-
-    def run_test_with_fx_to_onnx_exporter_and_onnx_runtime(
         self,
         model: _ModelType,
         input_args: tuple[_InputArgsType],

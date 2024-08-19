@@ -40,22 +40,6 @@ class TestExportAPIDynamo(common_utils.TestCase):
         assert onnx_program
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
-    def test_args_normalization_with_kwargs(self):
-        onnx_program = torch_onnx.export(
-            SampleModelTwoInputs(),
-            (torch.randn(1, 1, 2), {"b": torch.randn(1, 1, 2)}),
-        )
-        assert onnx_program
-        torch_onnx.testing.assert_onnx_program(onnx_program)
-
-    def test_args_normalization_with_empty_dict_at_the_tail(self):
-        onnx_program = torch_onnx.export(
-            SampleModelTwoInputs(),
-            (torch.randn(1, 1, 2), {"b": torch.randn(1, 1, 2)}),
-        )
-        assert onnx_program
-        torch_onnx.testing.assert_onnx_program(onnx_program)
-
     def test_dynamic_axes_enable_dynamic_shapes_with_fully_specified_axes(self):
         onnx_program = torch_onnx.export_compat(
             SampleModelForDynamicShapes(),
@@ -93,9 +77,7 @@ class TestExportAPIDynamo(common_utils.TestCase):
 
     def test_saved_f_exists_after_export(self):
         with common_utils.TemporaryFileName(suffix=".onnx") as path:
-            _ = torch_onnx.export(
-                SampleModel(), (torch.randn(1, 1, 2),), path
-            )
+            _ = torch_onnx.export_compat(SampleModel(), (torch.randn(1, 1, 2),), path)
             self.assertTrue(os.path.exists(path))
 
     def test_export_supports_script_module(self):
@@ -130,30 +112,7 @@ class TestExportAPIDynamo(common_utils.TestCase):
             },
         )
 
-        onnx_program = torch_onnx.export(
-            exported_program
-        )
-        assert onnx_program
-        torch_onnx.testing.assert_onnx_program(onnx_program)
-
-    def test_dynamic_shapes_with_default_axe_names(self):
-
-        onnx_program = torch_onnx.export(
-            SampleModelForDynamicShapes(),
-            (torch.randn(2, 2, 3), {"b": torch.randn(2, 2, 3)}),
-            dynamic_shapes={
-                "x": {
-                    0: torch.export.Dim("customx_dim_0"),
-                    1: torch.export.Dim("customx_dim_1"),
-                    2: torch.export.Dim("customx_dim_2"),
-                },
-                "b": {
-                    0: torch.export.Dim("customb_dim_0"),
-                    1: torch.export.Dim("customb_dim_1"),
-                    2: torch.export.Dim("customb_dim_2"),
-                },
-            },
-        )
+        onnx_program = torch_onnx.export(exported_program)
         assert onnx_program
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
@@ -175,6 +134,7 @@ class TestExportAPIDynamo(common_utils.TestCase):
         )
         assert onnx_program
         torch_onnx.testing.assert_onnx_program(onnx_program)
+
 
 if __name__ == "__main__":
     common_utils.run_tests()

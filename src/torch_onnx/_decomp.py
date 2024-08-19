@@ -41,7 +41,8 @@ def get_onnx_implemented_overloads(
 def get_preserve_ops() -> set[torch._ops.OpOverload]:
     """Return a set of CompositeImplicitAutograd ops that should be preserved."""
     aten = torch.ops.aten
-    # Keep this list sorted
+    # NOTE: Keep this list sorted
+    # NOTE: Do _not_ retain aten.linear as its decomposition is addmm, which is Gemm and is preferable for accuracy
     return {
         aten._upsample_bilinear2d_aa.default,
         aten._upsample_nearest_exact1d.vec,
@@ -49,7 +50,6 @@ def get_preserve_ops() -> set[torch._ops.OpOverload]:
         aten._upsample_nearest_exact3d.vec,
         aten.group_norm.default,
         aten.instance_norm.default,
-        aten.linear.default,
         aten.upsample_bilinear2d.default,
         aten.upsample_bilinear2d.vec,
         aten.upsample_linear1d.default,

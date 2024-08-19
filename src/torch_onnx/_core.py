@@ -919,7 +919,7 @@ def export(
     | torch.fx.GraphModule
     | torch.jit.ScriptModule
     | torch.jit.ScriptFunction,
-    args: tuple[Any, ...],
+    args: tuple[Any, ...] = (),
     kwargs: dict[str, Any] | None = None,
     *,
     registry: _registration.ONNXRegistry | None = None,

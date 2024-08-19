@@ -32,6 +32,12 @@ def assert_onnx_program(
             If None, the default example inputs in the ExportedProgram will be used.
     """
     exported_program = program.exported_program
+    if exported_program is None:
+        raise ValueError(
+            "The ONNXProgram does not contain an ExportedProgram. "
+            "To verify the ONNX program, initialize ONNXProgram with an ExportedProgram, "
+            "or assign the ExportedProgram to the ONNXProgram.exported_program attribute."
+        )
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs
         if exported_program.example_inputs is None:

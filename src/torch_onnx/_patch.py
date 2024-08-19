@@ -249,7 +249,6 @@ def _torch_onnx_dynamo_export(
 
 
 _original_torch_onnx_export = torch.onnx.export
-_original_torch_onnx_utils_export = torch.onnx.utils._export
 _original_torch_onnx_dynamo_export = torch.onnx.dynamo_export
 
 

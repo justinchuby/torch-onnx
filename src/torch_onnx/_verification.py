@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import logging
 import operator
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -14,6 +15,9 @@ from torch_onnx import _core, _onnx_program, _testing
 
 if TYPE_CHECKING:
     import torch.fx
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass
@@ -268,8 +272,11 @@ def minimize_inaccurate_subgraph(
             onnx_model = _core.exported_program_to_ir(exported_program)
             onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
             _testing.assert_onnx_program(onnx_program, rtol=rtol, atol=atol)
-        except Exception:
+        except AssertionError:
             return True
+        except Exception:
+            logger.exception("Error during verification")
+            return False
         return False
 
     # Get the subgraph with error

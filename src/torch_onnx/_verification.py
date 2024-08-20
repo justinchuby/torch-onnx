@@ -1,13 +1,19 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
+import copy
 import dataclasses
-from typing import Any
+import operator
+from typing import TYPE_CHECKING, Any, Sequence
 
 import torch
+from torch._functorch import fx_minifier
 from torch.utils import _pytree
 
-from torch_onnx import _onnx_program
+from torch_onnx import _core, _onnx_program, _testing
+
+if TYPE_CHECKING:
+    import torch.fx
 
 
 @dataclasses.dataclass
@@ -19,6 +25,20 @@ class VerificationInfo:
     actual_dtype: torch.dtype
     # NOTE: We don't need to include shape because the expected shape is already known
     # and checked by the runtime
+
+
+@dataclasses.dataclass
+class SearchResult:
+    graph_module: torch.fx.GraphModule
+    inputs: Sequence[Any]
+
+    @property
+    def graph(self) -> torch.fx.Graph:
+        return self.graph_module.graph
+
+    @graph.setter
+    def graph(self, fx_g: torch.fx.Graph):
+        self.graph_module.graph = fx_g
 
 
 def _compare_tensors(
@@ -75,3 +95,204 @@ def verify_onnx_program(
             )
         )
     return results
+
+
+def _exported_program_to_fx_graph_module_and_inputs(
+    exported_program: torch.export.ExportedProgram,
+):
+    fx_gm = exported_program.graph_module
+    fx_inputs = _pytree.tree_map(
+        torch.tensor,
+        exported_program._graph_module_flat_inputs(*exported_program.example_inputs),
+    )
+    return fx_gm, fx_inputs
+
+
+def _normalize_getitem_nodes(fx_gm: torch.fx.GraphModule):
+    """This function turns all operator getitem nodes in ExportedProgram FX graph to
+
+    new nodes composed of "computation + getitem". The normalization duplicates
+    some computations in the graph but would make the graph more friendly for
+    partitioning in FX minifier.
+    """
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py#L191
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
+
+    fx_gm = copy.deepcopy(fx_gm)
+    graph = fx_gm.graph
+    for n in graph.nodes:
+        if n.target != operator.getitem:
+            continue
+
+        src_n, key = n.args
+        assert n.op == "call_function"
+        with graph.inserting_after(n):
+            new_n = graph.call_function(
+                lambda src_target, key, args, kwargs: operator.getitem(
+                    src_target(*args, **kwargs), key
+                ),
+                (src_n.target, key, src_n.args, src_n.kwargs),
+            )
+            n.replace_all_uses_with(new_n)
+
+    graph.eliminate_dead_code()
+    fx_gm.graph = graph
+    return fx_gm
+
+
+def _erase_unused_inputs(fx_gm: torch.fx.GraphModule, inputs: Sequence[torch.Tensor]):
+    fx_gm = copy.deepcopy(fx_gm)
+    inputs = tuple(inputs)
+    args = fx_gm.graph.process_inputs(*inputs)
+    args_iter = iter(args)
+
+    graph = fx_gm.graph
+    new_inputs = []
+    for n in graph.nodes:
+        if n.op == "placeholder":
+            if n.target.startswith("*"):
+                new_inputs += list(args_iter)
+            elif len(n.users) > 0:
+                new_inputs.append(next(args_iter))
+            else:
+                graph.erase_node(n)
+                next(args_iter)
+    new_inputs = tuple(new_inputs)
+    fx_gm.graph = graph
+    return fx_gm, new_inputs
+
+
+def _lift_dead_ops_to_outputs(fx_gm: torch.fx.GraphModule):
+    fx_gm = copy.deepcopy(fx_gm)
+
+    new_outputs = []
+    graph = fx_gm.graph
+    nodes = list(graph.nodes)
+    assert nodes[-1].op == "output" and sum(n.op == "output" for n in nodes) == 1
+    for node in nodes:
+        if node.op not in ("placeholder", "output") and len(node.users) == 0:
+            new_outputs.append(node)
+
+    output_node = nodes[-1]
+    # FX output node returns the first arg as is.
+    # ref: https://github.com/pytorch/pytorch/blob/1a578df57cc0f417f671634e564c62ef5d9a97e2/torch/fx/interpreter.py#L337
+    new_outputs, _ = _pytree.tree_flatten([new_outputs, output_node.args[0]])
+    output_node.update_arg(0, tuple(new_outputs))
+
+    fx_gm.graph = graph
+    return fx_gm
+
+
+def _normalize_minified_fx_gm(
+    fx_gm: torch.fx.GraphModule, inputs: Sequence[torch.Tensor]
+):
+    fx_gm, inputs = _erase_unused_inputs(fx_gm, inputs)
+    fx_gm = _lift_dead_ops_to_outputs(fx_gm)
+    return fx_gm, inputs
+
+
+def _erase_trivial_outputs(fx_gm: torch.fx.GraphModule):
+    """Remove output nodes directly connected to an input node."""
+    fx_gm = copy.deepcopy(fx_gm)
+
+    graph = fx_gm.graph
+    nodes = list(graph.nodes)
+    assert nodes[-1].op == "output" and sum(n.op == "output" for n in nodes) == 1
+    output_node = nodes[-1]
+
+    outputs, _ = _pytree.tree_flatten(output_node.args[0])
+    new_outputs = [output for output in outputs if output.op != "placeholder"]
+    output_node.update_arg(0, tuple(new_outputs))
+
+    fx_gm.recompile()
+    return fx_gm
+
+
+def _erase_sub_gm_from_gm(
+    fx_gm: torch.fx.GraphModule,
+    inputs: Sequence[torch.Tensor],
+    sub_gm: torch.fx.GraphModule,
+    sub_inputs: Sequence[torch.Tensor],
+):
+    fx_gm = copy.deepcopy(fx_gm)
+    fx_inputs = list(inputs)
+
+    class EraseNodeInterpreter(torch.fx.Interpreter):
+        def run_node(self, node):
+            nonlocal fx_gm, fx_inputs
+            res = super().run_node(node)
+            if node.op not in ("placeholder", "output"):
+                to_erase = next(m for m in fx_gm.graph.nodes if m.name == node.name)
+                # Raise the output (tensor) of the erased node to be an input of
+                # the new model graph. Some raised inputs may become unused later
+                # when all the users are within the erased subgraph, those inputs
+                # will be removed by the followed `_erase_unused_inputs` pass.
+                with fx_gm.graph.inserting_before(to_erase):
+                    new_input = fx_gm.graph.placeholder(node.name + "__value")
+                to_erase.replace_all_uses_with(new_input)
+
+                fx_gm.graph.erase_node(to_erase)
+                fx_inputs.append(res)
+            return res
+
+    interpreter = EraseNodeInterpreter(sub_gm)
+    interpreter.run(*sub_inputs)
+
+    fx_gm.graph.lint()
+    fx_gm.recompile()
+
+    # Ops prior to the erased subgraph may be dangling. Lift them as outputs.
+    fx_gm = _lift_dead_ops_to_outputs(fx_gm)
+    fx_gm = _erase_trivial_outputs(fx_gm)
+    fx_gm, fx_inputs = _erase_unused_inputs(fx_gm, fx_inputs)
+
+    fx_gm.graph.lint()
+    fx_gm.recompile()
+    return fx_gm, fx_inputs
+
+
+def minimize_inaccurate_subgraph(
+    exported_program: torch.export.ExportedProgram,
+    rtol: float | None = None,
+    atol: float | None = None,
+):
+    """Find the subgraph with error and minimize it."""
+
+    def _export_and_verify(
+        torch_module: torch.fx.GraphModule,
+        inputs: Any,
+    ) -> bool:
+        try:
+            onnx_program = _core.export(torch_module, args=inputs)
+            _testing.assert_onnx_program(onnx_program, rtol=rtol, atol=atol)
+        except Exception:
+            return True
+        return False
+
+    # Get the subgraph with error
+    fx_gm, fx_inputs = _exported_program_to_fx_graph_module_and_inputs(exported_program)
+    found_culprits_num = 0
+    while True:
+        try:
+            graph_module = _normalize_getitem_nodes(fx_gm)
+            raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
+                graph_module,
+                fx_inputs,
+                _export_and_verify,
+            )
+            min_fx_gm, min_inputs = _normalize_minified_fx_gm(
+                raw_min_fx_gm, raw_min_inputs
+            )
+            found_culprits_num += 1
+            yield SearchResult(min_fx_gm, min_inputs)
+            fx_gm, fx_inputs = _erase_sub_gm_from_gm(
+                fx_gm, fx_inputs, raw_min_fx_gm, raw_min_inputs
+            )
+        except RuntimeError as e:  # noqa: PERF203
+            if (
+                str(e) == "Input graph did not fail the tester"
+                and found_culprits_num > 0
+            ):
+                break
+            raise

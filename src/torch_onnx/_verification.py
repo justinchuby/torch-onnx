@@ -264,7 +264,9 @@ def minimize_inaccurate_subgraph(
         inputs: Any,
     ) -> bool:
         try:
-            onnx_program = _core.export(torch_module, args=inputs)
+            exported_program = torch.export.export(torch_module, inputs)
+            onnx_model = _core.exported_program_to_ir(exported_program)
+            onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
             _testing.assert_onnx_program(onnx_program, rtol=rtol, atol=atol)
         except Exception:
             return True

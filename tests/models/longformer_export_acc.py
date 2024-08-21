@@ -1,6 +1,5 @@
 import torch
 import torch_onnx
-from torch_onnx import _verification
 from transformers import LongformerModel, LongformerTokenizer
 
 torch_onnx.patch_torch()
@@ -16,5 +15,7 @@ ep = torch.export.export(
     (encoded_input["input_ids"], encoded_input["attention_mask"]),
 )
 
-for result in _verification.minimize_inaccurate_subgraph(ep, atol=1e-2, rtol=10.0):
+for result in torch_onnx.verification.minimize_inaccurate_subgraph(
+    ep, atol=1e-2, rtol=10.0
+):
     print(result)

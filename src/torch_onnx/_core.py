@@ -1276,18 +1276,18 @@ def export(
         export_status.output_accuracy = True
         for verification_result in verification_results:
             # TODO(justinchuby): The threshold is arbitrary right now
-            if verification_result.absolute_difference >= 5e-3:
+            if verification_result.max_abs_diff >= 5e-3:
                 logger.warning(
                     "Output '%s' has a large absolute difference of %f. ",
                     verification_result.name,
-                    verification_result.absolute_difference,
+                    verification_result.max_abs_diff,
                 )
                 export_status.output_accuracy = False
-            if verification_result.relative_difference >= 1e-1:
+            if verification_result.max_rel_diff >= 1e-1:
                 logger.warning(
                     "Output '%s' has a large relative difference of %f. ",
                     verification_result.name,
-                    verification_result.relative_difference,
+                    verification_result.max_rel_diff,
                 )
                 export_status.output_accuracy = False
         if export_status.output_accuracy:

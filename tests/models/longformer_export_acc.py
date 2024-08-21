@@ -16,8 +16,9 @@ ep = torch.export.export(
 )
 
 results = tuple(
-    torch_onnx.verification.minimize_inaccurate_subgraph(ep, atol=1e-4, rtol=1e-3)
+    torch_onnx.verification.minimize_inaccurate_subgraph(ep, atol=1e-4, rtol=1e-2)
 )
 
-for result in results:
+for i, result in enumerate(results):
+    print(f"------------------Graph {i}------------------")
     print(result.graph)

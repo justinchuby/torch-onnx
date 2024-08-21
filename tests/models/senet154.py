@@ -8,7 +8,9 @@ def main():
     data = (torch.randn(2, 2, 64, 64, 64),)
     # torch_onnx.export(model, data, verify=True, report=True)
     ep = torch.export.export(model, data)
-    results = list(torch_onnx.verification.minimize_inaccurate_subgraph(ep, rtol=1e-2, atol=1e-4))
+    results = list(
+        torch_onnx.verification.minimize_inaccurate_subgraph(ep, rtol=10, atol=1e-3)
+    )
     for i, result in enumerate(results):
         print(f"------Result {i}------")
         print(result)

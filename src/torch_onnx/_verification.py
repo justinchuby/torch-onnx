@@ -47,10 +47,8 @@ class SearchResult:
     def graph(self) -> torch.fx.Graph:
         return self.graph_module.graph
 
-    @graph.setter
-    def graph(self, fx_g: torch.fx.Graph):
-        self.graph_module.graph = fx_g
-
+    def __str__(self) -> str:
+        return f"SearchResult(graph_module={self.graph}, inputs={self.inputs})"
 
 def _compare_tensors(
     expected: torch.Tensor,
@@ -288,11 +286,6 @@ def _erase_sub_gm_from_gm(
     return fx_gm, fx_inputs
 
 
-def _count_call_functions(graph: torch.fx.Graph) -> int:
-    """Count the number of call_function nodes in the graph."""
-    return sum(node.op == "call_function" for node in graph.nodes)
-
-
 def minimize_inaccurate_subgraph(
     exported_program: torch.export.ExportedProgram,
     rtol: float = 1e-4,
@@ -307,9 +300,6 @@ def minimize_inaccurate_subgraph(
         torch_module: torch.fx.GraphModule,
         inputs: Any,
     ) -> bool:
-        if _count_call_functions(torch_module.graph) == 0:
-            # Skip the graph with no call_function nodes
-            return False
         exported_program = torch.export.export(torch_module, tuple(inputs))
         onnx_model = _core.exported_program_to_ir(exported_program)
         onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)

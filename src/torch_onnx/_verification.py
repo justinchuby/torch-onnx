@@ -47,8 +47,6 @@ class SearchResult:
     def graph(self) -> torch.fx.Graph:
         return self.graph_module.graph
 
-    def __str__(self) -> str:
-        return f"SearchResult(graph_module={self.graph}, inputs={self.inputs})"
 
 def _compare_tensors(
     expected: torch.Tensor,

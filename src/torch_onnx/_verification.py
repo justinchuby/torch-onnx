@@ -31,8 +31,10 @@ logger = logging.getLogger(__name__)
 @dataclasses.dataclass
 class VerificationInfo:
     name: str
-    absolute_difference: float
-    relative_difference: float
+    max_abs_diff: float
+    max_rel_diff: float
+    abs_diff_hist: tuple[torch.Tensor, torch.Tensor]
+    rel_diff_hist: tuple[torch.Tensor, torch.Tensor]
     expected_dtype: torch.dtype
     actual_dtype: torch.dtype
     # NOTE: We don't need to include shape because the expected shape is already known
@@ -52,21 +54,24 @@ class SearchResult:
 def _compare_tensors(
     expected: torch.Tensor,
     actual: torch.Tensor,
-) -> tuple[float, float]:
+) -> tuple[float, float, torch.Tensor, torch.Tensor]:
     # Move tensors to the same device
     expected = expected.detach().cpu()
     actual = actual.detach().cpu()
     if expected.numel() == 0 or actual.numel() == 0:
-        return math.inf, math.inf
+        return math.inf, math.inf, torch.tensor(math.inf), torch.tensor(math.inf)
     if expected.dtype == torch.bool:
-        expected = expected.to(torch.int)
-        actual = actual.to(torch.int)
-    absolute_difference = torch.abs(expected - actual).max().item()
+        expected = expected.to(torch.float32)
+        actual = actual.to(torch.float32)
+    abs_diff = torch.abs(expected - actual)
     eps = 1e-7
-    relative_difference = (
-        (torch.abs(expected - actual) / (torch.abs(expected) + eps)).max().item()
-    )
-    return absolute_difference, relative_difference
+    normalizer = torch.abs(expected) + eps
+    rel_diff = abs_diff / normalizer
+
+    max_absolute_difference = abs_diff.max().item()
+    max_relative_difference = rel_diff.max().item()
+
+    return max_absolute_difference, max_relative_difference, abs_diff, rel_diff
 
 
 def verify_onnx_program(
@@ -100,14 +105,21 @@ def verify_onnx_program(
         torch_outputs, onnx_outputs, onnx_program.model.graph.outputs
     ):
         name = output_val.name
-        absolute_difference, relative_difference = _compare_tensors(
+        max_abs_diff, max_rel_diff, abs_diff, rel_diff = _compare_tensors(
             torch_output, onnx_output
         )
+        abs_diff = abs_diff.flatten()
+        rel_diff = rel_diff.flatten()
+        bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0])
+        abs_diff_hist = torch.histogram(abs_diff, bins=bins)
+        rel_diff_hist = torch.histogram(rel_diff, bins=bins)
         results.append(
             VerificationInfo(
                 name=str(name),
-                absolute_difference=absolute_difference,
-                relative_difference=relative_difference,
+                max_abs_diff=max_abs_diff,
+                max_rel_diff=max_rel_diff,
+                abs_diff_hist=abs_diff_hist,
+                rel_diff_hist=rel_diff_hist,
                 expected_dtype=torch_output.dtype,
                 actual_dtype=onnx_output.dtype,
             )
@@ -323,7 +335,7 @@ def minimize_inaccurate_subgraph(
         onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
         verification_info = verify_onnx_program(onnx_program)
         for info in verification_info:
-            if info.absolute_difference > atol or info.relative_difference > rtol:
+            if info.max_abs_diff > atol or info.max_rel_diff > rtol:
                 logger.warning("Found inaccuracy: %s", info)
                 return True
         return False

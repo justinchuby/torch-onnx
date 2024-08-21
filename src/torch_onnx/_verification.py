@@ -314,16 +314,21 @@ def minimize_inaccurate_subgraph(
     while True:
         try:
             graph_module = _normalize_getitem_nodes(fx_gm)
-            raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
-                graph_module,
-                fx_inputs,
-                _export_and_verify,
-            )
-            min_fx_gm, min_inputs = _normalize_minified_fx_gm(
-                raw_min_fx_gm, raw_min_inputs
-            )
-            found_inaccuracies_num += 1
-            yield SearchResult(min_fx_gm, min_inputs)
+            try:
+                raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
+                    graph_module,
+                    fx_inputs,
+                    _export_and_verify,
+                )
+                # Removed normalization
+                min_fx_gm, min_inputs = (
+                    raw_min_fx_gm, raw_min_inputs
+                )
+                found_inaccuracies_num += 1
+                yield SearchResult(min_fx_gm, min_inputs)
+            except Exception:
+                # TODO: Remove graph even if the minifier fails
+                pass
             fx_gm, fx_inputs = _erase_sub_gm_from_gm(
                 fx_gm, fx_inputs, raw_min_fx_gm, raw_min_inputs
             )

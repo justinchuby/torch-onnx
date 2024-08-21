@@ -288,7 +288,7 @@ def _get_allowed_types_from_type_annotation(
         else:
             bound = type_.__bound__
             if bound is None:
-                allowed_types = _ALL_VALUE_TYPES  # type: ignore
+                allowed_types = _ALL_VALUE_TYPES  # type: ignore[assignment]
             else:
                 allowed_types.update(_get_allowed_types_from_type_annotation(bound))
         return allowed_types
@@ -324,7 +324,7 @@ def _get_allowed_types_from_type_annotation(
         }
 
     # Allow everything by default
-    return _ALL_VALUE_TYPES  # type: ignore
+    return _ALL_VALUE_TYPES  # type: ignore[return-value]
 
 
 @dataclasses.dataclass

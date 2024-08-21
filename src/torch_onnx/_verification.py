@@ -1,17 +1,24 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
+__all__ = [
+    "VerificationInfo",
+    "SearchResult",
+    "verify_onnx_program",
+    "minimize_inaccurate_subgraph",
+]
+
 import copy
 import dataclasses
 import logging
 import operator
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Iterator, Sequence
 
 import torch
 from torch._functorch import fx_minifier
 from torch.utils import _pytree
 
-from torch_onnx import _core, _onnx_program, _testing
+from torch_onnx import _core, _onnx_program
 
 if TYPE_CHECKING:
     import torch.fx
@@ -52,6 +59,9 @@ def _compare_tensors(
     # Move tensors to the same device
     expected = expected.detach().cpu()
     actual = actual.detach().cpu()
+    if expected.dtype == torch.bool:
+        expected = expected.to(torch.int)
+        actual = actual.to(torch.int)
     absolute_difference = torch.abs(expected - actual).max().item()
     eps = 1e-7
     relative_difference = (
@@ -66,6 +76,11 @@ def verify_onnx_program(
     kwargs: dict[str, Any] | None = None,
 ) -> list[VerificationInfo]:
     exported_program = onnx_program.exported_program
+    if exported_program is None:
+        raise ValueError(
+            "The ONNX program does not contain an exported_program. "
+            "Please provide an exported_program to verify the ONNX program."
+        )
     if args is None and kwargs is None:
         # User did not provide example inputs, use the default example inputs
         if exported_program.example_inputs is None:
@@ -103,7 +118,10 @@ def verify_onnx_program(
 
 def _exported_program_to_fx_graph_module_and_inputs(
     exported_program: torch.export.ExportedProgram,
-):
+) -> tuple[torch.fx.GraphModule, Sequence[torch.Tensor]]:
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm = exported_program.graph_module
     fx_inputs = _pytree.tree_map(
         torch.tensor,
@@ -119,7 +137,7 @@ def _normalize_getitem_nodes(fx_gm: torch.fx.GraphModule):
     some computations in the graph but would make the graph more friendly for
     partitioning in FX minifier.
     """
-    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py#L191
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
     # Original code Copyright 2024 The AI Edge Torch Authors.
     # Apache License, Version 2.0
 
@@ -146,8 +164,10 @@ def _normalize_getitem_nodes(fx_gm: torch.fx.GraphModule):
 
 
 def _erase_unused_inputs(fx_gm: torch.fx.GraphModule, inputs: Sequence[torch.Tensor]):
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm = copy.deepcopy(fx_gm)
-    inputs = tuple(inputs)
     args = fx_gm.graph.process_inputs(*inputs)
     args_iter = iter(args)
 
@@ -168,6 +188,9 @@ def _erase_unused_inputs(fx_gm: torch.fx.GraphModule, inputs: Sequence[torch.Ten
 
 
 def _lift_dead_ops_to_outputs(fx_gm: torch.fx.GraphModule):
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm = copy.deepcopy(fx_gm)
 
     new_outputs = []
@@ -176,7 +199,7 @@ def _lift_dead_ops_to_outputs(fx_gm: torch.fx.GraphModule):
     assert nodes[-1].op == "output" and sum(n.op == "output" for n in nodes) == 1
     for node in nodes:
         if node.op not in ("placeholder", "output") and len(node.users) == 0:
-            new_outputs.append(node)
+            new_outputs.append(node)  # noqa: PERF401
 
     output_node = nodes[-1]
     # FX output node returns the first arg as is.
@@ -191,6 +214,9 @@ def _lift_dead_ops_to_outputs(fx_gm: torch.fx.GraphModule):
 def _normalize_minified_fx_gm(
     fx_gm: torch.fx.GraphModule, inputs: Sequence[torch.Tensor]
 ):
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm, inputs = _erase_unused_inputs(fx_gm, inputs)
     fx_gm = _lift_dead_ops_to_outputs(fx_gm)
     return fx_gm, inputs
@@ -198,6 +224,9 @@ def _normalize_minified_fx_gm(
 
 def _erase_trivial_outputs(fx_gm: torch.fx.GraphModule):
     """Remove output nodes directly connected to an input node."""
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm = copy.deepcopy(fx_gm)
 
     graph = fx_gm.graph
@@ -219,6 +248,9 @@ def _erase_sub_gm_from_gm(
     sub_gm: torch.fx.GraphModule,
     sub_inputs: Sequence[torch.Tensor],
 ):
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
     fx_gm = copy.deepcopy(fx_gm)
     fx_inputs = list(inputs)
 
@@ -258,25 +290,26 @@ def _erase_sub_gm_from_gm(
 
 def minimize_inaccurate_subgraph(
     exported_program: torch.export.ExportedProgram,
-    rtol: float | None = None,
-    atol: float | None = None,
-):
+    rtol: float = 1e-4,
+    atol: float = 1e-5,
+) -> Iterator[SearchResult]:
     """Find the subgraph with error and minimize it."""
+    # Adapted from https://github.com/google-ai-edge/ai-edge-torch/blob/a54d10d4fcf53339d32b00dda71918e810064e22/ai_edge_torch/debug/culprit.py
+    # Original code Copyright 2024 The AI Edge Torch Authors.
+    # Apache License, Version 2.0
 
     def _export_and_verify(
         torch_module: torch.fx.GraphModule,
         inputs: Any,
     ) -> bool:
-        try:
-            exported_program = torch.export.export(torch_module, inputs)
-            onnx_model = _core.exported_program_to_ir(exported_program)
-            onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
-            _testing.assert_onnx_program(onnx_program, rtol=rtol, atol=atol)
-        except AssertionError:
-            return True
-        except Exception:
-            logger.exception("Error during verification")
-            return False
+        exported_program = torch.export.export(torch_module, tuple(inputs))
+        onnx_model = _core.exported_program_to_ir(exported_program)
+        onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
+        verification_info = verify_onnx_program(onnx_program)
+        for info in verification_info:
+            if info.absolute_difference > atol or info.relative_difference > rtol:
+                print(f"Found culprit: {info}")
+                return True
         return False
 
     # Get the subgraph with error
@@ -290,6 +323,7 @@ def minimize_inaccurate_subgraph(
                 fx_inputs,
                 _export_and_verify,
             )
+            raw_min_inputs = tuple(raw_min_inputs)
             min_fx_gm, min_inputs = _normalize_minified_fx_gm(
                 raw_min_fx_gm, raw_min_inputs
             )

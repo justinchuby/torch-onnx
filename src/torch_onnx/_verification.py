@@ -119,9 +119,8 @@ def _exported_program_to_fx_graph_module_and_inputs(
     # Original code Copyright 2024 The AI Edge Torch Authors.
     # Apache License, Version 2.0
     fx_gm = exported_program.graph_module
-    fx_inputs = _pytree.tree_map(
-        torch.tensor,
-        exported_program._graph_module_flat_inputs(*exported_program.example_inputs),
+    fx_inputs = exported_program._graph_module_flat_inputs(
+        *exported_program.example_inputs
     )
     return fx_gm, fx_inputs
 

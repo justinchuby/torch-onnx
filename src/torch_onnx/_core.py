@@ -1205,57 +1205,57 @@ def export(
         return onnx_program
 
     # Step 3: (verify=True) Check the ONNX model with ONNX checker
-    # try:
-    #     verbose_print("Run `onnx.checker` on the ONNX model...")
+    try:
+        verbose_print("Run `onnx.checker` on the ONNX model...")
 
-    #     # TODO: Handle when model is >2GB
+        # TODO: Handle when model is >2GB
 
-    #     model_proto = onnx_program.model_proto
-    #     byte_size = model_proto.ByteSize()
-    #     if byte_size < 2 * 1024 * 1024 * 1024:
-    #         # The checker may segfault so we need to run it in a separate process
-    #         _isolated.safe_call(
-    #             onnx.checker.check_model, onnx_program.model_proto, full_check=True
-    #         )
-    #         export_status.onnx_checker = True
-    #         verbose_print("Run `onnx.checker` on the ONNX model... ✅")
-    #     else:
-    #         verbose_print(
-    #             f"Run `onnx.checker` on the ONNX model... ⚠️  Skipped because model is too large ({byte_size})."
-    #         )
-    # except Exception as e:
-    #     export_status.onnx_checker = False
-    #     verbose_print("Run `onnx.checker` on the ONNX model... ❌")
-    #     if report:
-    #         try:
-    #             assert pre_decomp_unique_ops is not None
-    #             assert post_decomp_unique_ops is not None
-    #             report_path = artifacts_dir / _reporting.construct_report_file_name(
-    #                 timestamp, export_status
-    #             )
-    #             _reporting.create_onnx_export_report(
-    #                 report_path,
-    #                 f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
-    #                 onnx_program.exported_program,
-    #                 decomp_comparison=_reporting.format_decomp_comparison(
-    #                     pre_decomp_unique_ops, post_decomp_unique_ops
-    #                 ),
-    #                 export_status=export_status,
-    #                 profile_result=profile_result,
-    #                 model=onnx_program.model,
-    #                 registry=registry,
-    #             )
-    #             verbose_print(f"Export report has been saved to '{report_path}'.")
-    #         except Exception:
-    #             logger.exception("Failed to save report due to an error.")
-    #     logger.warning(
-    #         "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
-    #         "Please create an issue "
-    #         f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
-    #         "attach the full error stack as well as reproduction scripts. ",
-    #         exc_info=e,
-    #     )
-    #     return onnx_program
+        model_proto = onnx_program.model_proto
+        byte_size = model_proto.ByteSize()
+        if byte_size < 2 * 1024 * 1024 * 1024:
+            # The checker may segfault so we need to run it in a separate process
+            _isolated.safe_call(
+                onnx.checker.check_model, onnx_program.model_proto, full_check=True
+            )
+            export_status.onnx_checker = True
+            verbose_print("Run `onnx.checker` on the ONNX model... ✅")
+        else:
+            verbose_print(
+                f"Run `onnx.checker` on the ONNX model... ⚠️  Skipped because model is too large ({byte_size})."
+            )
+    except Exception as e:
+        export_status.onnx_checker = False
+        verbose_print("Run `onnx.checker` on the ONNX model... ❌")
+        if report:
+            try:
+                assert pre_decomp_unique_ops is not None
+                assert post_decomp_unique_ops is not None
+                report_path = artifacts_dir / _reporting.construct_report_file_name(
+                    timestamp, export_status
+                )
+                _reporting.create_onnx_export_report(
+                    report_path,
+                    f"{_format_exceptions_for_all_strategies(failed_results)}\n\n{_format_exception(e)}",
+                    onnx_program.exported_program,
+                    decomp_comparison=_reporting.format_decomp_comparison(
+                        pre_decomp_unique_ops, post_decomp_unique_ops
+                    ),
+                    export_status=export_status,
+                    profile_result=profile_result,
+                    model=onnx_program.model,
+                    registry=registry,
+                )
+                verbose_print(f"Export report has been saved to '{report_path}'.")
+            except Exception:
+                logger.exception("Failed to save report due to an error.")
+        logger.warning(
+            "Conversion successful but the ONNX model fails ONNX checker. "  # noqa: G004
+            "Please create an issue "
+            f"in the PyTorch GitHub repository against the {_BLUE}*onnx*{_END} component and "
+            "attach the full error stack as well as reproduction scripts. ",
+            exc_info=e,
+        )
+        return onnx_program
 
     # Step 4: (verify=True) Execute the model with ONNX Runtime
     try:

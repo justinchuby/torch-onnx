@@ -8,10 +8,10 @@ __all__ = [
     "minimize_inaccurate_subgraph",
 ]
 
-import math
 import copy
 import dataclasses
 import logging
+import math
 import operator
 from typing import TYPE_CHECKING, Any, Iterator, Sequence
 

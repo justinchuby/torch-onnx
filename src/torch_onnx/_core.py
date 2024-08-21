@@ -903,6 +903,9 @@ def _exported_program_to_onnx_program(
 
     # TODO: Decide if we should keep mutated buffers as inputs/outputs
 
+    # TODO(justinchuby): Remove the hack
+    _ir_passes.add_torchlib_common_imports(model)
+
     return _onnx_program.ONNXProgram(model, exported_program)
 
 
@@ -919,7 +922,7 @@ def export(
     | torch.fx.GraphModule
     | torch.jit.ScriptModule
     | torch.jit.ScriptFunction,
-    args: tuple[Any, ...],
+    args: tuple[Any, ...] = (),
     kwargs: dict[str, Any] | None = None,
     *,
     registry: _registration.ONNXRegistry | None = None,
@@ -1128,9 +1131,6 @@ def export(
             _ir_passes.rename_inputs(onnx_program.model, input_names)
         if output_names:
             _ir_passes.rename_outputs(onnx_program.model, output_names)
-
-        # TODO(justinchuby): Remove the hack
-        _ir_passes.add_torchlib_common_imports(onnx_program.model)
 
         export_status.onnx_translation = True
         verbose_print("Translate the graph into ONNX... ✅")

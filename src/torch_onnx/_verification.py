@@ -16,9 +16,10 @@ import operator
 from typing import TYPE_CHECKING, Any, Iterator, Sequence
 
 import torch
+from torch._functorch import fx_minifier
 from torch.utils import _pytree
 
-from torch_onnx import _core, _onnx_program, _fx_minifier
+from torch_onnx import _core, _onnx_program
 
 if TYPE_CHECKING:
     import torch.fx
@@ -285,6 +286,19 @@ def _erase_sub_gm_from_gm(
     return fx_gm, fx_inputs
 
 
+def _dump_state(fx_g: torch.fx.GraphModule, inps: Sequence[Any]):
+    # TODO(justinchuby): Offload the actual inputs
+    inps_text = _pytree.tree_map(lambda i: (i.shape, i.dtype, i.device.type), inps)
+    print(
+        f"""
+# Working Repro with {len(fx_g.graph.nodes)} nodes
+inps = {inps_text}
+inps = [torch.zeros(())] + [torch.ones(shape, dtype=dtype, device=device) for (shape, dtype, device) in inps]
+{fx_g.code}
+"""
+    )
+
+
 def minimize_inaccurate_subgraph(
     exported_program: torch.export.ExportedProgram,
     rtol: float = 1e-4,
@@ -320,10 +334,11 @@ def minimize_inaccurate_subgraph(
     while True:
         try:
             fx_gm = _normalize_getitem_nodes(fx_gm)
-            raw_min_fx_gm, raw_min_inputs = _fx_minifier.minifier(
+            raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
                 fx_gm,
                 fx_inputs,
                 _export_and_verify,
+                _dump_state=_dump_state,
             )
             min_fx_gm, min_inputs = _normalize_minified_fx_gm(
                 raw_min_fx_gm, raw_min_inputs

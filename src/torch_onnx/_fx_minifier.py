@@ -11,12 +11,11 @@ from typing import Callable, List
 
 import torch
 import torch.fx as fx
+from torch._functorch.compile_utils import get_outputs, get_placeholders
 from torch.hub import tqdm
 from torch.multiprocessing.reductions import StorageWeakRef
+from torch.utils import _pytree
 from torch.utils._content_store import ContentStoreWriter
-
-from torch._functorch.compile_utils import get_outputs, get_placeholders
-
 
 is_tuple = object()
 
@@ -133,10 +132,11 @@ def _convert_node_to_placeholder(graph, node, inps):
 
 
 def dump_state(fx_g, inps):
+    inps_text = _pytree.tree_map(lambda i: (i.shape, i.dtype, i.device.type), inps)
     print(
         f"""
 # Working Repro with {len(fx_g.graph.nodes)} nodes
-inps = {[(i.shape, i.dtype, i.device.type) for i in inps]}
+inps = {inps_text}
 inps = [torch.zeros(())] + [torch.ones(shape, dtype=dtype, device=device) for (shape, dtype, device) in inps]
 {fx_g.code}
 """

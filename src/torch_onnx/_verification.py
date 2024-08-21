@@ -338,7 +338,7 @@ def minimize_inaccurate_subgraph(
                 fx_gm,
                 fx_inputs,
                 _export_and_verify,
-                _dump_state=_dump_state,
+                dump_state=_dump_state,
             )
             min_fx_gm, min_inputs = _normalize_minified_fx_gm(
                 raw_min_fx_gm, raw_min_inputs

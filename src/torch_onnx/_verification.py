@@ -308,13 +308,13 @@ def minimize_inaccurate_subgraph(
         verification_info = verify_onnx_program(onnx_program)
         for info in verification_info:
             if info.absolute_difference > atol or info.relative_difference > rtol:
-                print(f"Found culprit: {info}")
+                logger.warning("Found inaccuracy: %s", info)
                 return True
         return False
 
     # Get the subgraph with error
     fx_gm, fx_inputs = _exported_program_to_fx_graph_module_and_inputs(exported_program)
-    found_culprits_num = 0
+    found_inaccuracies_num = 0
     while True:
         try:
             graph_module = _normalize_getitem_nodes(fx_gm)
@@ -327,7 +327,7 @@ def minimize_inaccurate_subgraph(
             min_fx_gm, min_inputs = _normalize_minified_fx_gm(
                 raw_min_fx_gm, raw_min_inputs
             )
-            found_culprits_num += 1
+            found_inaccuracies_num += 1
             yield SearchResult(min_fx_gm, min_inputs)
             fx_gm, fx_inputs = _erase_sub_gm_from_gm(
                 fx_gm, fx_inputs, raw_min_fx_gm, raw_min_inputs
@@ -335,7 +335,7 @@ def minimize_inaccurate_subgraph(
         except RuntimeError as e:  # noqa: PERF203
             if (
                 str(e) == "Input graph did not fail the tester"
-                and found_culprits_num > 0
+                and found_inaccuracies_num > 0
             ):
                 break
             raise

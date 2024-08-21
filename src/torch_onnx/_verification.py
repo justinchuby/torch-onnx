@@ -288,6 +288,11 @@ def _erase_sub_gm_from_gm(
     return fx_gm, fx_inputs
 
 
+def _count_call_functions(graph: torch.fx.Graph) -> int:
+    """Count the number of call_function nodes in the graph."""
+    return sum(node.op == "call_function" for node in graph.nodes)
+
+
 def minimize_inaccurate_subgraph(
     exported_program: torch.export.ExportedProgram,
     rtol: float = 1e-4,
@@ -302,6 +307,9 @@ def minimize_inaccurate_subgraph(
         torch_module: torch.fx.GraphModule,
         inputs: Any,
     ) -> bool:
+        if _count_call_functions(torch_module.graph) == 0:
+            # Skip the graph with no call_function nodes
+            return False
         exported_program = torch.export.export(torch_module, tuple(inputs))
         onnx_model = _core.exported_program_to_ir(exported_program)
         onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
@@ -323,7 +331,6 @@ def minimize_inaccurate_subgraph(
                 fx_inputs,
                 _export_and_verify,
             )
-            raw_min_inputs = tuple(raw_min_inputs)
             min_fx_gm, min_inputs = _normalize_minified_fx_gm(
                 raw_min_fx_gm, raw_min_inputs
             )

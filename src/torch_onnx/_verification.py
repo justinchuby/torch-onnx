@@ -298,8 +298,13 @@ def minimize_inaccurate_subgraph(
         torch_module: torch.fx.GraphModule,
         inputs: Any,
     ) -> bool:
-        exported_program = torch.export.export(torch_module, tuple(inputs))
-        onnx_model = _core.exported_program_to_ir(exported_program)
+        try:
+            exported_program = torch.export.export(torch_module, tuple(inputs))
+            onnx_model = _core.exported_program_to_ir(exported_program)
+        except Exception:
+            logger.exception("Failed to export the program. Stop minimizing.")
+            # Treat this as a success because we don't want to minimize any more
+            return False
         onnx_program = _onnx_program.ONNXProgram(onnx_model, exported_program)
         verification_info = verify_onnx_program(onnx_program)
         for info in verification_info:
@@ -314,21 +319,16 @@ def minimize_inaccurate_subgraph(
     while True:
         try:
             graph_module = _normalize_getitem_nodes(fx_gm)
-            try:
-                raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
-                    graph_module,
-                    fx_inputs,
-                    _export_and_verify,
-                )
-                # Removed normalization
-                min_fx_gm, min_inputs = (
-                    raw_min_fx_gm, raw_min_inputs
-                )
-                found_inaccuracies_num += 1
-                yield SearchResult(min_fx_gm, min_inputs)
-            except Exception:
-                # TODO: Remove graph even if the minifier fails
-                pass
+            raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
+                graph_module,
+                fx_inputs,
+                _export_and_verify,
+            )
+            min_fx_gm, min_inputs = _normalize_minified_fx_gm(
+                raw_min_fx_gm, raw_min_inputs
+            )
+            found_inaccuracies_num += 1
+            yield SearchResult(min_fx_gm, min_inputs)
             fx_gm, fx_inputs = _erase_sub_gm_from_gm(
                 fx_gm, fx_inputs, raw_min_fx_gm, raw_min_inputs
             )

@@ -9,7 +9,7 @@ def main():
     # torch_onnx.export(model, data, verify=True, report=True)
     ep = torch.export.export(model, data)
     results = list(
-        torch_onnx.verification.minimize_inaccurate_subgraph(ep, rtol=10, atol=1e-3)
+        torch_onnx.verification.minimize_inaccurate_subgraph(ep, rtol=10, atol=1e-1)
     )
     for i, result in enumerate(results):
         print(f"------Result {i}------")

@@ -8,6 +8,7 @@ include_patterns = [
 ]
 exclude_patterns = [
     'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
+    'src/torch_onnx/_fx_minifier.py',  # 3rd party code
 ]
 command = [
     'python',
@@ -37,6 +38,7 @@ include_patterns = [
 ]
 exclude_patterns = [
     'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
+    'src/torch_onnx/_fx_minifier.py',  # 3rd party code
 ]
 command = [
     'python',
@@ -67,6 +69,8 @@ include_patterns = [
 ]
 exclude_patterns = [
     '**/*_test.py',
+    'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
+    'src/torch_onnx/_fx_minifier.py',  # 3rd party code
 ]
 command = [
     'python',

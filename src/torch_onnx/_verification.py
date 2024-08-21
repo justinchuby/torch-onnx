@@ -8,6 +8,7 @@ __all__ = [
     "minimize_inaccurate_subgraph",
 ]
 
+import math
 import copy
 import dataclasses
 import logging
@@ -15,10 +16,9 @@ import operator
 from typing import TYPE_CHECKING, Any, Iterator, Sequence
 
 import torch
-from torch._functorch import fx_minifier
 from torch.utils import _pytree
 
-from torch_onnx import _core, _onnx_program
+from torch_onnx import _core, _onnx_program, _fx_minifier
 
 if TYPE_CHECKING:
     import torch.fx
@@ -55,6 +55,8 @@ def _compare_tensors(
     # Move tensors to the same device
     expected = expected.detach().cpu()
     actual = actual.detach().cpu()
+    if expected.numel() == 0 or actual.numel() == 0:
+        return math.inf, math.inf
     if expected.dtype == torch.bool:
         expected = expected.to(torch.int)
         actual = actual.to(torch.int)
@@ -317,9 +319,9 @@ def minimize_inaccurate_subgraph(
     found_inaccuracies_num = 0
     while True:
         try:
-            graph_module = _normalize_getitem_nodes(fx_gm)
-            raw_min_fx_gm, raw_min_inputs = fx_minifier.minifier(
-                graph_module,
+            fx_gm = _normalize_getitem_nodes(fx_gm)
+            raw_min_fx_gm, raw_min_inputs = _fx_minifier.minifier(
+                fx_gm,
                 fx_inputs,
                 _export_and_verify,
             )

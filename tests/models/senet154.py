@@ -4,7 +4,7 @@ from monai.networks.nets import SENet154
 
 
 def main():
-    model = SENet154(spatial_dims=3, in_channels=2, num_classes=2)
+    model = SENet154(spatial_dims=3, in_channels=2, num_classes=2).eval()
     data = (torch.randn(2, 2, 64, 64, 64),)
     # torch_onnx.export(model, data, verify=True, report=True)
     ep = torch.export.export(model, data)

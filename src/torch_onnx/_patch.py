@@ -125,6 +125,7 @@ def _torch_onnx_export(
     *,
     kwargs: dict[str, Any] | None = None,
     export_params: bool = True,
+    verbose: bool | None = None,
     input_names: Sequence[str] | None = None,
     output_names: Sequence[str] | None = None,
     opset_version: int | None = None,
@@ -177,6 +178,7 @@ def _torch_onnx_export(
             verify=verify,
             dump_exported_program=dump_exported_program,
             artifacts_dir=artifacts_dir,
+            verbose=verbose,
         )
 
         if f is not None:

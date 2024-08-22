@@ -67,6 +67,7 @@ include_patterns = [
 ]
 exclude_patterns = [
     '**/*_test.py',
+    'src/torch_onnx/_torchscript_converter.py',  # 3rd party code
 ]
 command = [
     'python',

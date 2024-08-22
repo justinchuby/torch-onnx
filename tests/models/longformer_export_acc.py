@@ -15,7 +15,10 @@ ep = torch.export.export(
     (encoded_input["input_ids"], encoded_input["attention_mask"]),
 )
 
-for result in torch_onnx.verification.minimize_inaccurate_subgraph(
-    ep, atol=1e-2, rtol=10.0
-):
-    print(result)
+results = tuple(
+    torch_onnx.verification.minimize_inaccurate_subgraph(ep, atol=1e-4, rtol=1e-2)
+)
+
+for i, result in enumerate(results):
+    print(f"------------------Graph {i}------------------")
+    print(result.graph)

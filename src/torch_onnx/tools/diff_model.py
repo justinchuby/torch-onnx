@@ -135,8 +135,7 @@ def _process_exported_program(
         else:
             outputs = tuple(new_outputs)
 
-    if not keep_original_outputs:
-        ep._graph_signature.output_specs.clear()
+    ep._graph_signature.output_specs.clear()
 
     for output_node in outputs:
         ep._graph_signature.output_specs.append(

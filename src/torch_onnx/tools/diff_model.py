@@ -98,7 +98,11 @@ def _process_onnx_model(
     return temp_model_path, output_names
 
 
-def _process_exported_program(ep: torch.export.ExportedProgram, values: Sequence[str], keep_original_outputs: bool = True) -> None:
+def _process_exported_program(
+    ep: torch.export.ExportedProgram,
+    values: Sequence[str],
+    keep_original_outputs: bool = True,
+) -> None:
     """Add outputs to the exported program."""
     graph: torch.fx.Graph = ep.graph
     nodes = list(graph.nodes)
@@ -115,16 +119,9 @@ def _process_exported_program(ep: torch.export.ExportedProgram, values: Sequence
                 continue
             graph.erase_node(node)
 
-    # TODO: Continue here
+    with graph.inserting_after(nodes[-1]):
+        graph.output(*new_outputs)
 
-    output_node = nodes[-1]
-    # FX output node returns the first arg as is.
-    # ref: https://github.com/pytorch/pytorch/blob/1a578df57cc0f417f671634e564c62ef5d9a97e2/torch/fx/interpreter.py#L337
-    new_outputs, _ = _pytree.tree_flatten([new_outputs, output_node.args[0]])
-    output_node.update_arg(0, tuple(new_outputs))
-
-    fx_gm.graph = graph
-    return fx_gm
 
 def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
     """Initialize an ONNX Runtime inference session with the specified model."""
@@ -209,14 +206,18 @@ def _compare_outputs(
 
     return results_1, results_2
 
+
 def diff_exported_program(
-    exported_program: torch.export.ExportedProgram,
     model_path: str | os.PathLike,
+    exported_program: torch.export.ExportedProgram,
     value_names: Sequence[str],
-    inputs: Sequence[np.ndarray | torch.Tensor],
+    inputs: Sequence[torch.Tensor],
     keep_original_outputs: bool = True,
-) -> tuple[list[_verification.VerificationInfo], _verification.VerificationInfo]:
-    inputs = [input.numpy(force=True) if isinstance(input, torch.Tensor) else input for input in inputs]
+) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
+    np_inputs = [
+        input.numpy(force=True) if isinstance(input, torch.Tensor) else input
+        for input in inputs
+    ]
 
     temp_model_path, model_output_names = _process_onnx_model(
         model_path, value_names, keep_original_outputs
@@ -224,12 +225,19 @@ def diff_exported_program(
     _process_exported_program(exported_program, value_names, keep_original_outputs)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)
-    outputs_onnx = _run_session(ort_session, inputs)
+    outputs_onnx = _run_session(ort_session, np_inputs)
     del ort_session
     gc.collect()
-
     outputs_onnx = [torch.tensor(output) for output in outputs_onnx]
 
+    # TODO: Handle kwargs
+    outputs_torch = exported_program.module()(*inputs)
+    outputs_torch = [output.cpu(force=True) for output in outputs_torch]
+
+    # Compare the outputs
+    return _compare_outputs(
+        outputs_onnx, outputs_torch, model_output_names, value_names
+    )
 
 
 def diff(
@@ -239,7 +247,10 @@ def diff(
     inputs: Sequence[np.ndarray | torch.Tensor],
     keep_original_outputs: bool = True,
 ) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
-    inputs = [input.numpy(force=True) if isinstance(input, torch.Tensor) else input for input in inputs]
+    inputs = [
+        input.numpy(force=True) if isinstance(input, torch.Tensor) else input
+        for input in inputs
+    ]
 
     temp_model_1_path, model_1_output_names = _process_onnx_model(
         model_1_path, [pair[0] for pair in value_pairs], keep_original_outputs

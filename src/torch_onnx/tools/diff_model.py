@@ -123,7 +123,7 @@ def _process_exported_program(
     last_node = list(graph.nodes)[-1]
     with graph.inserting_after(last_node):
         for node in new_outputs:
-            graph.output(node)
+            graph.output((node,))
 
     ep.graph_module.recompile()
 
@@ -238,7 +238,6 @@ def diff_exported_program(
 
     # TODO: Handle kwargs
     outputs_torch = exported_program.module()(*inputs)
-    outputs_torch = [output.cpu(force=True) for output in outputs_torch]
 
     # Compare the outputs
     return _compare_outputs(

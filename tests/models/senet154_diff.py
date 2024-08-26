@@ -20,7 +20,8 @@ def main():
         data,
         keep_original_outputs=True,
     )
-    print(results)
+    for result in results:
+        print(result)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Compute the numerical difference between two ONNX models."""
 
 import gc
+import logging
 import os
 import typing
 from typing import TYPE_CHECKING, Sequence
@@ -14,6 +15,9 @@ from torch_onnx import _verification
 
 if TYPE_CHECKING:
     import torch.fx
+
+
+logger = logging.getLogger(__name__)
 
 
 def _create_value_mapping(graph: ir.Graph) -> dict[str, ir.Value]:
@@ -147,7 +151,9 @@ def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
     )
 
 
-def _run_session(session: ort.InferenceSession, inputs: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
+def _run_session(
+    session: ort.InferenceSession, inputs: Sequence[np.ndarray]
+) -> Sequence[np.ndarray]:
     # We don't expect non-tensor as inputs
     input_names = [input.name for input in session.get_inputs()]
     ort_input = dict(zip(input_names, inputs))
@@ -168,47 +174,52 @@ def _compare_outputs(
     for output_1, output_2, value_name_1, value_name_2 in zip(
         outputs_1, outputs_2, value_names_1, value_names_2
     ):
-        # First, treat output_2 as the expected output
-        max_abs_diff_1, max_rel_diff_1, abs_diff_1, rel_diff_1 = (
-            _verification._compare_tensors(output_2, output_1)
-        )
-        abs_diff_1 = abs_diff_1.flatten()
-        rel_diff_1 = rel_diff_1.flatten()
-        bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10])
-        abs_diff_hist_1 = torch.histogram(abs_diff_1, bins=bins)
-        rel_diff_hist_2 = torch.histogram(rel_diff_1, bins=bins)
-        # TODO: Check which is the expected val when computing the diff
-        results_1.append(
-            _verification.VerificationInfo(
-                name=value_name_1,
-                max_abs_diff=max_abs_diff_1,
-                max_rel_diff=max_rel_diff_1,
-                abs_diff_hist=abs_diff_hist_1,
-                rel_diff_hist=rel_diff_hist_2,
-                expected_dtype=output_2.dtype,
-                actual_dtype=output_1.dtype,
+        try:
+            # First, treat output_2 as the expected output
+            max_abs_diff_1, max_rel_diff_1, abs_diff_1, rel_diff_1 = (
+                _verification._compare_tensors(output_2, output_1)
             )
-        )
+            abs_diff_1 = abs_diff_1.flatten()
+            rel_diff_1 = rel_diff_1.flatten()
+            bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10])
+            abs_diff_hist_1 = torch.histogram(abs_diff_1, bins=bins)
+            rel_diff_hist_2 = torch.histogram(rel_diff_1, bins=bins)
+            # TODO: Check which is the expected val when computing the diff
+            results_1.append(
+                _verification.VerificationInfo(
+                    name=value_name_1,
+                    max_abs_diff=max_abs_diff_1,
+                    max_rel_diff=max_rel_diff_1,
+                    abs_diff_hist=abs_diff_hist_1,
+                    rel_diff_hist=rel_diff_hist_2,
+                    expected_dtype=output_2.dtype,
+                    actual_dtype=output_1.dtype,
+                )
+            )
 
-        # Second, treat output_1 as the expected output
-        max_abs_diff_2, max_rel_diff_2, abs_diff_2, rel_diff_2 = (
-            _verification._compare_tensors(output_1, output_2)
-        )
-        abs_diff_2 = abs_diff_2.flatten()
-        rel_diff_2 = rel_diff_2.flatten()
-        abs_diff_hist_2 = torch.histogram(abs_diff_2, bins=bins)
-        rel_diff_hist_2 = torch.histogram(rel_diff_2, bins=bins)
-        results_2.append(
-            _verification.VerificationInfo(
-                name=value_name_2,
-                max_abs_diff=max_abs_diff_2,
-                max_rel_diff=max_rel_diff_2,
-                abs_diff_hist=abs_diff_hist_2,
-                rel_diff_hist=rel_diff_hist_2,
-                expected_dtype=output_1.dtype,
-                actual_dtype=output_2.dtype,
+            # Second, treat output_1 as the expected output
+            max_abs_diff_2, max_rel_diff_2, abs_diff_2, rel_diff_2 = (
+                _verification._compare_tensors(output_1, output_2)
             )
-        )
+            abs_diff_2 = abs_diff_2.flatten()
+            rel_diff_2 = rel_diff_2.flatten()
+            abs_diff_hist_2 = torch.histogram(abs_diff_2, bins=bins)
+            rel_diff_hist_2 = torch.histogram(rel_diff_2, bins=bins)
+            results_2.append(
+                _verification.VerificationInfo(
+                    name=value_name_2,
+                    max_abs_diff=max_abs_diff_2,
+                    max_rel_diff=max_rel_diff_2,
+                    abs_diff_hist=abs_diff_hist_2,
+                    rel_diff_hist=rel_diff_hist_2,
+                    expected_dtype=output_1.dtype,
+                    actual_dtype=output_2.dtype,
+                )
+            )
+        except Exception:  # noqa: PERF203
+            logger.exception(
+                "Error comparing outputs '%s' and '%s'", value_name_1, value_name_2
+            )
 
     return results_1, results_2
 
@@ -216,19 +227,42 @@ def _compare_outputs(
 def diff_exported_program(
     model_path: str | os.PathLike,
     exported_program: torch.export.ExportedProgram,
-    value_names: Sequence[str],
+    value_names: Sequence[str] | Sequence[tuple[str, str]],
     inputs: Sequence[torch.Tensor],
     keep_original_outputs: bool = True,
-) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
+) -> list[_verification.VerificationInfo]:
+    """Compare the outputs of an ONNX model and an exported program.
+
+    Args:
+        model_path: The path to the ONNX model.
+        exported_program: The exported program.
+        value_names: The names of the values to compare. If provided as a list, then
+            the same names in the ONNX model and the exported program will be compared.
+            If provided as a list of tuples, then the first element of each tuple will
+            be the name of the value in the ONNX model and the second element will be
+            the name of the value in the exported program.
+        inputs: The inputs to the models.
+        keep_original_outputs: Whether to keep the original outputs of the models.
+
+    Returns:
+        A list of verification information for each value.
+    """
     np_inputs = [
         input.numpy(force=True) if isinstance(input, torch.Tensor) else input
         for input in inputs
     ]
 
+    if value_names and isinstance(value_names[0], tuple):
+        onnx_names = [pair[0] for pair in value_names]
+        torch_names = [pair[1] for pair in value_names]
+    else:
+        onnx_names = typing.cast(Sequence[str], value_names)
+        torch_names = typing.cast(Sequence[str], value_names)
+
     temp_model_path, model_output_names = _process_onnx_model(
-        model_path, value_names, keep_original_outputs
+        model_path, onnx_names, keep_original_outputs
     )
-    _process_exported_program(exported_program, value_names, keep_original_outputs)
+    _process_exported_program(exported_program, torch_names, keep_original_outputs)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)
     outputs_onnx = _run_session(ort_session, np_inputs)
@@ -240,9 +274,10 @@ def diff_exported_program(
     outputs_torch = exported_program.module()(*inputs)
 
     # Compare the outputs
-    return _compare_outputs(
-        outputs_onnx, outputs_torch, model_output_names, value_names
+    results, _ = _compare_outputs(
+        outputs_onnx, outputs_torch, model_output_names, model_output_names
     )
+    return results
 
 
 def diff(

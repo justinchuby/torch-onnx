@@ -13,14 +13,14 @@ def main():
     onnx_program = torch_onnx.export(ep, data)
     onnx_program.save("senet154.onnx", external_data=True)
     assert onnx_program.exported_program is not None
-    results = torch_onnx.tools.diff_model.diff_exported_program(
+    onnx_results, _ = torch_onnx.tools.diff_model.diff_exported_program(
         "senet154.onnx",
         onnx_program.exported_program,
         ["relu_2", "getitem_9"],
         data,
         keep_original_outputs=True,
     )
-    for result in results:
+    for result in onnx_results:
         print(result)
 
 

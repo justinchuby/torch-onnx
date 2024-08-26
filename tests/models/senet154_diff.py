@@ -16,9 +16,23 @@ def main():
     results = torch_onnx.tools.diff_model.diff_exported_program(
         "senet154.onnx",
         onnx_program.exported_program,
-        ["relu_2", "getitem_9"],
+        [
+            "relu_126",
+            "relu_150",
+            "sigmoid_37",
+            "relu_154",
+            "sigmoid_38",
+            "getitem_368",
+            "mul_38",
+            "add_38",
+            "relu_158",
+            # "relu_162",
+            # "relu_174",
+            # "relu_186",
+            # "relu_190",
+        ],
         data,
-        keep_original_outputs=True,
+        keep_original_outputs=False,
     )
     for result in results:
         print(result)

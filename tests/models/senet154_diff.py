@@ -10,12 +10,13 @@ def main():
     data = (torch.randn(2, 2, 64, 64, 64),)
     # torch_onnx.export(model, data, verify=True, report=True)
     ep = torch.export.export(model, data)
-    onnx_program = torch_onnx.export(model, data)
+    onnx_program = torch_onnx.export(ep, data)
     onnx_program.save("senet154.onnx", external_data=True)
+    assert onnx_program.exported_program is not None
     results = torch_onnx.tools.diff_model.diff_exported_program(
         "senet154.onnx",
-        ep,
-        ["output"],
+        onnx_program.exported_program,
+        ["relu_2", "getitem_9"],
         data,
         keep_original_outputs=True,
     )

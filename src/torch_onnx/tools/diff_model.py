@@ -47,8 +47,8 @@ def _add_outputs(model: ir.Model, value_names: Sequence[str]) -> None:
     value_mapping = _create_value_mapping(model.graph)
 
     # Check that the values can be made outputs
-    for value_name in value_mapping:
-        if value_name not in value_names:
+    for value_name in value_names:
+        if value_name not in value_mapping:
             raise ValueError(f"Value '{value_name}' is not in the graph")
         value = value_mapping[value_name]
         if value.shape is None:
@@ -120,8 +120,12 @@ def _process_exported_program(
                 continue
             graph.erase_node(node)
 
-    with graph.inserting_after(nodes[-1]):
-        graph.output(*new_outputs)
+    last_node = list(graph.nodes)[-1]
+    with graph.inserting_after(last_node):
+        for node in new_outputs:
+            graph.output(node)
+
+    ep.graph_module.recompile()
 
 
 def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
@@ -143,9 +147,10 @@ def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
     )
 
 
-def _run_session(session, inputs) -> Sequence[torch.Tensor]:
+def _run_session(session: ort.InferenceSession, inputs: Sequence[np.ndarray]) -> Sequence[np.ndarray]:
     # We don't expect non-tensor as inputs
-    ort_input = dict(zip(session.get_inputs(), inputs))
+    input_names = [input.name for input in session.get_inputs()]
+    ort_input = dict(zip(input_names, inputs))
     run_options = ort.RunOptions()
     run_options.log_severity_level = 3  # 3: Error
     return session.run(None, ort_input, run_options=run_options)

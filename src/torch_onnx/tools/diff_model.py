@@ -107,13 +107,14 @@ def _process_exported_program(
     ep: torch.export.ExportedProgram,
     values: Sequence[str],
     keep_original_outputs: bool = True,
-) -> Sequence[str]:
+) -> tuple[torch.export.ExportedProgram, Sequence[str]]:
     """Add outputs to the exported program.
 
     Returns:
-        The names of all outputs.
+        The updated exported program and the names of all outputs.
     """
-    graph: torch.fx.Graph = ep.graph
+    gm = ep.module()
+    graph: torch.fx.Graph = gm.graph
     nodes = list(graph.nodes)
     new_outputs = []
     node_mapping = dict((node.name, node) for node in nodes)
@@ -135,22 +136,14 @@ def _process_exported_program(
         else:
             outputs = tuple(new_outputs)
 
-    ep._graph_signature.output_specs.clear()
-
-    for output_node in outputs:
-        ep._graph_signature.output_specs.append(
-            torch.export.graph_signature.OutputSpec(
-                torch.export.graph_signature.OutputKind.USER_OUTPUT,
-                torch.export.graph_signature.TensorArgument(output_node.name),
-                target=None,
-            )
-        )
-
     graph.output(outputs)
-    ep.graph_module.recompile()
+    gm.recompile()
 
     output_names = [node.name for node in outputs]
-    return output_names
+    # Retrace the graph to update the exported program
+    ep = torch.export.export(gm, ep.example_inputs[0], ep.example_inputs[1])
+
+    return ep, output_names
 
 
 def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
@@ -296,7 +289,7 @@ def diff_exported_program(
     temp_model_path, onnx_temp_output_names = _process_onnx_model(
         model_path, onnx_names, keep_original_outputs
     )
-    torch_temp_output_names = _process_exported_program(
+    exported_program, torch_temp_output_names = _process_exported_program(
         exported_program, torch_names, keep_original_outputs
     )
     print(exported_program)

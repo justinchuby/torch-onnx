@@ -122,24 +122,22 @@ def _process_exported_program(
             raise ValueError(f"Value '{value}' is not in the graph")
         new_outputs.append(node_mapping[value])
 
-    output_names = []
+    output_node = nodes[-1]
+    assert output_node.op == "output"
+    original_outputs = output_node.args
 
-    for node in graph.nodes:
-        if node.op != "output":
-            continue
+    prev_node = output_node.prev
+    graph.erase_node(output_node)
+    with graph.inserting_after(prev_node):
         if keep_original_outputs:
-            output_names.append(node.name)
+            outputs = (*original_outputs, *new_outputs)
         else:
-            graph.erase_node(node)
+            outputs = (*new_outputs,)
 
-    last_node = list(graph.nodes)[-1]
-    with graph.inserting_after(last_node):
-        for node in new_outputs:
-            graph.output((node,))
-
+    graph.output(outputs)
     ep.graph_module.recompile()
 
-    output_names.extend(values)
+    output_names = [output.name for output in outputs]
     return output_names
 
 
@@ -179,6 +177,10 @@ def _compare_outputs(
     value_names_1: Sequence[str],
     value_names_2: Sequence[str],
 ) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
+    assert len(outputs_1) == len(outputs_2), "The number of outputs must be the same"
+    assert len(value_names_1) == len(value_names_2), "The number of value names must be the same"
+    assert len(outputs_1) == len(value_names_1)
+
     # The other is the expected
     results_1 = []
     results_2 = []
@@ -192,7 +194,7 @@ def _compare_outputs(
             )
             abs_diff_1 = abs_diff_1.flatten()
             rel_diff_1 = rel_diff_1.flatten()
-            bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10])
+            bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10, 1000000])
             abs_diff_hist_1 = torch.histogram(abs_diff_1, bins=bins)
             rel_diff_hist_2 = torch.histogram(rel_diff_1, bins=bins)
             # TODO: Check which is the expected val when computing the diff
@@ -229,8 +231,10 @@ def _compare_outputs(
             )
         except Exception:  # noqa: PERF203
             logger.exception(
-                "Error comparing outputs '%s' and '%s'", value_name_1, value_name_2
+                "Error comparing outputs '%s' and '%s'. value_1 shape: %s, value_2 shape: %s",
+                value_name_1, value_name_2, output_1.shape, output_2.shape,
             )
+            continue
 
     return results_1, results_2
 
@@ -298,6 +302,20 @@ def diff(
     inputs: Sequence[np.ndarray | torch.Tensor],
     keep_original_outputs: bool = True,
 ) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
+    """Compare the outputs of two ONNX models.
+
+    Args:
+        model_1_path: The path to the first ONNX model.
+        model_2_path: The path to the second ONNX model.
+        value_pairs: The names of the values to compare. Each tuple should contain the
+            name of the value in the first model and the name of the value in the second model.
+        inputs: The inputs to the models.
+        keep_original_outputs: Whether to keep the original outputs of the models.
+
+    Returns:
+        Two lists of verification information for each value. The first list assumes
+        model_2 as the expected output and the second list assumes model_1 as the expected output.
+    """
     inputs = [
         input.numpy(force=True) if isinstance(input, torch.Tensor) else input
         for input in inputs

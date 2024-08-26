@@ -124,20 +124,21 @@ def _process_exported_program(
 
     output_node = nodes[-1]
     assert output_node.op == "output"
-    original_outputs = output_node.args
 
+    # Create a new output node with the new outputs
+    original_outputs: tuple[torch.fx.Node, ...] = output_node.args[0]
     prev_node = output_node.prev
     graph.erase_node(output_node)
     with graph.inserting_after(prev_node):
         if keep_original_outputs:
             outputs = (*original_outputs, *new_outputs)
         else:
-            outputs = (*new_outputs,)
+            outputs = tuple(new_outputs)
 
     graph.output(outputs)
     ep.graph_module.recompile()
 
-    output_names = [output.name for output in outputs]
+    output_names = [node.name for node in outputs]
     return output_names
 
 
@@ -278,6 +279,7 @@ def diff_exported_program(
         model_path, onnx_names, keep_original_outputs
     )
     torch_temp_output_names = _process_exported_program(exported_program, torch_names, keep_original_outputs)
+    print(exported_program)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)
     outputs_onnx = _run_session(ort_session, np_inputs)

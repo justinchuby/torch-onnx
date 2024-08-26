@@ -135,6 +135,18 @@ def _process_exported_program(
         else:
             outputs = tuple(new_outputs)
 
+    if not keep_original_outputs:
+        ep._graph_signature.output_specs.clear()
+
+    for output_node in outputs:
+        ep._graph_signature.output_specs.append(
+            torch.export.graph_signature.OutputSpec(
+                torch.export.graph_signature.OutputKind.USER_OUTPUT,
+                torch.export.graph_signature.TensorArgument(output_node.name),
+                target=None,
+            )
+        )
+
     graph.output(outputs)
     ep.graph_module.recompile()
 
@@ -179,7 +191,9 @@ def _compare_outputs(
     value_names_2: Sequence[str],
 ) -> tuple[list[_verification.VerificationInfo], list[_verification.VerificationInfo]]:
     assert len(outputs_1) == len(outputs_2), "The number of outputs must be the same"
-    assert len(value_names_1) == len(value_names_2), "The number of value names must be the same"
+    assert len(value_names_1) == len(
+        value_names_2
+    ), "The number of value names must be the same"
     assert len(outputs_1) == len(value_names_1)
 
     # The other is the expected
@@ -195,7 +209,9 @@ def _compare_outputs(
             )
             abs_diff_1 = abs_diff_1.flatten()
             rel_diff_1 = rel_diff_1.flatten()
-            bins = torch.tensor([0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10, 1000000])
+            bins = torch.tensor(
+                [0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10, 1000000]
+            )
             abs_diff_hist_1 = torch.histogram(abs_diff_1, bins=bins)
             rel_diff_hist_2 = torch.histogram(rel_diff_1, bins=bins)
             # TODO: Check which is the expected val when computing the diff
@@ -233,7 +249,10 @@ def _compare_outputs(
         except Exception:  # noqa: PERF203
             logger.exception(
                 "Error comparing outputs '%s' and '%s'. value_1 shape: %s, value_2 shape: %s",
-                value_name_1, value_name_2, output_1.shape, output_2.shape,
+                value_name_1,
+                value_name_2,
+                output_1.shape,
+                output_2.shape,
             )
             continue
 
@@ -278,7 +297,9 @@ def diff_exported_program(
     temp_model_path, onnx_temp_output_names = _process_onnx_model(
         model_path, onnx_names, keep_original_outputs
     )
-    torch_temp_output_names = _process_exported_program(exported_program, torch_names, keep_original_outputs)
+    torch_temp_output_names = _process_exported_program(
+        exported_program, torch_names, keep_original_outputs
+    )
     print(exported_program)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)

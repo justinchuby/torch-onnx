@@ -138,10 +138,15 @@ def _process_exported_program(
 
     graph.output(outputs)
     gm.recompile()
+    # FIXME: This is very hacky
+    # Reset the pytree info to avoid pytree errors when exporting
+    gm.graph._codegen.pytree_info = None
 
     output_names = [node.name for node in outputs]
-    # Retrace the graph to update the exported program
-    ep = torch.export.export(gm, ep.example_inputs[0], ep.example_inputs[1])
+    # Retrace the graph to get an updated exported program
+    ep = torch.export.export(
+        gm, ep.example_inputs[0], ep.example_inputs[1], strict=False
+    )
 
     return ep, output_names
 
@@ -292,7 +297,6 @@ def diff_exported_program(
     exported_program, torch_temp_output_names = _process_exported_program(
         exported_program, torch_names, keep_original_outputs
     )
-    print(exported_program)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)
     outputs_onnx = _run_session(ort_session, np_inputs)

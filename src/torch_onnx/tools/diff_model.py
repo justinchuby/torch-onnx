@@ -107,8 +107,12 @@ def _process_exported_program(
     ep: torch.export.ExportedProgram,
     values: Sequence[str],
     keep_original_outputs: bool = True,
-) -> None:
-    """Add outputs to the exported program."""
+) -> Sequence[str]:
+    """Add outputs to the exported program.
+
+    Returns:
+        The names of all outputs.
+    """
     graph: torch.fx.Graph = ep.graph
     nodes = list(graph.nodes)
     new_outputs = []
@@ -118,10 +122,14 @@ def _process_exported_program(
             raise ValueError(f"Value '{value}' is not in the graph")
         new_outputs.append(node_mapping[value])
 
-    if not keep_original_outputs:
-        for node in graph.nodes:
-            if node.op != "output":
-                continue
+    output_names = []
+
+    for node in graph.nodes:
+        if node.op != "output":
+            continue
+        if keep_original_outputs:
+            output_names.append(node.name)
+        else:
             graph.erase_node(node)
 
     last_node = list(graph.nodes)[-1]
@@ -130,6 +138,9 @@ def _process_exported_program(
             graph.output((node,))
 
     ep.graph_module.recompile()
+
+    output_names.extend(values)
+    return output_names
 
 
 def _ort_session_initializer(model: str | bytes) -> ort.InferenceSession:
@@ -259,10 +270,10 @@ def diff_exported_program(
         onnx_names = typing.cast(Sequence[str], value_names)
         torch_names = typing.cast(Sequence[str], value_names)
 
-    temp_model_path, model_output_names = _process_onnx_model(
+    temp_model_path, onnx_temp_output_names = _process_onnx_model(
         model_path, onnx_names, keep_original_outputs
     )
-    _process_exported_program(exported_program, torch_names, keep_original_outputs)
+    torch_temp_output_names = _process_exported_program(exported_program, torch_names, keep_original_outputs)
     # Run two models with the same inputs and compare the outputs
     ort_session = _ort_session_initializer(temp_model_path)
     outputs_onnx = _run_session(ort_session, np_inputs)
@@ -275,7 +286,7 @@ def diff_exported_program(
 
     # Compare the outputs
     results, _ = _compare_outputs(
-        outputs_onnx, outputs_torch, model_output_names, model_output_names
+        outputs_onnx, outputs_torch, onnx_temp_output_names, torch_temp_output_names
     )
     return results
 

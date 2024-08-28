@@ -207,7 +207,8 @@ def _compare_outputs(
             abs_diff_1 = abs_diff_1.flatten()
             rel_diff_1 = rel_diff_1.flatten()
             bins = torch.tensor(
-                [0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10, 1000000]
+                [0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10, 1000000],
+                dtype=abs_diff_1.dtype,
             )
             abs_diff_hist_1 = torch.histogram(abs_diff_1, bins=bins)
             rel_diff_hist_2 = torch.histogram(rel_diff_1, bins=bins)

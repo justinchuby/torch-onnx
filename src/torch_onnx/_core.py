@@ -765,7 +765,7 @@ def _exported_program_to_onnx_program(
             },
         ),
         ir_version=9,
-        producer_name="torch",
+        producer_name="pytorch",
         producer_version=torch.__version__,
     )
 

@@ -53,7 +53,6 @@ class ConversionTest(unittest.TestCase):
         model = CondBranchClassMethod()
         input = torch.randn(5)
         onnx_program = torch.onnx.dynamo_export(model, input)
-        print(onnx_program)
         if IS_MAIN:
             onnx_program.save("conditional.onnx")
 

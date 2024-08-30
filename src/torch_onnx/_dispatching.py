@@ -204,7 +204,7 @@ def _get_first_tensor_in_node_list(
 
 
 def _get_named_fx_node_args(node: torch.fx.Node) -> dict[str, torch.fx.node.Argument]:
-    # FIXME: node.target may not have a schema
+    assert hasattr(node.target, "_schema")
     torch_schema: torch.FunctionSchema = node.target._schema  # type: ignore[union-attr]
     node_args = {}
     for arg, schema_arg in zip(node.args, torch_schema.arguments):
@@ -227,6 +227,11 @@ def get_matching_overload(
     Returns:
         A tuple containing the matched overload and a string describing the reason for failure or success.
     """
+    if not hasattr(node.target, "_schema"):
+        # FIXME(justinchuby): When the target is a builtin, we should instead
+        # Match only the inputs positionally. Figure out how to do that as right
+        # now we assume all inputs are named.
+        return overloads[0], "The node target does not have a schema. Return the first one."
     named_args = _get_named_fx_node_args(node)
     # FIXME: node.target may and builtin and not have a schema
     # FIXME: Handle when we don't know the names of the arguments

@@ -9,9 +9,10 @@ import os
 import warnings
 from typing import Any, Mapping, Sequence
 
-import onnx
+import onnxscript._framework_apis.torch_2_5 as onnxscript_apis
 import torch
 import torch.export
+from onnxscript import ir
 
 from torch_onnx import _core, _onnx_program
 
@@ -111,13 +112,6 @@ def _get_torch_export_args(
     return args, kwargs
 
 
-def _convert_version(path: str | os.PathLike, opset_version: int) -> None:
-    """Convert the ONNX file to a specific version."""
-    model = onnx.load(path, load_external_data=False)
-    model = onnx.version_converter.convert_version(model, opset_version)
-    onnx.save(model, path)
-
-
 def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
@@ -142,7 +136,7 @@ def _torch_onnx_export(
     artifacts_dir: str | os.PathLike = ".",
     fallback: bool = False,
     **_,
-) -> _onnx_program.ONNXProgram | None:
+) -> _onnx_program.ONNXProgram:
     # Set up the error reporting facilities
     report = _WRITE_REPORT or report
     verify = _VERIFY_ONNX_PROGRAM or verify
@@ -162,7 +156,10 @@ def _torch_onnx_export(
                 model, dynamic_axes, input_names
             )
 
-    should_convert_version = False
+    if opset_version is None:
+        # TODO(justinchuby): Change the hardcoded opset version for it to be flexible
+        # FIXME(justinchuby): Handle when torchlib bumps opset version
+        opset_version = 18
 
     try:
         onnx_program = _core.export(
@@ -181,23 +178,14 @@ def _torch_onnx_export(
             verbose=verbose,
         )
 
-        if f is not None:
-            # Always save the initializers as external data to reduce the size of the ONNX file
-            onnx_program.save(
-                f,
-                include_initializers=export_params,
-                keep_initializers_as_inputs=keep_initializers_as_inputs,
-                external_data=external_data,
-            )
-            if opset_version is not None and opset_version != 18:
-                # TODO(justinchuby): Update the hardcoded opset version
-                should_convert_version = True
-
     except Exception as e:
         if fallback:
             print(
                 f"[torch.onnx] Falling back to legacy torch.onnx.export due to the following error: {e}",
             )
+            if f is None:
+                raise TypeError("f must be provided when fallback is enabled") from e
+
             _original_torch_onnx_export(
                 model,
                 args,
@@ -210,20 +198,23 @@ def _torch_onnx_export(
                 dynamic_axes=dynamic_axes,
                 keep_initializers_as_inputs=keep_initializers_as_inputs,
             )
-            onnx_program = None
-            if opset_version is None:
-                opset_version = 18
-            if opset_version != 17:
-                should_convert_version = True
+            onnx_program = _onnx_program.ONNXProgram(ir.load(f), None)
         else:
             raise
 
-    if f is not None and should_convert_version:
-        assert opset_version is not None
-        print(
-            f"[torch.onnx] Converting the ONNX file to opset version {opset_version}..."
+    # Converter opset version and optimize
+    onnx_program.model = onnxscript_apis.convert_version(
+        onnx_program.model, opset_version
+    )
+    onnx_program.model = onnxscript_apis.optimize(onnx_program.model)
+
+    if f is not None:
+        onnx_program.save(
+            f,
+            include_initializers=export_params,
+            keep_initializers_as_inputs=keep_initializers_as_inputs,
+            external_data=external_data,
         )
-        _convert_version(f, opset_version)
 
     return onnx_program
 

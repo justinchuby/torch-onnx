@@ -6,8 +6,9 @@ from __future__ import annotations
 import os
 
 import torch
-import torch_onnx
 from torch.testing._internal import common_utils
+
+import torch_onnx
 
 
 class SampleModel(torch.nn.Module):

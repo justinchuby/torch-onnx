@@ -160,7 +160,11 @@ def _set_shape_types(
 
 def _set_shape_type(
     value: ir.Value,
-    meta_val: torch.Tensor | tuple[torch.Tensor],
+    meta_val: torch.Tensor
+    | torch.SymBool
+    | torch.SymInt
+    | torch.SymFloat
+    | tuple[torch.Tensor],
     complex_to_float: bool,
 ) -> None:
     # TODO: Consider using meta["tensor_meta"] for this? Would it be faster?

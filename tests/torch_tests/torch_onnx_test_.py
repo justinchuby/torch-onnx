@@ -13,7 +13,6 @@ import numpy as np
 import onnx
 import onnx_test_common
 import torch
-import torch_onnx
 import torchvision
 from pytorch_test_common import (
     BATCH_SIZE,
@@ -28,6 +27,8 @@ from torch import Tensor
 from torch.onnx import errors, verification
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_utils import skipIfNoLapack
+
+import torch_onnx
 
 torch_onnx.patch_torch(report=True, profile=False)
 

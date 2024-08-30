@@ -1,8 +1,9 @@
 import onnx
 import torch
-import torch_onnx
 from onnxscript import ir
 from transformers import LongformerModel, LongformerTokenizer
+
+import torch_onnx
 
 lower = "at_conversion"
 tokenizer = LongformerTokenizer.from_pretrained("allenai/longformer-base-4096")

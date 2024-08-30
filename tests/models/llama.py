@@ -1,8 +1,9 @@
 # Load model directly
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 import torch_onnx
 import torch_onnx._verification
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def main():

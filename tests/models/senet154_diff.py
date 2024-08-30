@@ -1,8 +1,9 @@
 import torch
+from monai.networks.nets import SENet154
+
 import torch_onnx
 import torch_onnx.tools
 import torch_onnx.tools.diff_model
-from monai.networks.nets import SENet154
 
 
 def main():

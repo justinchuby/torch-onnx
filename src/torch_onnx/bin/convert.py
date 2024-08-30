@@ -29,6 +29,7 @@ def main():
 
     # Delay import to improve startup time.
     import torch
+
     from torch_onnx._core import export
 
     exported_program = torch.export.load(args.model_path)

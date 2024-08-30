@@ -1,8 +1,9 @@
 import unittest
 
 import torch
-import torch_onnx
 import torchvision
+
+import torch_onnx
 
 
 class ResnetTest(unittest.TestCase):

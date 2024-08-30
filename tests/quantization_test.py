@@ -5,9 +5,10 @@ import unittest
 import onnx
 import torch
 import torch._export as torch_export
-import torch_onnx
 from torch.ao.quantization import quantize_pt2e
 from torch.ao.quantization.quantizer import xnnpack_quantizer
+
+import torch_onnx
 
 IS_MAIN = __name__ == "__main__"
 

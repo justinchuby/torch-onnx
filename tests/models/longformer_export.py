@@ -1,6 +1,7 @@
 import torch
-import torch_onnx
 from transformers import LongformerModel, LongformerTokenizer
+
+import torch_onnx
 
 torch_onnx.patch_torch(
     report=True, profile=True, verify=True, dump_exported_program=True, fallback=True

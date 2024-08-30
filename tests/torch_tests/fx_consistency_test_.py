@@ -52,7 +52,6 @@ import pytest
 import pytorch_test_common
 import torch
 import torch.fx
-import torch_onnx
 from onnx_test_common import skip, skip_slow, xfail
 from torch.onnx._internal.diagnostics import _rules
 from torch.testing._internal import (
@@ -62,6 +61,8 @@ from torch.testing._internal import (
 )
 from torch.testing._internal.opinfo import core as opinfo_core
 from torch.utils import _pytree as pytree
+
+import torch_onnx
 
 torch_onnx.patch_torch(report=True, profile=False)
 

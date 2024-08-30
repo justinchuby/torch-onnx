@@ -12,7 +12,7 @@ import torch_onnx
 
 
 class ConversionTest(unittest.TestCase):
-    @unittest.expectedFailure  # Conditionals are not supported yet
+    @unittest.skip("Conditionals are not supported yet")
     def test_conditional(self):
         class MySubModule(torch.nn.Module):
             def foo(self, x):
@@ -46,9 +46,8 @@ class ConversionTest(unittest.TestCase):
             def forward(self, x):
                 return cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
 
-        model = CondBranchClassMethod()
         input = torch.randn(5)
-        onnx_program = torch_onnx.export(GraphModule(), (input,))
+        onnx_program = torch_onnx.export(CondBranchClassMethod(), (input,))
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
     def test_list_as_empty_input(self):

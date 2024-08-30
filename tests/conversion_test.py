@@ -6,8 +6,9 @@ from __future__ import annotations
 import unittest
 
 import torch
-import torch_onnx
 from functorch.experimental.control_flow import cond
+
+import torch_onnx
 
 IS_MAIN = __name__ == "__main__"
 
@@ -15,7 +16,7 @@ torch_onnx.patch_torch(report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS
 
 
 class ConversionTest(unittest.TestCase):
-    @unittest.expectedFailure  # Conditionals are not supported yet
+    @unittest.skip("Conditionals are not supported yet")
     def test_conditional(self):
         class MySubModule(torch.nn.Module):
             def foo(self, x):
@@ -52,6 +53,7 @@ class ConversionTest(unittest.TestCase):
         model = CondBranchClassMethod()
         input = torch.randn(5)
         onnx_program = torch.onnx.dynamo_export(model, input)
+        print(onnx_program)
         if IS_MAIN:
             onnx_program.save("conditional.onnx")
 

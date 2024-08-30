@@ -231,7 +231,9 @@ def get_matching_overload(
         # FIXME(justinchuby): When the target is a builtin, we should instead
         # Match only the inputs positionally. Figure out how to do that as right
         # now we assume all inputs are named.
-        return overloads[0], "The node target does not have a schema. Return the first one."
+        return overloads[
+            0
+        ], "The node target does not have a schema. Return the first one."
     named_args = _get_named_fx_node_args(node)
     # FIXME: node.target may and builtin and not have a schema
     # FIXME: Handle when we don't know the names of the arguments

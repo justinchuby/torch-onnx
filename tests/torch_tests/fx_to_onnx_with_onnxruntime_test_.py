@@ -9,7 +9,6 @@ from typing import Any, Mapping
 import onnx_test_common
 import onnxruntime  # type: ignore[import]
 import parameterized  # type: ignore[import]
-import pytorch_test_common
 import torch
 import torch.onnx
 import torch_onnx
@@ -17,7 +16,6 @@ import torchvision
 import transformers  # type: ignore[import]
 from torch import nn
 from torch.testing._internal import common_utils
-from torch.utils import _pytree as pytree
 
 torch_onnx.patch_torch(report=True)
 
@@ -28,14 +26,10 @@ def _parameterized_class_attrs_and_values():
         itertools.product(
             (True, False),
             (True, False),
-            (
-                pytorch_test_common.TorchModelType.TORCH_NN_MODULE,
-                pytorch_test_common.TorchModelType.TORCH_EXPORT_EXPORTEDPROGRAM,
-            ),
         )
     )
     return {
-        "attrs": ["op_level_debug", "dynamic_shapes", "model_type"],
+        "attrs": ["op_level_debug", "dynamic_shapes"],
         "input_values": input_values,
     }
 
@@ -52,26 +46,6 @@ def _parameterize_class_name(cls: type, idx: int, input_dicts: Mapping[Any, Any]
     return f"{cls.__name__}_{'_'.join(suffixes)}"
 
 
-def _convert_complex_to_real_representation(model_args):
-    """Convert complex dtype tensors to real representation tensors.
-
-    ONNX does not support complex dtype tensors. Thus, we convert complex dtype tensors
-    to real representation tensors (i.e., float dtype tensors with an extra dimension
-    representing the real and imaginary parts of the complex number).
-    """
-    return tuple(
-        torch.view_as_real(arg.resolve_conj())
-        if isinstance(arg, torch.Tensor) and arg.is_complex()
-        else arg
-        for arg in model_args
-    )
-
-
-def adapt_torch_outputs_to_onnx(outputs):
-    flattened_args, _ = pytree.tree_flatten((outputs,))
-    return _convert_complex_to_real_representation(flattened_args)
-
-
 @parameterized.parameterized_class(
     **_parameterized_class_attrs_and_values(),
     class_name_func=_parameterize_class_name,
@@ -79,7 +53,6 @@ def adapt_torch_outputs_to_onnx(outputs):
 class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
     op_level_debug: bool
     dynamic_shapes: bool
-    model_type: pytorch_test_common.TorchModelType
 
     def setUp(self):
         super().setUp()
@@ -100,10 +73,6 @@ class TestFxToOnnxWithOnnxRuntime(onnx_test_common._TestONNXRuntime):
 
         self.run_test_with_fx_to_onnx_exporter_and_onnx_runtime(func, (tensor_x,))
 
-    @pytorch_test_common.xfail(
-        error_message="Unexpectedly found a <class 'torch.Tensor'> in the inputs.",
-        reason="https://github.com/pytorch/pytorch/issues/96379",
-    )
     def test_func_with_args_and_tensor_kwargs(self):
         # Non-tensor optional kwargs are always folded into constant and
         # removed from input list in Dynamo-traced graph, if its value is not provided

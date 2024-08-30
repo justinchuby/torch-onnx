@@ -1,6 +1,7 @@
 import torch
-import torch_onnx
 from monai.networks.nets import SENet154
+
+import torch_onnx
 
 
 def main():

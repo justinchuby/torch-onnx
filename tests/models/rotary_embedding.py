@@ -2,9 +2,10 @@ import unittest
 
 import onnx
 import torch
-import torch_onnx
 from onnxscript import ir
 from torch import nn
+
+import torch_onnx
 
 
 class LlamaMSRotaryEmbedding(nn.Module):

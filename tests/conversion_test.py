@@ -6,8 +6,9 @@ from __future__ import annotations
 import unittest
 
 import torch
-import torch_onnx
 from functorch.experimental.control_flow import cond
+
+import torch_onnx
 
 IS_MAIN = __name__ == "__main__"
 

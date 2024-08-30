@@ -10,13 +10,9 @@ from functorch.experimental.control_flow import cond
 
 import torch_onnx
 
-IS_MAIN = __name__ == "__main__"
-
-torch_onnx.patch_torch(report=IS_MAIN, profile=IS_MAIN, dump_exported_program=IS_MAIN)
-
 
 class ConversionTest(unittest.TestCase):
-    @unittest.expectedFailure  # Conditionals are not supported yet
+    @unittest.skip("Conditionals are not supported yet")
     def test_conditional(self):
         class MySubModule(torch.nn.Module):
             def foo(self, x):
@@ -50,11 +46,9 @@ class ConversionTest(unittest.TestCase):
             def forward(self, x):
                 return cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
 
-        model = CondBranchClassMethod()
         input = torch.randn(5)
-        onnx_program = torch.onnx.dynamo_export(model, input)
-        if IS_MAIN:
-            onnx_program.save("conditional.onnx")
+        onnx_program = torch_onnx.export(CondBranchClassMethod(), (input,))
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
     def test_list_as_empty_input(self):
         class GraphModule(torch.nn.Module):
@@ -62,11 +56,9 @@ class ConversionTest(unittest.TestCase):
                 view = torch.ops.aten.view.default(arg0_1, [])
                 return (view,)
 
-        model = GraphModule()
         input = torch.randn(1)
-        onnx_program = torch.onnx.dynamo_export(model, input)
-        if IS_MAIN:
-            onnx_program.save("list_as_empty_input.onnx")
+        onnx_program = torch_onnx.export(GraphModule(), (input,))
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
     def test_getting_metadata_should_not_fail_on_none(self):
         class GraphModule(torch.nn.Module):
@@ -98,16 +90,14 @@ class ConversionTest(unittest.TestCase):
                 )
                 return (index,)
 
-        model = GraphModule()
         inputs = (
             torch.randint(1, 2, (2, 2)),
             torch.tensor([1, 2]),
             torch.tensor([1, 2]),
             torch.randn(3, 4, 5, 6, 7),
         )
-        onnx_program = torch.onnx.dynamo_export(model, *inputs)
-        if IS_MAIN:
-            onnx_program.save("getting_metadata_should_not_fail_on_none.onnx")
+        onnx_program = torch_onnx.export(GraphModule(), inputs)
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
     def test_iteration_over_0d_tensor(self):
         class GraphModule(torch.nn.Module):
@@ -116,10 +106,70 @@ class ConversionTest(unittest.TestCase):
                 add: "f32[]" = torch.ops.aten.add.Tensor(zeros, arg0_1)
                 return (add,)
 
-        model = GraphModule()
         input = torch.tensor(1.0)
-        onnx_program = torch.onnx.dynamo_export(model, input)
-        assert onnx_program
+        onnx_program = torch_onnx.export(GraphModule(), (input,))
+        torch_onnx.testing.assert_onnx_program(onnx_program)
+
+    def test_builtin_function_and_symbool_support(self):
+        # https://github.com/justinchuby/torch-onnx/issues/42
+        class GraphModule(torch.nn.Module):
+            def forward(
+                self,
+                arg0_1: f32[10, 3, 5],
+                arg1_1: f32[10, 3, 4],
+                arg2_1: f32[10, 4, 5],
+                arg3_1: "i64[]",
+                arg4_1: "f32[]",
+            ):
+                _local_scalar_dense: Sym(f4) = (
+                    torch.ops.aten._local_scalar_dense.default(arg4_1)
+                )
+                arg4_1 = None
+                _local_scalar_dense_1: Sym(u4) = (
+                    torch.ops.aten._local_scalar_dense.default(arg3_1)
+                )
+                arg3_1 = None
+                ge: Sym(u4 >= -9223372036854775808) = (
+                    _local_scalar_dense_1 >= -9223372036854775808
+                )
+                scalar_tensor: "f32[]" = torch.ops.aten.scalar_tensor.default(ge)
+                ge = None
+                _assert_async = torch.ops.aten._assert_async.msg(
+                    scalar_tensor,
+                    "_local_scalar_dense_1 is outside of inline constraint [-9223372036854775808, 9223372036854775807].",
+                )
+                scalar_tensor = None
+                le: Sym(u4 <= 9223372036854775807) = (
+                    _local_scalar_dense_1 <= 9223372036854775807
+                )
+                scalar_tensor_1: "f32[]" = torch.ops.aten.scalar_tensor.default(le)
+                le = None
+                _assert_async_1 = torch.ops.aten._assert_async.msg(
+                    scalar_tensor_1,
+                    "_local_scalar_dense_1 is outside of inline constraint [-9223372036854775808, 9223372036854775807].",
+                )
+                scalar_tensor_1 = None
+                baddbmm: f32[10, 3, 5] = torch.ops.aten.baddbmm.default(
+                    arg0_1,
+                    arg1_1,
+                    arg2_1,
+                    beta=_local_scalar_dense,
+                    alpha=_local_scalar_dense_1,
+                )
+                arg0_1 = arg1_1 = arg2_1 = _local_scalar_dense = (
+                    _local_scalar_dense_1
+                ) = None
+                return (baddbmm,)
+
+        inputs = (
+            torch.randn(10, 3, 5),
+            torch.randn(10, 3, 4),
+            torch.randn(10, 4, 5),
+            torch.tensor(1),
+            torch.tensor(1.0),
+        )
+        onnx_program = torch_onnx.export(GraphModule(), inputs)
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
 
 if __name__ == "__main__":

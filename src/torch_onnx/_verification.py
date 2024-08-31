@@ -40,6 +40,23 @@ class VerificationInfo:
     # NOTE: We don't need to include shape because the expected shape is already known
     # and checked by the runtime
 
+    def asdict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "max_abs_diff": self.max_abs_diff,
+            "max_rel_diff": self.max_rel_diff,
+            "abs_diff_hist": [
+                self.abs_diff_hist[0].tolist(),
+                self.abs_diff_hist[1].tolist(),
+            ],
+            "rel_diff_hist": [
+                self.rel_diff_hist[0].tolist(),
+                self.rel_diff_hist[1].tolist(),
+            ],
+            "expected_dtype": str(self.expected_dtype),
+            "actual_dtype": str(self.actual_dtype),
+        }
+
 
 @dataclasses.dataclass
 class SearchResult:

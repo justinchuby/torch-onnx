@@ -269,7 +269,8 @@ def diff_exported_program(
 
     Args:
         model_path: The path to the ONNX model.
-        exported_program: The exported program.
+        exported_program: The exported program. It needs to be the ONNX export treated
+            ExportedProgram, which has type promotion in place.
         value_names: The names of the values to compare. If provided as a list, then
             the same names in the ONNX model and the exported program will be compared.
             If provided as a list of tuples, then the first element of each tuple will

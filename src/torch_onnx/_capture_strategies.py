@@ -9,6 +9,7 @@ import datetime
 import os
 import pathlib
 from typing import TYPE_CHECKING, Any, Callable
+import torch._dynamo.exc
 
 import torch
 from torch.utils import _pytree
@@ -121,9 +122,20 @@ class TorchExportStrategy(CaptureStrategy):
     def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
-        return torch.export.export(
-            model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
-        )
+        try:
+            return torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes
+            )
+        except torch._dynamo.exc.UserError as exc:
+            # Refine the dynamic shapes based on the suggested fixes.
+            new_shapes = (
+                torch.export.dynamic_shapes.refine_dynamic_shapes_from_suggested_fixes(
+                    exc.msg, dynamic_shapes
+                )
+            )
+            return torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=new_shapes
+            )
 
     def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))
@@ -149,9 +161,20 @@ class TorchExportNonStrictStrategy(CaptureStrategy):
     def _capture(
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
-        return torch.export.export(
-            model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes, strict=False
-        )
+        try:
+            return torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=dynamic_shapes, strict=False
+            )
+        except torch._dynamo.exc.UserError as exc:
+            # Refine the dynamic shapes based on the suggested fixes.
+            new_shapes = (
+                torch.export.dynamic_shapes.refine_dynamic_shapes_from_suggested_fixes(
+                    exc.msg, dynamic_shapes
+                )
+            )
+            return torch.export.export(
+                model, args, kwargs=kwargs, dynamic_shapes=new_shapes, strict=False
+            )
 
     def _enter(self, model) -> None:
         model_repr = _take_first_line(repr(model))

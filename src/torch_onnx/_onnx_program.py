@@ -15,7 +15,7 @@ import onnx
 import onnxscript._framework_apis.torch_2_5 as onnxscript_apis
 import torch
 from onnxscript import ir
-from torch.utils import _pytree as pytree
+from torch.utils import _pytree
 
 if TYPE_CHECKING:
     import onnxruntime as ort  # type: ignore[import-untyped]
@@ -215,7 +215,7 @@ def _process_args(args, kwargs) -> tuple[torch.Tensor, ...]:
 
 
 def _flatten_inputs(model_args, model_kwargs):
-    flattened_args, _ = pytree.tree_flatten((model_args, model_kwargs))
+    flattened_args, _ = _pytree.tree_flatten((model_args, model_kwargs))
     return flattened_args
 
 

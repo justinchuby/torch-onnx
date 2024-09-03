@@ -9,9 +9,9 @@ import datetime
 import os
 import pathlib
 from typing import TYPE_CHECKING, Any, Callable
-import torch._dynamo.exc
 
 import torch
+import torch._dynamo.exc
 from torch.utils import _pytree
 
 from torch_onnx import _torchscript_converter

@@ -2,7 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/torch-onnx.svg)](https://badge.fury.io/py/torch-onnx)
 
-Experimental torch ONNX exporter.
+Experimental torch ONNX exporter. Compatible with torch>=2.1.
 
 > [!WARNING]
 > This is an experimental project and is not designed for production use.

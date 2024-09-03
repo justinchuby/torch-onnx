@@ -455,6 +455,7 @@ class OpSignature:
                     py_signature,
                 )
                 type_constraint = TypeConstraintParam.any_value(f"T_{param.name}")
+                type_constraints[param.name] = type_constraint
                 params.append(
                     Parameter(
                         name=param.name,

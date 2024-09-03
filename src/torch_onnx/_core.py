@@ -1181,11 +1181,12 @@ def export(
                     if not failed_results
                     else _format_exceptions_for_all_strategies(failed_results),
                     onnx_program.exported_program,
-                    profile_result=profile_result,
-                    export_status=export_status,
                     decomp_comparison=_reporting.format_decomp_comparison(
                         pre_decomp_unique_ops, post_decomp_unique_ops
                     ),
+                    export_status=export_status,
+                    profile_result=profile_result,
+                    model=onnx_program.model,
                     registry=registry,
                 )
                 verbose_print(f"Export report has been saved to '{report_path}'.")

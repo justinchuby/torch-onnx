@@ -136,6 +136,20 @@ class TestExportAPIDynamo(common_utils.TestCase):
         assert onnx_program
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
+    def test_dynamic_axes_supports_output_names(self):
+        onnx_program = torch_onnx.export_compat(
+            SampleModelForDynamicShapes(),
+            (
+                torch.randn(2, 2, 3),
+                torch.randn(2, 2, 3),
+            ),
+            input_names=["x", "b"],
+            output_names=["x_out", "b_out"],
+            dynamic_axes={"b": [0, 1, 2], "b_out": [0, 1, 2]},
+        )
+        assert onnx_program is not None
+        torch_onnx.testing.assert_onnx_program(onnx_program)
+
 
 if __name__ == "__main__":
     common_utils.run_tests()

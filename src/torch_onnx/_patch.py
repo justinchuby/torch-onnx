@@ -35,8 +35,10 @@ def _signature(model) -> inspect.Signature:
 
 def _from_dynamic_axes_to_dynamic_shapes(
     model,
+    *,
     dynamic_axes=None,
     input_names: Sequence[str] | None = None,
+    output_names: set[str],
 ) -> dict[str, Any] | None:
     """
 
@@ -74,10 +76,13 @@ def _from_dynamic_axes_to_dynamic_shapes(
     # for the exported program
     dynamic_shapes_to_exported_program = {}
     for input_name, axes in dynamic_axes.items():
-        # input_name can be either from inptu_names or from the model inputs
+        if input_name in output_names:
+            # User specified an output name as a dynamic axis, so we skip it
+            continue
+        # input_name can be either from input_names or from the model inputs
         if input_name not in input_names_to_model_inputs:
             raise ValueError(
-                f"dynamix axis: {input_name} is not found in the input names: {input_names}"
+                f"dynamic axis: {input_name} is not found in the input names: {input_names}"
             )
         model_input_name = input_names_to_model_inputs[input_name]
         if isinstance(axes, dict):
@@ -152,8 +157,11 @@ def _torch_onnx_export(
     else:
         args, kwargs = _get_torch_export_args(args, kwargs)
         if dynamic_shapes is None and dynamic_axes is not None:
-            dynamic_shapes = _from_dynamic_axes_to_dynamic_shapes(
-                model, dynamic_axes, input_names
+            _from_dynamic_axes_to_dynamic_shapes(
+                model,
+                dynamic_axes=dynamic_axes,
+                input_names=input_names,
+                output_names=set(output_names or ()),
             )
 
     if opset_version is None:

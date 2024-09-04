@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 import packaging.version
 import torch
@@ -19,8 +20,8 @@ def _torch_older_than(version: str) -> bool:
     )
 
 
-# The _preserve_ops argument is only available in torch>=2.5
-_TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM = not _torch_older_than("2.5")
+# The only torch>=2.5 can preserve ops
+_TORCH_EXPORT_CAN_PRESERVE_OPS = not _torch_older_than("2.5")
 
 
 def decompose_with_registry(
@@ -31,8 +32,10 @@ def decompose_with_registry(
     This function is needed so it shows clearly on the profiler results.
     """
     onnx_registered_ops = set(_decomp.get_onnx_implemented_overloads(registry))
-    decomp_table = _decomp.create_onnx_friendly_decomposition_table(onnx_registered_ops)
-    if not _TORCH_EXPORT_HAS_PRESERVE_OPS_PARAM:
+    decomp_table: dict[torch._ops.OperatorBase, Any] = (
+        _decomp.create_onnx_friendly_decomposition_table(onnx_registered_ops)
+    )
+    if not _TORCH_EXPORT_CAN_PRESERVE_OPS:
         # torch 2.4 or older
         return exported_program.run_decompositions(decomp_table)
 
@@ -40,6 +43,8 @@ def decompose_with_registry(
     to_preserve = _decomp.get_preserve_ops()
     # We can only preserve implemented ops
     can_preserve = tuple(to_preserve.intersection(onnx_registered_ops))
+    for op in can_preserve:
+        decomp_table[op] = None
     return exported_program.run_decompositions(decomp_table, _preserve_ops=can_preserve)
 
 

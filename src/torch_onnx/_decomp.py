@@ -50,6 +50,7 @@ def get_preserve_ops() -> set[torch._ops.OpOverload]:
         aten._upsample_nearest_exact3d.vec,
         aten.group_norm.default,
         aten.instance_norm.default,
+        aten.stft.default,
         aten.upsample_bilinear2d.default,
         aten.upsample_bilinear2d.vec,
         aten.upsample_linear1d.default,

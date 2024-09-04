@@ -34,9 +34,14 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e .
       - name: Run tests
-        run: pytest --cov=torch_onnx --cov-report=xml --cov-append --cov-branch --junit-xml pytest.xml
+        run: pytest --cov=torch_onnx --cov-report=xml --cov-append --cov-branch --junitxml=junit.xml
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 import inspect
 import logging
-from typing import Any, Mapping, Sequence, Union
+from typing import Any, Iterable, Mapping, Sequence, Union
 
 import onnx
 import onnxscript
@@ -177,7 +177,7 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
-def _process_python_constants_and_sequences(
+def _process_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
@@ -202,7 +202,7 @@ def _process_python_constants_and_sequences(
         opset: The Opset to use for creating Constant nodes.
 
     Returns:
-        None
+        A mapping of parameter names to Python constants converted to constant Nodes.
     """
     # 3. Convert Python constants to Constant nodes based on the dtype information;
     #    construct sequences
@@ -221,26 +221,18 @@ def _process_python_constants_and_sequences(
         if isinstance(arg, ir.Value):
             # TODO(justinchuby): Cast the ir.Value here if needed
             continue
+
         if (
             isinstance(arg, Sequence)
             and len(arg) > 0
-            and all(isinstance(val, ir.Value) for val in arg)
+            and any(isinstance(val, ir.Value) for val in arg)
         ):
             # Skip the sequence of ir.Value. This is a variadic input or a Sequence input
-            # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
-            # like `Max(0, ir.Value())`
-            # We need to convert the Python constants to Constant nodes
-            # NOTE: Important to check that arg is not empty because we need to treat it as list[int] or list[float]
+            # It will be handled by _process_python_sequences
             continue
-            # if param.variadic:
-            #     # FXIME: Handle variadic inputs and sequence inputs differently
-            #     raise NotImplementedError
-            # TODO: Find a way to recursively build constants. Maybe extract the logic out.
-            # FIXME: I am here
-
-        assert isinstance(
-            param, _schemas.Parameter
-        ), f"Expected Parameter, got {type(param)}"
+        if param.variadic:
+            # Handled by _process_python_sequences
+            continue
 
         if param.type_constraint in type_binding:
             # A known dtype is available
@@ -293,6 +285,98 @@ def _process_python_constants_and_sequences(
 
         named_inputs[param.name] = constant_value
     return named_inputs  # type: ignore[return-value]
+
+
+def _allowed_types_are_sequence_types(allowed_types: Iterable[ir.TypeProtocol]) -> bool:
+    return all(isinstance(t, ir.SequenceType) for t in allowed_types)
+
+
+def _process_python_sequences(
+    signature: _schemas.OpSignature,
+    named_inputs: dict[str, AllowedArgType],
+    type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
+    opset: onnxscript.values.Opset,
+):
+    """Handle three types of sequences.
+
+    1. Variadic inputs
+    2. Sequence input of ir.Value,
+    3. Sequence of Python constants that contains ir.Value
+    """
+    for name, arg in named_inputs.items():
+        param = signature.params_map[name]
+        assert isinstance(
+            param, _schemas.Parameter
+        ), f"Expected Parameter, got {type(param)}"
+
+        if not (
+            isinstance(arg, Sequence)
+            and len(arg) > 0
+            and any(isinstance(val, ir.Value) for val in arg)
+        ):
+            continue
+
+        dtype = None
+        if param.type_constraint in type_binding:
+            # A known dtype is available
+            dtype = type_binding[param.type_constraint].dtype
+        elif len(param.type_constraint.allowed_types) == 1:
+            # Only one type is allowed
+            dtype = next(iter(param.type_constraint.allowed_types)).dtype
+        else:
+            # Try to obtain the dtype from one of the values
+            for val in arg:
+                if isinstance(val, ir.Value) and val.dtype is not None:
+                    dtype = val.dtype
+                    break
+            if dtype is None:
+                if any(isinstance(val, float) for val in arg):
+                    # NOTE: if any float is present, the dtype is float
+                    dtype = ir.DataType.FLOAT
+                elif any(isinstance(val, int) for val in arg):
+                    # Otherwise if any int is present, the dtype is int
+                    dtype = ir.DataType.INT64
+        if dtype is None:
+            raise ValueError(f"Could not determine the dtype for the input '{name}'")
+
+        # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
+        # like `Max(0, ir.Value())`
+        # We need to convert the Python constants to Constant nodes
+        # NOTE: Important to check that arg is not empty because we need to treat it as list[int] or list[float]
+
+        if param.variadic:
+            # 1. Variadic inputs
+            new_arg = []
+            for val in arg:
+                if isinstance(val, ir.Value):
+                    new_arg.append(val)
+                else:
+                    constant_tensor = ir.tensor(value=val, dtype=dtype)  # type: ignore[arg-type]
+                    constant_value = opset.Constant(value=constant_tensor)
+                    new_arg.append(constant_value)
+            named_inputs[name] = new_arg
+        elif _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
+            # 2. Sequence input of ir.Value
+            # Turn the list into a Sequence node
+            # TODO: Combine the common logic with the variadic case
+            # Constant op creation will be handled by the above case when calling
+            # the SequenceConstruct op.
+            named_inputs[name] = opset.SequenceConstruct(*arg)
+        else:
+            # 3. Concat the list as a single input
+            # E.g. [Value, 42] should be converted to Concat(Value, Constant(42))
+            # when the expected input type is INT64
+            # We assume this only happens for 1D cases
+            new_args = []
+            for val in arg:
+                if isinstance(val, ir.Value):
+                    new_args.append(val)
+                else:
+                    constant_tensor = ir.tensor(value=[val], dtype=dtype)  # type: ignore[arg-type]
+                    constant_value = opset.Constant(value=constant_tensor)
+                    new_args.append(constant_value)
+            named_inputs[name] = opset.Concat(*new_args)
+    return named_inputs
 
 
 def _construct_node(
@@ -364,9 +448,13 @@ class OpRecorder(evaluator.Evaluator):
         """
         type_binding = _resolve_parameter_dtypes(op_signature, named_inputs)
         try:
-            converted_named_inputs = _process_python_constants_and_sequences(
+            converted_named_inputs = _process_python_constants(
                 op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
+            converted_named_inputs = _process_python_sequences(
+                op_signature, converted_named_inputs, type_binding, self.opset
+            )
+
         except Exception as e:
             raise errors.GraphConstructionError(
                 f"Error processing Python constants for operator '{op_signature.domain}::{op_signature.name}'. "

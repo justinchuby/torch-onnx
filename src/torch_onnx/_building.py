@@ -223,7 +223,8 @@ def _determine_input_dtype(
 
     raise ValueError(
         f"Could not determine the dtype for the input '{param.name}'. "
-        f"param={param}, arg={arg}, type_binding={type_binding}"
+        f"param={param}, arg={arg}, param_type_constraint={param.type_constraint}, "
+        f"type_binding={type_binding}"
     )
 
 
@@ -240,7 +241,7 @@ def _get_or_create_constant(
         ],
         ir.Value,
     ],
-    arg: bool | int | float | str | tuple[int] | tuple[float],
+    arg: bool | int | float | str | tuple[int] | tuple[float] | tuple[bool] | list[int] | list[float] | list[bool],
     dtype: ir.DataType,
     opset: onnxscript.values.Opset,
 ) -> ir.Value:
@@ -323,9 +324,6 @@ def _process_python_constants(
             constant_value = opset.Constant(value=arg)
         else:
             # Deduplicate the constants
-            assert isinstance(
-                arg, (bool, int, float, str)
-            ), f"Expected Python constant, got {type(arg)}"
             constant_value = _get_or_create_constant(constant_farm, arg, dtype, opset)
 
         named_inputs[param.name] = constant_value
@@ -372,13 +370,16 @@ def _process_python_sequences(
             named_inputs[name] = opset.SequenceConstruct(*arg)
             continue
 
-        dtype = _determine_input_dtype(param, arg, type_binding)
-
         # 2. Variadic inputs
         # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
         # like `Max(0, ir.Value())`
         # We need to convert the Python constants to Constant nodes
         if param.variadic:
+            if all(isinstance(val, ir.Value) for val in arg):
+                # Skip the variadic input if all values are ir.Value
+                continue
+
+            dtype = _determine_input_dtype(param, arg, type_binding)
             new_args = []
             for val in arg:
                 if isinstance(val, ir.Value):
@@ -394,6 +395,11 @@ def _process_python_sequences(
             # E.g. [Value, 42] should be converted to op.Concat(Value, Constant(42))
             # when the expected input type is INT64
             # We assume this only happens for 1D cases
+            if all(isinstance(val, ir.Value) for val in arg):
+                named_inputs[name] = opset.Concat(*arg)
+                continue
+
+            dtype = _determine_input_dtype(param, arg, type_binding)
             new_args = []
             for val in arg:
                 if isinstance(val, ir.Value):
@@ -489,7 +495,7 @@ class OpRecorder(evaluator.Evaluator):
                 op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
             converted_named_inputs = _process_python_sequences(
-                op_signature, converted_named_inputs, type_binding, self.opset
+                op_signature, converted_named_inputs, type_binding, self.constant_farm, self.opset
             )
 
         except Exception as e:

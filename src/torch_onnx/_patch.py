@@ -12,9 +12,9 @@ from typing import Any, Mapping, Sequence
 import onnxscript._framework_apis.torch_2_5 as onnxscript_apis
 import torch
 from onnxscript import ir
+from torch.utils import _pytree
 
 from torch_onnx import _core, _onnx_program
-from torch.utils import _pytree
 
 logger = logging.getLogger(__name__)
 
@@ -245,9 +245,7 @@ def _torch_onnx_dynamo_export(
                     rank = len(x.shape)
                     dynamic_shape = {}
                     for i in range(rank):
-                        dynamic_shape[i] = torch.export.Dim(
-                            f"arg_{arg_order}_dim_{i}"
-                        )
+                        dynamic_shape[i] = torch.export.Dim(f"arg_{arg_order}_dim_{i}")
                     arg_order += 1
                     return dynamic_shape
                 else:

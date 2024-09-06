@@ -171,6 +171,15 @@ class ConversionTest(unittest.TestCase):
         onnx_program = torch_onnx.export(GraphModule(), inputs)
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
+    def test_python_attributes_are_not_turned_into_attr_objects(self):
+        class GraphModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten.elu(x)
+
+        inputs = (torch.tensor(1.0),)
+        onnx_program = torch_onnx.export(GraphModule(), inputs)
+        torch_onnx.testing.assert_onnx_program(onnx_program)
+
 
 if __name__ == "__main__":
     unittest.main()

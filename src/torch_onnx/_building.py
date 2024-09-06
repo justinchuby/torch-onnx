@@ -209,13 +209,17 @@ def _determine_input_dtype(
 
     # Handle sequences
     if isinstance(arg, (tuple, list)):
+        if len(arg) == 0:
+            # Special case: Treat empty sequence as INT64 as they are typically used for shape
+            return ir.DataType.INT64
+
         # Try to obtain the dtype from one of the values
         for val in arg:
             if isinstance(val, ir.Value) and val.dtype is not None:
                 return val.dtype
 
         if any(isinstance(val, float) for val in arg):
-            # NOTE: if any float is present, the dtype is float
+            # If any float is present, the dtype is float
             return ir.DataType.FLOAT
         elif any(isinstance(val, int) for val in arg):
             # Otherwise if any int is present, the dtype is int

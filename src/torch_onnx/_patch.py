@@ -11,8 +11,8 @@ from typing import Any, Mapping, Sequence
 
 import onnxscript._framework_apis.torch_2_5 as onnxscript_apis
 import torch
-import torch.export
 from onnxscript import ir
+from torch.utils import _pytree
 
 from torch_onnx import _core, _onnx_program
 
@@ -117,7 +117,7 @@ def _get_torch_export_args(
     return args, kwargs
 
 
-def _torch_onnx_export(
+def _export_compat(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
     f: str | os.PathLike | None = None,
@@ -234,18 +234,46 @@ def _torch_onnx_dynamo_export(
     export_options: torch.onnx.ExportOptions | None = None,
     **model_kwargs,
 ) -> _onnx_program.ONNXProgram:
-    if export_options and export_options.dynamic_shapes:
-        warnings.warn("Dynamic shapes are not implemented yet.", stacklevel=1)
+    if export_options is not None and export_options.dynamic_shapes:
+        # Make all shapes dynamic
+        def _to_dynamic_shapes_mapper():
+            arg_order = 0
 
-    return _core.export(
+            def _to_dynamic_shape(x):
+                nonlocal arg_order
+                if isinstance(x, torch.Tensor):
+                    rank = len(x.shape)
+                    dynamic_shape = {}
+                    for i in range(rank):
+                        dynamic_shape[i] = torch.export.Dim(f"arg_{arg_order}_dim_{i}")
+                    arg_order += 1
+                    return dynamic_shape
+                else:
+                    return None
+
+            return _to_dynamic_shape
+
+        # model_args could be nested
+        dynamic_shapes = _pytree.tree_map(
+            _to_dynamic_shapes_mapper(),
+            model_args,
+        )
+    else:
+        dynamic_shapes = None
+
+    return _export_compat(
         model,
         model_args,
         kwargs=model_kwargs,
+        dynamic_shapes=dynamic_shapes,
+        external_data=True,
+        export_params=True,
         report=_WRITE_REPORT,
         verify=_VERIFY_ONNX_PROGRAM,
         profile=_PROFILE_EXECUTION,
         dump_exported_program=_DUMP_EXPORTED_PROGRAM,
         artifacts_dir=_ARTIFACTS_DIR,
+        fallback=_FALLBACK_TO_LEGACY_EXPORT,
     )
 
 
@@ -283,7 +311,7 @@ def patch_torch(
     _ARTIFACTS_DIR = artifacts_dir
     global _FALLBACK_TO_LEGACY_EXPORT  # noqa: PLW0603
     _FALLBACK_TO_LEGACY_EXPORT = fallback
-    torch.onnx.export = _torch_onnx_export  # type: ignore[assignment]
+    torch.onnx.export = _export_compat  # type: ignore[assignment]
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export  # type: ignore[assignment]
 
 

@@ -1,6 +1,8 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
+import warnings
+
 __all__ = ["ONNXProgram"]
 
 import copy
@@ -16,6 +18,8 @@ import onnxscript._framework_apis.torch_2_5 as onnxscript_apis
 import torch
 from onnxscript import ir
 from torch.utils import _pytree
+
+from torch_onnx import _core
 
 if TYPE_CHECKING:
     import onnxruntime as ort  # type: ignore[import-untyped]
@@ -160,6 +164,23 @@ ONNXProgram(
         if keep_initializers_as_inputs:
             self.model.graph.inputs.clear()
             self.model.graph.inputs.extend(original_inputs)
+
+    def apply_weights(self, state_dict: dict[str, torch.Tensor]) -> None:
+        """Apply the weights from the specified state dict to the ONNX model.
+
+        Args:
+            state_dict: The state dict containing the weights to apply to the ONNX model.
+        """
+        for name, tensor in state_dict.items():
+            if name in self.model.graph.initializers:
+                self.model.graph.initializers[name].const_value = _core.TorchTensor(
+                    tensor, name
+                )
+            else:
+                warnings.warn(
+                    f"Weight '{name}' not found in the model. Skipped applying.",
+                    stacklevel=1,
+                )
 
     def initialize_inference_session(
         self,

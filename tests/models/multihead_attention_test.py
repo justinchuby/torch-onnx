@@ -1,7 +1,8 @@
-import onnx
-import torch
-import torch_onnx
 import unittest
+
+import torch
+
+import torch_onnx
 
 
 class MultiheadAttentionTest(unittest.TestCase):

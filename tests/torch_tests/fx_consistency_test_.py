@@ -1878,7 +1878,7 @@ def _run_test_output_match(
                         model,
                         *inputs,
                     )
-                except torch.onnx.OnnxExporterError as e:
+                except torch_onnx.errors.OnnxExporterError as e:
                     # NOTE: If the model has unsupported nodes, we will skip the test
                     # with non-strict xfail. Otherwise, we will raise the error.
                     if hasattr(

@@ -241,7 +241,16 @@ def _get_or_create_constant(
         ],
         ir.Value,
     ],
-    arg: bool | int | float | str | tuple[int] | tuple[float] | tuple[bool] | list[int] | list[float] | list[bool],
+    arg: bool
+    | int
+    | float
+    | str
+    | tuple[int]
+    | tuple[float]
+    | tuple[bool]
+    | list[int]
+    | list[float]
+    | list[bool],
     dtype: ir.DataType,
     opset: onnxscript.values.Opset,
 ) -> ir.Value:
@@ -495,7 +504,11 @@ class OpRecorder(evaluator.Evaluator):
                 op_signature, named_inputs, type_binding, self.constant_farm, self.opset
             )
             converted_named_inputs = _process_python_sequences(
-                op_signature, converted_named_inputs, type_binding, self.constant_farm, self.opset
+                op_signature,
+                converted_named_inputs,
+                type_binding,
+                self.constant_farm,
+                self.opset,
             )
 
         except Exception as e:

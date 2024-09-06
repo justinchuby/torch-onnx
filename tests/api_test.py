@@ -191,7 +191,7 @@ class TestExportAPIDynamo(common_utils.TestCase):
             "x": (torch.export.Dim("dx"),),
             "y": (torch.export.Dim("dy"),),
         }
-        onnx_program = torch_onnx._patch._export_compat(
+        onnx_program = torch_onnx.export_compat(
             TestRefineDynamicShapeModel(), inps, dynamic_shapes=dynamic_shapes
         )
         assert onnx_program is not None

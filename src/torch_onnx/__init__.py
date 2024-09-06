@@ -17,6 +17,6 @@ from . import _verification as verification
 from ._analysis import analyze
 from ._core import export, exported_program_to_ir
 from ._onnx_program import ONNXProgram
-from ._patch import _export_compat as export_compat
+from ._patch import _torch_onnx_export as export_compat
 from ._patch import patch_torch, unpatch_torch
 from ._registration import ONNXRegistry

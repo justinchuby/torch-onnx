@@ -117,7 +117,7 @@ def _get_torch_export_args(
     return args, kwargs
 
 
-def _export_compat(
+def _torch_onnx_export(
     model: torch.nn.Module | torch.export.ExportedProgram,
     args: tuple[Any, ...],
     f: str | os.PathLike | None = None,
@@ -261,7 +261,7 @@ def _torch_onnx_dynamo_export(
     else:
         dynamic_shapes = None
 
-    return _export_compat(
+    return _torch_onnx_export(
         model,
         model_args,
         kwargs=model_kwargs,
@@ -311,7 +311,7 @@ def patch_torch(
     _ARTIFACTS_DIR = artifacts_dir
     global _FALLBACK_TO_LEGACY_EXPORT  # noqa: PLW0603
     _FALLBACK_TO_LEGACY_EXPORT = fallback
-    torch.onnx.export = _export_compat  # type: ignore[assignment]
+    torch.onnx.export = _torch_onnx_export  # type: ignore[assignment]
     torch.onnx.dynamo_export = _torch_onnx_dynamo_export  # type: ignore[assignment]
 
 

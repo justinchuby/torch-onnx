@@ -20,14 +20,29 @@ class ResnetTest(unittest.TestCase):
             weights=torchvision.models.ResNet18_Weights.DEFAULT
         ).eval()
         sample_input = (torch.randn(4, 3, 224, 224),)
-        onnx_program = torch.onnx.export(
+        onnx_program = torch_onnx.export(
             resnet18,
             sample_input,
-            "resnet18.onnx",
-            opset_version=18,
         )
         assert onnx_program is not None
-        print(onnx_program)
+        onnx_program.save(
+            "resnet18.onnx", include_initializers=True, keep_initializers_as_inputs=True
+        )
+        onnx_program.save(
+            "resnet18.onnx",
+            include_initializers=False,
+            keep_initializers_as_inputs=True,
+        )
+        onnx_program.save(
+            "resnet18.onnx",
+            include_initializers=True,
+            keep_initializers_as_inputs=False,
+        )
+        onnx_program.save(
+            "resnet18.onnx",
+            include_initializers=False,
+            keep_initializers_as_inputs=False,
+        )
         torch_onnx.testing.assert_onnx_program(onnx_program, rtol=1e-3, atol=1e-4)
 
 

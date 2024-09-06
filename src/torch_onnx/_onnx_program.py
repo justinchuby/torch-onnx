@@ -129,12 +129,26 @@ ONNXProgram(
         When `external_data` is `True` or the model is larger than 2GB,
         the weights are saved as external data in a separate file.
 
+        Initializer (model weights) serialization behaviors:
+        - include_initializers=True, keep_initializers_as_inputs=False (default):
+            The initializers are included in the saved model.
+        - include_initializers=True, keep_initializers_as_inputs=True:
+            The initializers are included in the saved model and kept as model inputs.
+            Choose this option if you want the ability to override the model weights
+            during inference.
+        - include_initializers=False, keep_initializers_as_inputs=False:
+            The initializers are not included in the saved model and are not listed
+            as model inputs. Choose this option if you want to attach the initializers
+            to the ONNX model in a separate, post-processing, step.
+        - include_initializers=False, keep_initializers_as_inputs=True:
+            The initializers are not included in the saved model but are listed as model
+            inputs. Choose this option if you want to supply the initializers during
+            inference and want to minimize the size of the saved model.
+
         Args:
             destination: The path to save the ONNX model to.
             include_initializers: Whether to include the initializers in the saved model.
             keep_initializers_as_inputs: Whether to keep the initializers as inputs in the saved model.
-                If `True`, the initializers are added as inputs to the model which means they can be overwritten.
-                by providing the initializers as model inputs.
             external_data: Whether to save the weights as external data in a separate file.
 
         Raises:
@@ -147,7 +161,7 @@ ONNXProgram(
         if not include_initializers:
             self.model.graph.initializers.clear()
         if keep_initializers_as_inputs:
-            self.model.graph.inputs.extend(self.model.graph.initializers.values())  # type: ignore[arg-type]
+            self.model.graph.inputs.extend(original_initializers.values())
 
         # Save the model to disk
         if (

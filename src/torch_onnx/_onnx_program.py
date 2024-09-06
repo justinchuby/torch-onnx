@@ -155,23 +155,13 @@ ONNXProgram(
             TypeError: If `external_data` is `True` and `destination` is not a file path.
         """
         original_initializers = copy.copy(self.model.graph.initializers)
-        original_initializer_tensors = {
-            v: v.const_value for v in original_initializers.values()
-        }
         original_inputs = copy.copy(self.model.graph.inputs)
 
         # Adjust the model based on options
-        if include_initializers and keep_initializers_as_inputs:
-            self.model.graph.inputs.extend(original_initializers.values())  # type: ignore[arg-type]
-        elif not include_initializers and keep_initializers_as_inputs:
-            for value in self.model.graph.initializers.values():
-                value.const_value = None
-                self.model.graph.inputs.append(value)
-        elif include_initializers and not keep_initializers_as_inputs:
-            pass
-        else:
-            assert not include_initializers and not keep_initializers_as_inputs
+        if not include_initializers:
             self.model.graph.initializers.clear()
+        if keep_initializers_as_inputs:
+            self.model.graph.inputs.extend(original_initializers.values())
 
         # Save the model to disk
         if (
@@ -183,11 +173,11 @@ ONNXProgram(
             ir.save(self.model, destination)
 
         # Revert the changes to the model so that the model is not modified for future calls
-        for v in original_initializers.values():
-            v.const_value = original_initializer_tensors[v]
-        self.model.graph.initializers.update(original_initializers)
-        self.model.graph.inputs.clear()
-        self.model.graph.inputs.extend(original_inputs)
+        if not include_initializers:
+            self.model.graph.initializers.update(original_initializers)
+        if keep_initializers_as_inputs:
+            self.model.graph.inputs.clear()
+            self.model.graph.inputs.extend(original_inputs)
 
     def apply_weights(self, state_dict: dict[str, torch.Tensor]) -> None:
         """Apply the weights from the specified state dict to the ONNX model.

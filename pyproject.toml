@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torch-onnx"
-version = "0.1.20"
+version = "0.1.21"
 description = "Experimental tools for converting PyTorch models to ONNX"
 authors = [{ name = "Justin Chu", email = "justinchu@microsoft.com" }]
 readme = "README.md"

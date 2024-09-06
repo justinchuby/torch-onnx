@@ -30,7 +30,9 @@ ValidAttributeType = Union[
     ir.TensorProtocol, int, float, bool, str, Sequence[int], Sequence[float], None
 ]
 
-AllowedArgType = Union[ir.Value, Sequence[ir.Value | ValidAttributeType], ValidAttributeType]
+AllowedArgType = Union[
+    ir.Value, Sequence[ir.Value | ValidAttributeType], ValidAttributeType
+]
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -177,7 +179,11 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
-def _determine_input_dtype(param: _schemas.Parameter, arg: AllowedArgType, type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol]) -> ir.DataType:
+def _determine_input_dtype(
+    param: _schemas.Parameter,
+    arg: AllowedArgType,
+    type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
+) -> ir.DataType:
     """Determine the dtype of the input that is a mix of Python constants and ir.Value."""
     if param.type_constraint in type_binding:
         # A known dtype is available because it was resolved
@@ -221,10 +227,32 @@ def _determine_input_dtype(param: _schemas.Parameter, arg: AllowedArgType, type_
     )
 
 
-
 def _allowed_types_are_sequence_types(allowed_types: Iterable[ir.TypeProtocol]) -> bool:
     """Check if all allowed types are Sequence types."""
     return all(isinstance(t, ir.SequenceType) for t in allowed_types)
+
+
+def _get_or_create_constant(
+    constant_farm: dict[
+        tuple[
+            bool | int | float | str | tuple[int] | tuple[float],
+            ir.DataType,
+        ],
+        ir.Value,
+    ],
+    arg: bool | int | float | str | tuple[int] | tuple[float],
+    dtype: ir.DataType,
+    opset: onnxscript.values.Opset,
+) -> ir.Value:
+    if isinstance(arg, (tuple, list)):
+        # Make the arg hashable
+        arg = tuple(arg)
+    constant_value = constant_farm.get((arg, dtype))  # type: ignore[arg-type]
+    if constant_value is None:
+        constant_tensor = ir.tensor(value=arg, dtype=dtype)  # type: ignore[arg-type]
+        constant_value = opset.Constant(value=constant_tensor)
+        constant_farm[(arg, dtype)] = constant_value  # type: ignore[arg-type,index]
+    return constant_value
 
 
 def _process_python_constants(
@@ -233,7 +261,7 @@ def _process_python_constants(
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
     constant_farm: dict[
         tuple[
-            bool | int | float | str | ir.TensorProtocol | tuple[int] | tuple[float],
+            bool | int | float | str | tuple[int] | tuple[float],
             ir.DataType,
         ],
         ir.Value,
@@ -291,18 +319,14 @@ def _process_python_constants(
 
         if arg is None:
             constant_value = None
-        elif not isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
-            # Deduplicate the constants
-            if isinstance(arg, (tuple, list)):
-                # Make the arg hashable
-                arg = tuple(arg)  # noqa: PLW2901
-            constant_value = constant_farm.get((arg, dtype))  # type: ignore[arg-type]
-            if constant_value is None:
-                constant_tensor = ir.tensor(value=arg, dtype=dtype)  # type: ignore[arg-type]
-                constant_value = opset.Constant(value=constant_tensor)
-                constant_farm[(arg, dtype)] = constant_value  # type: ignore[arg-type,index]
-        else:
+        elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
             constant_value = opset.Constant(value=arg)
+        else:
+            # Deduplicate the constants
+            assert isinstance(
+                arg, (bool, int, float, str)
+            ), f"Expected Python constant, got {type(arg)}"
+            constant_value = _get_or_create_constant(constant_farm, arg, dtype, opset)
 
         named_inputs[param.name] = constant_value
     return named_inputs  # type: ignore[return-value]
@@ -312,6 +336,13 @@ def _process_python_sequences(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
     type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol],
+    constant_farm: dict[
+        tuple[
+            bool | int | float | str | ir.TensorProtocol | tuple[int] | tuple[float],
+            ir.DataType,
+        ],
+        ir.Value,
+    ],
     opset: onnxscript.values.Opset,
 ):
     """Handle three types of sequences.
@@ -370,12 +401,16 @@ def _process_python_sequences(
                 elif val is None:
                     # Skip None values
                     continue
-                elif isinstance(val, ir.TensorProtocol):
+                elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
                     new_args.append(opset.Constant(value=val))
                 else:
-                    assert isinstance(val, (int, float)), f"Expected int or float, got {type(val)}"
                     # Turn the Python constant into 1D tensor for the constant
-                    new_args.append([val])
+                    assert isinstance(
+                        val, (bool, int, float)
+                    ), f"Expected int or float, got {type(val)}"
+                    new_args.append(
+                        _get_or_create_constant(constant_farm, [arg], dtype, opset)
+                    )
             named_inputs[name] = opset.Concat(*new_args)
             continue
     return named_inputs

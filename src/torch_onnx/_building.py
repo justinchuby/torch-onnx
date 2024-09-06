@@ -375,19 +375,15 @@ def _process_python_sequences(
             # Skip empty sequences
             continue
 
-        # 1. Sequence input of ir.Value
-        if _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
-            # Turn the list into a Sequence node
-            # Constant op creation will be handled by the variadic case below when calling
-            # the SequenceConstruct op.
-            named_inputs[name] = opset.SequenceConstruct(*arg)
-            continue
-
-        # 2. Variadic inputs
+        # 1. Variadic inputs or Sequence
         # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
         # like `Max(0, ir.Value())`
         # We need to convert the Python constants to Constant nodes
-        if param.variadic:
+        # NOTE: We are not creating opset.SequenceConstruct(*arg) nodes for Sequence ops.
+        # This is hard because we don't really know if the function is a traced function that
+        # is expecting a Python list, or a ONNX Function that is expecting a sequence(tensor).
+        # Treating all as Python lists for now.
+        if param.variadic or _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
             if all(isinstance(val, ir.Value) for val in arg):
                 # Skip the variadic input if all values are ir.Value
                 continue

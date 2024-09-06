@@ -258,6 +258,7 @@ def _get_or_create_constant(
     dtype: ir.DataType,
     opset: onnxscript.values.Opset,
 ) -> ir.Value:
+    """Deduplicate the constants by reusing the existing Constant node if it exists."""
     if isinstance(arg, (tuple, list)):
         # Make the arg hashable
         arg = tuple(arg)
@@ -336,7 +337,6 @@ def _process_python_constants(
         elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
             constant_value = opset.Constant(value=arg)
         else:
-            # Deduplicate the constants
             constant_value = _get_or_create_constant(constant_farm, arg, dtype, opset)
 
         named_inputs[param.name] = constant_value
@@ -373,6 +373,7 @@ def _process_python_sequences(
 
         if len(arg) == 0:
             # Skip empty sequences
+            # TODO(justinchuby): I don't think we will ever hit this case. Create an assert later?
             continue
 
         # 1. Sequence input of ir.Value

@@ -1,8 +1,6 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
-import warnings
-
 __all__ = ["ONNXProgram"]
 
 import copy
@@ -11,6 +9,7 @@ import logging
 import os
 import tempfile
 import textwrap
+import warnings
 from typing import TYPE_CHECKING, Callable, Sequence
 
 import onnx
@@ -149,6 +148,8 @@ ONNXProgram(
             destination: The path to save the ONNX model to.
             include_initializers: Whether to include the initializers in the saved model.
             keep_initializers_as_inputs: Whether to keep the initializers as inputs in the saved model.
+                If `True`, the initializers are added as inputs to the model which means they can be overwritten.
+                by providing the initializers as model inputs.
             external_data: Whether to save the weights as external data in a separate file.
 
         Raises:

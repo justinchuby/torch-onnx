@@ -30,7 +30,7 @@ ValidAttributeType = Union[
     ir.TensorProtocol, int, float, bool, str, Sequence[int], Sequence[float], None
 ]
 
-AllowedArgType = Union[ir.Value, Sequence[ir.Value], ValidAttributeType]
+AllowedArgType = Union[ir.Value, Sequence[ir.Value | ValidAttributeType], ValidAttributeType]
 
 
 # Logic for adapting inputs from general Python or PyTorch inputs to ONNX ir.Value
@@ -177,6 +177,56 @@ def _resolve_parameter_dtypes(
     return type_binding
 
 
+def _determine_input_dtype(param: _schemas.Parameter, arg: AllowedArgType, type_binding: Mapping[_schemas.TypeConstraintParam, ir.TypeProtocol]) -> ir.DataType:
+    """Determine the dtype of the input that is a mix of Python constants and ir.Value."""
+    if param.type_constraint in type_binding:
+        # A known dtype is available because it was resolved
+        return type_binding[param.type_constraint].dtype
+    if len(param.type_constraint.allowed_types) == 1:
+        # Only one type is allowed by the type constraint
+        return next(iter(param.type_constraint.allowed_types)).dtype
+
+    # No dtype information available. Infer from the Python constant or (in the Sequence case)
+    # from a mix of Python constants and ir.Value
+    if isinstance(arg, bool):
+        return ir.DataType.BOOL
+    if isinstance(arg, float):
+        return ir.DataType.FLOAT
+    if isinstance(arg, int):
+        return ir.DataType.INT64
+    if isinstance(arg, str):
+        return ir.DataType.STRING
+    if isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
+        return arg.dtype
+    if arg is None:
+        return ir.DataType.UNDEFINED
+
+    # Handle sequences
+    if isinstance(arg, (tuple, list)):
+        # Try to obtain the dtype from one of the values
+        for val in arg:
+            if isinstance(val, ir.Value) and val.dtype is not None:
+                return val.dtype
+
+        if any(isinstance(val, float) for val in arg):
+            # NOTE: if any float is present, the dtype is float
+            return ir.DataType.FLOAT
+        elif any(isinstance(val, int) for val in arg):
+            # Otherwise if any int is present, the dtype is int
+            return ir.DataType.INT64
+
+    raise ValueError(
+        f"Could not determine the dtype for the input '{param.name}'. "
+        f"param={param}, arg={arg}, type_binding={type_binding}"
+    )
+
+
+
+def _allowed_types_are_sequence_types(allowed_types: Iterable[ir.TypeProtocol]) -> bool:
+    """Check if all allowed types are Sequence types."""
+    return all(isinstance(t, ir.SequenceType) for t in allowed_types)
+
+
 def _process_python_constants(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
@@ -233,40 +283,11 @@ def _process_python_constants(
         if param.variadic:
             # Handled by _process_python_sequences
             continue
+        if _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
+            # Handled by _process_python_sequences
+            continue
 
-        if param.type_constraint in type_binding:
-            # A known dtype is available
-            dtype = type_binding[param.type_constraint].dtype
-        elif len(param.type_constraint.allowed_types) == 1:
-            # Only one type is allowed
-            dtype = next(iter(param.type_constraint.allowed_types)).dtype
-        else:
-            # No dtype information available. Infer from the Python constant
-            if isinstance(arg, bool):
-                dtype = ir.DataType.BOOL
-            elif isinstance(arg, float):
-                dtype = ir.DataType.FLOAT
-            elif isinstance(arg, int):
-                dtype = ir.DataType.INT64
-            elif isinstance(arg, str):
-                dtype = ir.DataType.STRING
-            elif isinstance(arg, (tuple, list)) and all(
-                isinstance(val, int) for val in arg
-            ):
-                dtype = ir.DataType.INT64
-            elif isinstance(arg, (tuple, list)) and any(
-                isinstance(val, float) for val in arg
-            ):
-                # NOTE: if any float is present, the dtype is float
-                dtype = ir.DataType.FLOAT
-            elif isinstance(arg, (ir.Tensor, ir.TensorProtocol)):
-                dtype = arg.dtype
-            elif arg is None:
-                dtype = ir.DataType.UNDEFINED
-            else:
-                raise TypeError(
-                    f"Constant input '{arg}' of type '{type(arg)}' is not supported"
-                )
+        dtype = _determine_input_dtype(param, arg, type_binding)
 
         if arg is None:
             constant_value = None
@@ -287,10 +308,6 @@ def _process_python_constants(
     return named_inputs  # type: ignore[return-value]
 
 
-def _allowed_types_are_sequence_types(allowed_types: Iterable[ir.TypeProtocol]) -> bool:
-    return all(isinstance(t, ir.SequenceType) for t in allowed_types)
-
-
 def _process_python_sequences(
     signature: _schemas.OpSignature,
     named_inputs: dict[str, AllowedArgType],
@@ -309,73 +326,58 @@ def _process_python_sequences(
             param, _schemas.Parameter
         ), f"Expected Parameter, got {type(param)}"
 
-        if not (
-            isinstance(arg, Sequence)
-            and len(arg) > 0
-            and any(isinstance(val, ir.Value) for val in arg)
-        ):
+        if not isinstance(arg, (tuple, list)):
             continue
 
-        dtype = None
-        if param.type_constraint in type_binding:
-            # A known dtype is available
-            dtype = type_binding[param.type_constraint].dtype
-        elif len(param.type_constraint.allowed_types) == 1:
-            # Only one type is allowed
-            dtype = next(iter(param.type_constraint.allowed_types)).dtype
-        else:
-            # Try to obtain the dtype from one of the values
-            for val in arg:
-                if isinstance(val, ir.Value) and val.dtype is not None:
-                    dtype = val.dtype
-                    break
-            if dtype is None:
-                if any(isinstance(val, float) for val in arg):
-                    # NOTE: if any float is present, the dtype is float
-                    dtype = ir.DataType.FLOAT
-                elif any(isinstance(val, int) for val in arg):
-                    # Otherwise if any int is present, the dtype is int
-                    dtype = ir.DataType.INT64
-        if dtype is None:
-            raise ValueError(f"Could not determine the dtype for the input '{name}'")
+        if len(arg) == 0:
+            # Skip empty sequences
+            continue
 
+        # 1. Sequence input of ir.Value
+        if _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
+            # Turn the list into a Sequence node
+            # Constant op creation will be handled by the variadic case below when calling
+            # the SequenceConstruct op.
+            named_inputs[name] = opset.SequenceConstruct(*arg)
+            continue
+
+        dtype = _determine_input_dtype(param, arg, type_binding)
+
+        # 2. Variadic inputs
         # NOTE: Variadic operators like Max can be called with mixed ir.Value and Python constants
         # like `Max(0, ir.Value())`
         # We need to convert the Python constants to Constant nodes
-        # NOTE: Important to check that arg is not empty because we need to treat it as list[int] or list[float]
-
         if param.variadic:
-            # 1. Variadic inputs
-            new_arg = []
+            new_args = []
             for val in arg:
                 if isinstance(val, ir.Value):
-                    new_arg.append(val)
+                    new_args.append(val)
                 else:
                     constant_tensor = ir.tensor(value=val, dtype=dtype)  # type: ignore[arg-type]
                     constant_value = opset.Constant(value=constant_tensor)
-                    new_arg.append(constant_value)
-            named_inputs[name] = new_arg
-        elif _allowed_types_are_sequence_types(param.type_constraint.allowed_types):
-            # 2. Sequence input of ir.Value
-            # Turn the list into a Sequence node
-            # TODO: Combine the common logic with the variadic case
-            # Constant op creation will be handled by the above case when calling
-            # the SequenceConstruct op.
-            named_inputs[name] = opset.SequenceConstruct(*arg)
+                    new_args.append(constant_value)
+            named_inputs[name] = new_args
+            continue
         else:
             # 3. Concat the list as a single input
-            # E.g. [Value, 42] should be converted to Concat(Value, Constant(42))
+            # E.g. [Value, 42] should be converted to op.Concat(Value, Constant(42))
             # when the expected input type is INT64
             # We assume this only happens for 1D cases
             new_args = []
             for val in arg:
                 if isinstance(val, ir.Value):
                     new_args.append(val)
+                elif val is None:
+                    # Skip None values
+                    continue
+                elif isinstance(val, ir.TensorProtocol):
+                    new_args.append(opset.Constant(value=val))
                 else:
-                    constant_tensor = ir.tensor(value=[val], dtype=dtype)  # type: ignore[arg-type]
-                    constant_value = opset.Constant(value=constant_tensor)
-                    new_args.append(constant_value)
+                    assert isinstance(val, (int, float)), f"Expected int or float, got {type(val)}"
+                    # Turn the Python constant into 1D tensor for the constant
+                    new_args.append([val])
             named_inputs[name] = opset.Concat(*new_args)
+            continue
     return named_inputs
 
 

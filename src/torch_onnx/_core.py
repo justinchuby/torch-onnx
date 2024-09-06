@@ -545,7 +545,7 @@ def _add_nodes(
                     # No lowering
                     _handle_call_function_node(model.graph, node, node_name_to_values)
         except Exception as e:
-            raise errors.OnnxConversionError(
+            raise errors.ConversionError(
                 f"Error when translating node {node.format_node()}. See the stack trace for more information."
             ) from e
     return node_name_to_values
@@ -1097,7 +1097,7 @@ def export(
         else:
             report_path = None
 
-        raise errors.OnnxConversionError(
+        raise errors.ConversionError(
             _STEP_TWO_ERROR_MESSAGE
             + (f"\nError report has been saved to '{report_path}'." if report else "")
             + _summarize_exception_stack(e)
@@ -1158,7 +1158,7 @@ def export(
         else:
             report_path = None
 
-        raise errors.OnnxConversionError(
+        raise errors.ConversionError(
             _STEP_TWO_ERROR_MESSAGE
             + (f"\nError report has been saved to '{report_path}'." if report else "")
             + _summarize_exception_stack(e)

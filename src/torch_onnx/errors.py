@@ -1,46 +1,28 @@
-class ExporterError(RuntimeError):
+class OnnxExporterError(RuntimeError):
     """Error during export."""
 
     pass
 
 
-class TorchExportError(ExporterError):
+class TorchExportError(OnnxExporterError):
     """Error during torch.export.export."""
 
     pass
 
 
-class OnnxConversionError(ExporterError):
+class ConversionError(OnnxExporterError):
     """Error during ONNX conversion."""
 
     pass
 
 
-class DispatchError(OnnxConversionError):
+class DispatchError(ConversionError):
     """Error during ONNX Funtion dispatching."""
 
     pass
 
 
-class GraphConstructionError(OnnxConversionError):
+class GraphConstructionError(ConversionError):
     """Error during graph construction."""
-
-    pass
-
-
-class OnnxCheckerError(ExporterError):
-    """Error during ONNX model checking."""
-
-    pass
-
-
-class OnnxRuntimeError(ExporterError):
-    """Error during ONNX Runtime execution."""
-
-    pass
-
-
-class OnnxValidationError(ExporterError):
-    """Output value mismatch."""
 
     pass

@@ -150,6 +150,52 @@ class TestExportAPIDynamo(common_utils.TestCase):
         assert onnx_program is not None
         torch_onnx.testing.assert_onnx_program(onnx_program)
 
+    def test_auto_convert_all_axes_to_dynamic_shapes_with_dynamo_export(self):
+        class Nested(torch.nn.Module):
+            def forward(self, x):
+                (a0, a1), (b0, b1), (c0, c1, c2) = x
+                return a0 + a1 + b0 + b1 + c0 + c1 + c2
+
+        inputs = (
+            (1, 2),
+            (
+                torch.randn(4, 4),
+                torch.randn(4, 4),
+            ),
+            (
+                torch.randn(4, 4),
+                torch.randn(4, 4),
+                torch.randn(4, 4),
+            ),
+        )
+
+        onnx_program = torch_onnx._patch._torch_onnx_dynamo_export(
+            Nested(),
+            inputs,
+            export_options=torch.onnx.ExportOptions(dynamic_shapes=True),
+        )
+        assert onnx_program is not None
+        torch_onnx.testing.assert_onnx_program(onnx_program)
+
+    def test_refine_dynamic_shapes_with_onnx_export(self):
+        # NOTE: From test/export/test_export.py
+
+        # refine lower, upper bound
+        class TestRefineDynamicShapeModel(torch.nn.Module):
+            def forward(self, x, y):
+                if x.shape[0] >= 6 and y.shape[0] <= 16:
+                    return x * 2.0, y + 1
+
+        inps = (torch.randn(16), torch.randn(12))
+        dynamic_shapes = {
+            "x": (torch.export.Dim("dx"),),
+            "y": (torch.export.Dim("dy"),),
+        }
+        onnx_program = torch_onnx._patch._export_compat(
+            TestRefineDynamicShapeModel(), inps, dynamic_shapes=dynamic_shapes
+        )
+        assert onnx_program is not None
+        torch_onnx.testing.assert_onnx_program(onnx_program)
 
 if __name__ == "__main__":
     common_utils.run_tests()

@@ -180,7 +180,7 @@ ONNXProgram(
             self.model.graph.inputs.clear()
             self.model.graph.inputs.extend(original_inputs)
 
-    def apply_weights(self, state_dict: dict[str, torch.Tensor]) -> None:
+    def apply_weights(self, /, state_dict: dict[str, torch.Tensor]) -> None:
         """Apply the weights from the specified state dict to the ONNX model.
 
         Args:
@@ -190,6 +190,27 @@ ONNXProgram(
             if name in self.model.graph.initializers:
                 self.model.graph.initializers[name].const_value = _core.TorchTensor(
                     tensor, name
+                )
+            else:
+                warnings.warn(
+                    f"Weight '{name}' not found in the model. Skipped applying.",
+                    stacklevel=1,
+                )
+
+    def apply_weights_lazy(self, /, lazy_state_dict: dict[str, Callable[[], torch.Tensor]]) -> None:
+        """Apply the lazy weights from the specified state dict to the ONNX model.
+
+        Args:
+            state_dict: The state dict containing the lazy weights to apply to the ONNX model.
+        """
+        for name, lazy_tensor in lazy_state_dict.items():
+            if name in self.model.graph.initializers:
+                tensor = self.model.graph.initializers[name].const_value
+                assert tensor is not None
+                shape = tensor.shape
+                dtype = tensor.dtype
+                self.model.graph.initializers[name].const_value = _core.LazyTorchTensor(
+                    lazy_tensor, name, shape, dtype
                 )
             else:
                 warnings.warn(

@@ -131,6 +131,17 @@ class TorchTensor(ir.Tensor):
         )
 
 
+class LazyTorchTensor(ir.Tensor):
+    """A lazy tensor that when needed."""
+
+    def __init__(self, tensor_generator: Callable[[], torch.Tensor],
+                 name: str | None, shape: ir.Shape, dtype: ir.DataType):
+        super().__init__(
+            dtype=_torch_dtype_to_onnx_dtype(dtype), shape=shape, name=name
+        )
+        # TODO
+
+
 # https://github.com/pytorch/pytorch/blob/ee6cb6daa173896f8ea1876266a19775aaa4f610/torch/export/graph_signature.py#L56C1-L62C19
 # class InputKind(Enum):
 #     USER_INPUT = auto()

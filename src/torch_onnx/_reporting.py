@@ -118,11 +118,7 @@ def format_verification_infos(
     Returns:
         The formatted verification result.
     """
-    return "\n".join(
-        f"`{info.name}`: `max_abs_diff={info.max_abs_diff:e}`, `max_rel_diff={info.max_rel_diff:e}`, "
-        f"`abs_diff_hist={info.abs_diff_hist}`, `rel_diff_hist={info.rel_diff_hist}`"
-        for info in verification_infos
-    )
+    return "\n".join(str(info.asdict()) for info in verification_infos)
 
 
 def create_torch_export_error_report(

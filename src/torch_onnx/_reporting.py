@@ -118,7 +118,7 @@ def format_verification_infos(
     Returns:
         The formatted verification result.
     """
-    return "\n".join(f"`info.asdict()`" for info in verification_infos)
+    return "\n".join(f"`{info.asdict()}`" for info in verification_infos)
 
 
 def create_torch_export_error_report(

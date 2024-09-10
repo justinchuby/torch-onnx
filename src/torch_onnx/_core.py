@@ -1,11 +1,13 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
+import abc
 import ctypes
 import datetime
 import inspect
 import itertools
 import logging
+import math
 import operator
 import pathlib
 import textwrap
@@ -131,15 +133,49 @@ class TorchTensor(ir.Tensor):
         )
 
 
-class LazyTorchTensor(ir.Tensor):
-    """A lazy tensor that when needed."""
+class LazyTorchTensor(ir.TensorProtocol):
+    """A lazy tensor that is materialized when needed."""
 
-    def __init__(self, tensor_generator: Callable[[], torch.Tensor],
-                 name: str | None, shape: ir.Shape, dtype: ir.DataType):
-        super().__init__(
-            dtype=_torch_dtype_to_onnx_dtype(dtype), shape=shape, name=name
-        )
-        # TODO
+    def __init__(
+        self,
+        tensor_generator: Callable[[], torch.Tensor],
+        name: str | None,
+        shape: ir.Shape,
+        dtype: ir.DataType,
+    ):
+        self._tensor_generator = tensor_generator
+        self.name = name
+        self.doc_string = None
+        self.metadata_props = {}
+        self.meta = {}
+        self._shape = shape
+        self._dtype = dtype
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}<{self.dtype},{self.shape}>"
+
+    @property
+    def shape(self) -> ir.Shape:
+        return self._shape
+
+    @property
+    def dtype(self) -> ir.DataType:
+        return self._dtype
+
+    @property
+    def raw(self) -> Callable[[], torch.Tensor]:
+        return self._tensor_generator
+
+    @property
+    def size(self) -> int:
+        """The number of elements in the tensor."""
+        return np.prod(self.shape.numpy())  # type: ignore[return-value,attr-defined]
+
+    @property
+    def nbytes(self) -> int:
+        """The number of bytes in the tensor."""
+        # Use math.ceil because when dtype is INT4, the itemsize is 0.5
+        return math.ceil(self.dtype.itemsize * self.size)
 
 
 # https://github.com/pytorch/pytorch/blob/ee6cb6daa173896f8ea1876266a19775aaa4f610/torch/export/graph_signature.py#L56C1-L62C19

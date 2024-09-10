@@ -117,6 +117,7 @@ ONNXProgram(
     def save(
         self,
         destination: str | os.PathLike,
+        /,
         *,
         include_initializers: bool = True,
         keep_initializers_as_inputs: bool = False,

@@ -4,7 +4,7 @@ from typing import Optional
 import torch
 
 
-@torch.library.custom_op("onnx::DequantizeLinear_23", mutates_args=())
+@torch.library.custom_op("onnx::DequantizeLinear.opset23", mutates_args=())
 def DequantizeLinear_23(
     x: torch.Tensor,
     x_scale: torch.Tensor,
@@ -40,3 +40,30 @@ for args in sample_inputs:
         args,
         test_utils=("test_schema", "test_faketensor", "test_aot_dispatch_dynamic"),
     )
+
+
+
+# define a floating point model where some layers could be statically quantized
+class M(torch.nn.Module):
+
+    def forward(self, x):
+        # manually specify where tensors will be converted from floating
+        # point to quantized in the quantized model
+        x = DequantizeLinear_23(x, torch.tensor(0.1))
+        return x
+
+# create a model instance
+model = M()
+model.eval()
+
+input_fp32 = torch.tensor([1,2,3])
+
+# dynamo export
+program = torch.onnx.export(
+    model,
+    (input_fp32,),
+    dynamo=True,
+    report=True
+)
+
+print(program)

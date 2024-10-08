@@ -211,20 +211,17 @@ def build_signature(schema: OpSchema):
         attr4: bool,
     ) -> torch.Tensor: ...
     """
-    inputs = " ".join(
-        f"{input_.name}: torch.Tensor," for input_ in schema.inputs
-    )
+    inputs = " ".join(f"{input_.name}: torch.Tensor," for input_ in schema.inputs)
     attributes = " ".join(
         f"{attr.name}: {attr.type.lower()}," for attr in schema.attributes
     )
-    return (
-        f'''\
+    return f'''\
 def {schema.name}_{schema.since_version}({inputs} {attributes}) -> torch.Tensor: ...
 r"""
 {schema.doc}
 """
 '''
-    )
+
 
 def build_pyi(schemas: list[OpSchema]):
     """Build a .pyi file."""
@@ -247,13 +244,16 @@ def main():
             )
         else:
             latest_versions[schema.name] = schema.since_version
-    dataclass_schemas = [OpSchema.from_onnx_opschema(schema) for schema in schemas]
+    dataclass_schemas = [
+        OpSchema.from_onnx_opschema(schema)
+        for schema in schemas
+        if schema.since_version == latest_versions[schema.name]
+    ]
     pyi_file = build_pyi(dataclass_schemas)
     output_dir = pathlib.Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(output_dir / "__init__.pyi", "w") as f:
         f.write(pyi_file)
-
 
 
 if __name__ == "__main__":

@@ -2,8 +2,10 @@
 
 Usage:
 
-    python onnx-spec/tools/spec_to_yaml.py --output onnx-spec/defs
+    python tools/generate_ops.py --output src/torch_onnx/ops
 """
+
+from __future__ import annotations
 
 import argparse
 import dataclasses
@@ -11,6 +13,26 @@ import pathlib
 import textwrap
 
 import onnx
+import tqdm
+
+_ATTR_TYPE_TO_PYTHON_TYPE = {
+    "FLOAT": "float",
+    "INT": "int",
+    "STRING": "str",
+    "TENSOR": "torch.Tensor",
+    "GRAPH": "torch.fx.GraphModule",
+    "FLOATS": "list[float]",
+    "INTS": "list[int]",
+    "STRINGS": "list[str]",
+    "TENSORS": "list[torch.Tensor]",
+    "GRAPHS": "list[torch.fx.GraphModule]",
+    "TYPE_PROTO": "torch.dtype",
+}
+
+_IGNORED_OP_NAMES = {
+    "OptionalGetElement",
+    "OptionalHasElement",
+}
 
 
 @dataclasses.dataclass
@@ -211,20 +233,40 @@ def build_signature(schema: OpSchema):
         attr4: bool,
     ) -> torch.Tensor:
     """
-    inputs = " ".join(f"{input_.name}: torch.Tensor," for input_ in schema.inputs)
-    attributes = " ".join(
-        f"{attr.name}: {attr.type.lower()}," for attr in schema.attributes
+    inputs = ", ".join(f"{input_.name}: torch.Tensor" for input_ in schema.inputs)
+    # FIXME: Single inputs still have a comma
+    if not schema.inputs:
+        inputs = ""
+    else:
+        inputs += ","
+    attributes = ", ".join(
+        f"{attr.name}: {_ATTR_TYPE_TO_PYTHON_TYPE[attr.type]}"
+        for attr in schema.attributes
+        if attr.type in _ATTR_TYPE_TO_PYTHON_TYPE
     )
+    if schema.attributes:
+        # TODO: Fix this
+        attributes = ", *," + attributes
     return (
         f"def {schema.name}_{schema.since_version}({inputs} {attributes}) -> torch.Tensor:\n"
-        + textwrap.indent(f'r"""\n{schema.doc}\n"""', " " * 4)
+        + textwrap.indent(f'r"""\n{schema.doc}\n"""', " " * 4) + "\n"
+        + "    raise NotImplementedError"
     )
 
 
-def build_pyi(schemas: list[OpSchema]):
+def build_py(schemas: list[OpSchema]):
     """Build a .pyi file."""
-    signatures = [build_signature(schema) for schema in schemas]
-    return "import torch\n\n\n" + "\n\n".join(signatures)
+    signatures = []
+    for schema in (pbar := tqdm.tqdm(schemas)):
+        pbar.set_postfix_str(f"{schema.name}-{schema.since_version}")
+        signatures.append(build_signature(schema))
+    return (
+        "from __future__ import annotations\n\n"
+        + "import torch\n"
+        + "import torch.fx\n\n"
+        + "from . import _impl\n\n\n"
+        + "\n\n".join(signatures)
+    )
 
 
 def main():
@@ -246,12 +288,15 @@ def main():
         OpSchema.from_onnx_opschema(schema)
         for schema in schemas
         if schema.since_version == latest_versions[schema.name]
+        and schema.domain == ""
+        and schema.name not in _IGNORED_OP_NAMES
     ]
-    pyi_file = build_pyi(dataclass_schemas)
+    dataclass_schemas = sorted(dataclass_schemas, key=lambda x: x.name)
+    init_file = build_py(dataclass_schemas)
     output_dir = pathlib.Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "__init__.pyi", "w") as f:
-        f.write(pyi_file)
+    with open(output_dir / "__init__.py", "w") as f:
+        f.write(init_file)
 
 
 if __name__ == "__main__":

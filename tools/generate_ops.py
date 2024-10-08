@@ -32,6 +32,15 @@ _ATTR_TYPE_TO_PYTHON_TYPE = {
 _IGNORED_OP_NAMES = {
     "OptionalGetElement",
     "OptionalHasElement",
+    "ConcatFromSequence",
+    "ReverseSequence",
+    "SequenceAt",
+    "SequenceConstruct",
+    "SequenceEmpty",
+    "SequenceErase",
+    "SequenceInsert",
+    "SequenceLength",
+    "SequenceMap",
 }
 
 
@@ -51,6 +60,8 @@ class FormalParameter:
     description: str
     min_arity: int
     tags: list[str]
+    variadic: bool = False
+    optional: bool = False
 
 
 @dataclasses.dataclass
@@ -119,6 +130,10 @@ class OpSchema:
                     description=input_.description,
                     min_arity=input_.min_arity,
                     tags=_generate_formal_parameter_tags(input_),
+                    variadic=input_.option
+                    == onnx.defs.OpSchema.FormalParameterOption.Variadic,
+                    optional=input_.option
+                    == onnx.defs.OpSchema.FormalParameterOption.Optional,
                 )
                 for input_ in schema.inputs
             ],
@@ -129,6 +144,10 @@ class OpSchema:
                     description=output.description,
                     min_arity=output.min_arity,
                     tags=_generate_formal_parameter_tags(output),
+                    variadic=output.option
+                    == onnx.defs.OpSchema.FormalParameterOption.Variadic,
+                    optional=output.option
+                    == onnx.defs.OpSchema.FormalParameterOption.Optional,
                 )
                 for output in schema.outputs
             ],
@@ -226,7 +245,17 @@ def _process_documentation(doc: str | None) -> str:
     return doc
 
 
-def _format_attr_python_type_and_default_vale(attr: Attribute):
+def _format_input(input: FormalParameter) -> str:
+    if input.optional:
+        text = f"{input.name}: torch.Tensor | None = None"
+    else:
+        text = f"{input.name}: torch.Tensor"
+    if input.variadic:
+        text = f"*{text}"
+    return text
+
+
+def _format_attr_python_type_and_default_vale(attr: Attribute) -> str:
     base_type = _ATTR_TYPE_TO_PYTHON_TYPE[attr.type]
     if attr.required:
         return base_type
@@ -235,7 +264,13 @@ def _format_attr_python_type_and_default_vale(attr: Attribute):
     return f"{base_type} | None = None"
 
 
-def build_signature(schema: OpSchema):
+def _format_output_type(output: FormalParameter) -> str:
+    if output.variadic:
+        return "list[torch.Tensor]"
+    return "torch.Tensor"
+
+
+def build_signature(schema: OpSchema) -> str:
     """Build a signature.
 
     def OpName_1(
@@ -249,17 +284,25 @@ def build_signature(schema: OpSchema):
         attr4: bool,
     ) -> torch.Tensor:
     """
-    inputs = [f"{input_.name}: torch.Tensor" for input_ in schema.inputs]
+    inputs = [_format_input(input_) for input_ in schema.inputs]
     attributes = [
         f"{attr.name}: {_format_attr_python_type_and_default_vale(attr)}"
         for attr in schema.attributes
         if attr.type in _ATTR_TYPE_TO_PYTHON_TYPE
     ]
-    if attributes:
+    if attributes and not any(input.variadic for input in schema.inputs):
         attributes = ["*", *attributes]
     args = ", ".join(inputs + attributes)
+    if len(schema.outputs) == 1:
+        return_type = _format_output_type(schema.outputs[0])
+    else:
+        return_type = ", ".join(
+            _format_output_type(output) for output in schema.outputs
+        )
+        return_type = f"tuple[{return_type}]"
+
     return (
-        f"def {schema.name}_{schema.since_version}({args}) -> torch.Tensor:\n"
+        f"def {schema.name}_{schema.since_version}({args}) -> {return_type}:\n"
         + textwrap.indent(f'r"""\n{schema.doc}\n"""', " " * 4)
         + "\n"
         + "    raise NotImplementedError"

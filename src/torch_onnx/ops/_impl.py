@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Sequence
 
 import torch
 import torch.fx
@@ -24,7 +25,7 @@ def AffineGrid_20(
     theta: torch.Tensor, size: torch.Tensor, *, align_corners: int = 0
 ) -> torch.Tensor:
     return torch.nn.functional.affine_grid(
-        theta, size, align_corners=bool(align_corners)
+        theta, size.numpy(force=True).tolist(), align_corners=bool(align_corners)
     )
 
 
@@ -77,14 +78,7 @@ def AveragePool_19(
     pads: list[int] | None = None,
     strides: list[int] | None = None,
 ) -> torch.Tensor:
-    return torch.nn.functional.avg_pool2d(
-        X,
-        kernel_shape,
-        strides,
-        pads,
-        ceil_mode=bool(ceil_mode),
-        count_include_pad=bool(count_include_pad),
-    )
+    raise NotImplementedError
 
 
 def BatchNormalization_15(
@@ -694,14 +688,7 @@ def LpPool_18(
     pads: list[int] | None = None,
     strides: list[int] | None = None,
 ) -> torch.Tensor:
-    return torch.nn.functional.lp_pool2d(
-        X,
-        norm_type=p,
-        kernel_size=kernel_shape,
-        stride=strides,
-        ceil_mode=bool(ceil_mode),
-        padding=pads,
-    )
+    raise NotImplementedError
 
 
 def MatMul_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
@@ -749,7 +736,7 @@ def MaxRoiPool_1(
     pooled_shape: list[int],
     spatial_scale: float = 1.0,
 ) -> torch.Tensor:
-    return torch.nn.functional.roi_pool(X, rois, pooled_shape, spatial_scale)
+    raise NotImplementedError
 
 
 def MaxUnpool_11(
@@ -761,9 +748,7 @@ def MaxUnpool_11(
     pads: list[int] | None = None,
     strides: list[int] | None = None,
 ) -> torch.Tensor:
-    return torch.nn.functional.max_unpool2d(
-        X, I, kernel_shape, strides, pads, output_shape
-    )
+    raise NotImplementedError
 
 
 def Mean_13(*data_0: torch.Tensor) -> torch.Tensor:
@@ -771,8 +756,9 @@ def Mean_13(*data_0: torch.Tensor) -> torch.Tensor:
 
 
 def MeanVarianceNormalization_13(
-    X: torch.Tensor, *, axes: list[int] = (0, 2, 3)
+    X: torch.Tensor, *, axes: Sequence[int] = (0, 2, 3)
 ) -> torch.Tensor:
+    # FIXME
     mean = torch.mean(X, dim=axes, keepdim=True)
     std = torch.std(X, dim=axes, keepdim=True)
     return (X - mean) / std
@@ -791,6 +777,7 @@ def MelWeightMatrix_17(
 
 
 def Min_13(*data_0: torch.Tensor) -> torch.Tensor:
+    # FIXME
     return torch.min(*data_0)
 
 

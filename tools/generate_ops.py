@@ -209,18 +209,16 @@ def build_signature(schema: OpSchema):
         attr2: str,
         attr3: float,
         attr4: bool,
-    ) -> torch.Tensor: ...
+    ) -> torch.Tensor:
     """
     inputs = " ".join(f"{input_.name}: torch.Tensor," for input_ in schema.inputs)
     attributes = " ".join(
         f"{attr.name}: {attr.type.lower()}," for attr in schema.attributes
     )
-    return f'''\
-def {schema.name}_{schema.since_version}({inputs} {attributes}) -> torch.Tensor: ...
-r"""
-{schema.doc}
-"""
-'''
+    return (
+        f"def {schema.name}_{schema.since_version}({inputs} {attributes}) -> torch.Tensor:\n"
+        + textwrap.indent(f'r"""\n{schema.doc}\n"""', " " * 4)
+    )
 
 
 def build_pyi(schemas: list[OpSchema]):

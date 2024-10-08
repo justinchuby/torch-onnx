@@ -233,29 +233,24 @@ def build_signature(schema: OpSchema):
         attr4: bool,
     ) -> torch.Tensor:
     """
-    inputs = ", ".join(f"{input_.name}: torch.Tensor" for input_ in schema.inputs)
-    # FIXME: Single inputs still have a comma
-    if not schema.inputs:
-        inputs = ""
-    else:
-        inputs += ","
-    attributes = ", ".join(
+    inputs = [f"{input_.name}: torch.Tensor" for input_ in schema.inputs]
+    attributes = [
         f"{attr.name}: {_ATTR_TYPE_TO_PYTHON_TYPE[attr.type]}"
         for attr in schema.attributes
         if attr.type in _ATTR_TYPE_TO_PYTHON_TYPE
-    )
-    if schema.attributes:
-        # TODO: Fix this
-        attributes = ", *," + attributes
+    ]
+    if attributes:
+        attributes = ["*", *attributes]
+    args = ", ".join(inputs + attributes)
     return (
-        f"def {schema.name}_{schema.since_version}({inputs} {attributes}) -> torch.Tensor:\n"
+        f"def {schema.name}_{schema.since_version}({args}) -> torch.Tensor:\n"
         + textwrap.indent(f'r"""\n{schema.doc}\n"""', " " * 4) + "\n"
         + "    raise NotImplementedError"
     )
 
 
 def build_py(schemas: list[OpSchema]):
-    """Build a .pyi file."""
+    """Build a .py file."""
     signatures = []
     for schema in (pbar := tqdm.tqdm(schemas)):
         pbar.set_postfix_str(f"{schema.name}-{schema.since_version}")

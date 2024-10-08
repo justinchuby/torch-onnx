@@ -226,12 +226,12 @@ def _process_documentation(doc: str | None) -> str:
     return doc
 
 
-def _get_attr_python_type_and_default_vale(attr: Attribute):
+def _format_attr_python_type_and_default_vale(attr: Attribute):
     base_type = _ATTR_TYPE_TO_PYTHON_TYPE[attr.type]
     if attr.required:
         return base_type
     if attr.default_value is not None:
-        return f"{base_type} = {attr.default_value}"
+        return f"{base_type} = {attr.default_value!r}"
     return f"{base_type} | None = None"
 
 
@@ -251,7 +251,7 @@ def build_signature(schema: OpSchema):
     """
     inputs = [f"{input_.name}: torch.Tensor" for input_ in schema.inputs]
     attributes = [
-        f"{attr.name}: {_get_attr_python_type_and_default_vale(attr)}"
+        f"{attr.name}: {_format_attr_python_type_and_default_vale(attr)}"
         for attr in schema.attributes
         if attr.type in _ATTR_TYPE_TO_PYTHON_TYPE
     ]

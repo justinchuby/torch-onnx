@@ -140,7 +140,7 @@ def Atanh_9(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def AveragePool_19(X: torch.Tensor, *, auto_pad: str = NOTSET, ceil_mode: int = 0, count_include_pad: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def AveragePool_19(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, count_include_pad: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     AveragePool consumes an input tensor X and applies average pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -477,7 +477,7 @@ def ConstantOfShape_21(input: torch.Tensor, *, value: torch.Tensor | None = None
     raise NotImplementedError
 
 
-def Conv_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str = NOTSET, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def Conv_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The convolution operator consumes an input tensor and a filter, and
     computes the output.
@@ -485,7 +485,7 @@ def Conv_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str 
     raise NotImplementedError
 
 
-def ConvInteger_10(x: torch.Tensor, w: torch.Tensor, x_zero_point: torch.Tensor, w_zero_point: torch.Tensor, *, auto_pad: str = NOTSET, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def ConvInteger_10(x: torch.Tensor, w: torch.Tensor, x_zero_point: torch.Tensor, w_zero_point: torch.Tensor, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The integer convolution operator consumes an input tensor, its zero-point, a filter, and its zero-point,
     and computes the output. The production MUST never overflow. The accumulation may overflow if and only if in 32 bits.
@@ -493,7 +493,7 @@ def ConvInteger_10(x: torch.Tensor, w: torch.Tensor, x_zero_point: torch.Tensor,
     raise NotImplementedError
 
 
-def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str = NOTSET, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, output_padding: list[int] | None = None, output_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, output_padding: list[int] | None = None, output_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The convolution transpose operator consumes an input tensor and a filter,
     and computes the output.
@@ -581,7 +581,7 @@ def DeformConv_19(X: torch.Tensor, W: torch.Tensor, offset: torch.Tensor, B: tor
     raise NotImplementedError
 
 
-def DepthToSpace_13(input: torch.Tensor, *, blocksize: int, mode: str = DCR) -> torch.Tensor:
+def DepthToSpace_13(input: torch.Tensor, *, blocksize: int, mode: str = 'DCR') -> torch.Tensor:
     r"""
     DepthToSpace rearranges (permutes) data from depth into blocks of spatial data.
     This is the reverse transformation of SpaceToDepth. More specifically, this op outputs a copy of
@@ -808,7 +808,7 @@ def Floor_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GRU_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = forward, hidden_size: int | None = None, layout: int = 0, linear_before_reset: int = 0) -> torch.Tensor:
+def GRU_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0, linear_before_reset: int = 0) -> torch.Tensor:
     r"""
     Computes an one-layer GRU. This operator is usually supported via some custom
     implementation such as CuDNN.
@@ -1062,7 +1062,7 @@ def GatherND_13(data: torch.Tensor, indices: torch.Tensor, *, batch_dims: int = 
     raise NotImplementedError
 
 
-def Gelu_20(X: torch.Tensor, *, approximate: str = none) -> torch.Tensor:
+def Gelu_20(X: torch.Tensor, *, approximate: str = 'none') -> torch.Tensor:
     r"""
     Gelu takes one input data (Tensor<T>) and produces one
     output data (Tensor<T>) where the gaussian error linear units function,
@@ -1139,7 +1139,7 @@ def GreaterOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GridSample_20(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int = 0, mode: str = linear, padding_mode: str = zeros) -> torch.Tensor:
+def GridSample_20(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int = 0, mode: str = 'linear', padding_mode: str = 'zeros') -> torch.Tensor:
     r"""
     Given an input `X` and a flow-field `grid`, computes the output `Y` using `X` values and pixel locations from the `grid`.
     For spatial input `X` with shape (N, C, H, W), the `grid` will have shape (N, H_out, W_out, 2),
@@ -1251,7 +1251,7 @@ def If_21(cond: torch.Tensor, *, else_branch: torch.fx.GraphModule, then_branch:
     raise NotImplementedError
 
 
-def ImageDecoder_20(encoded_stream: torch.Tensor, *, pixel_format: str = RGB) -> torch.Tensor:
+def ImageDecoder_20(encoded_stream: torch.Tensor, *, pixel_format: str = 'RGB') -> torch.Tensor:
     r"""
     Loads and decodes and image from a file. If it can't decode for any reason (e.g. corrupted encoded
     stream, invalid format, it will return an empty matrix).
@@ -1321,7 +1321,7 @@ def LRN_13(X: torch.Tensor, *, alpha: float = 9.999999747378752e-05, beta: float
     raise NotImplementedError
 
 
-def LSTM_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, initial_c: torch.Tensor, P: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = forward, hidden_size: int | None = None, input_forget: int = 0, layout: int = 0) -> torch.Tensor:
+def LSTM_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, initial_c: torch.Tensor, P: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, input_forget: int = 0, layout: int = 0) -> torch.Tensor:
     r"""
     Computes an one-layer LSTM. This operator is usually supported via some
     custom implementation such as CuDNN.
@@ -1621,7 +1621,7 @@ def LpNormalization_1(input: torch.Tensor, *, axis: int = -1, p: int = 2) -> tor
     raise NotImplementedError
 
 
-def LpPool_18(X: torch.Tensor, *, auto_pad: str = NOTSET, ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], p: int = 2, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def LpPool_18(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], p: int = 2, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     LpPool consumes an input tensor X and applies Lp pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1674,7 +1674,7 @@ def Max_13(data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def MaxPool_12(X: torch.Tensor, *, auto_pad: str = NOTSET, ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, storage_order: int = 0, strides: list[int] | None = None) -> torch.Tensor:
+def MaxPool_12(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, storage_order: int = 0, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     MaxPool consumes an input tensor X and applies max pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1844,7 +1844,7 @@ def Neg_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def NegativeLogLikelihoodLoss_13(input: torch.Tensor, target: torch.Tensor, weight: torch.Tensor, *, ignore_index: int | None = None, reduction: str = mean) -> torch.Tensor:
+def NegativeLogLikelihoodLoss_13(input: torch.Tensor, target: torch.Tensor, weight: torch.Tensor, *, ignore_index: int | None = None, reduction: str = 'mean') -> torch.Tensor:
     r"""
     A NegativeLogLikelihoodLoss operator computes (weighted) negative log likelihood loss.
     Its "input" tensor has the shape of (N, C, d1, d2, ..., dk) where k >= 0.
@@ -2034,7 +2034,7 @@ def PRelu_16(X: torch.Tensor, slope: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Pad_21(data: torch.Tensor, pads: torch.Tensor, constant_value: torch.Tensor, axes: torch.Tensor, *, mode: str = constant) -> torch.Tensor:
+def Pad_21(data: torch.Tensor, pads: torch.Tensor, constant_value: torch.Tensor, axes: torch.Tensor, *, mode: str = 'constant') -> torch.Tensor:
     r"""
     Given a tensor containing the data to be padded (`data`), a tensor containing the number of start and end pad values for axis (`pads`), (optionally) a `mode`, and (optionally) `constant_value`,
     a padded tensor (`output`) is generated.
@@ -2150,7 +2150,7 @@ def Pow_15(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def QLinearConv_10(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.Tensor, w: torch.Tensor, w_scale: torch.Tensor, w_zero_point: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor, B: torch.Tensor, *, auto_pad: str = NOTSET, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def QLinearConv_10(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.Tensor, w: torch.Tensor, w_scale: torch.Tensor, w_zero_point: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor, B: torch.Tensor, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The convolution operator consumes a quantized input tensor, its scale and zero point,
     a quantized filter, its scale and zero point, and output's scale and zero point,
@@ -2211,7 +2211,7 @@ def QuantizeLinear_21(x: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torc
     raise NotImplementedError
 
 
-def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] = ('Tanh', 'Tanh'), clip: float | None = None, direction: str = forward, hidden_size: int | None = None, layout: int = 0) -> torch.Tensor:
+def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] = ('Tanh', 'Tanh'), clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0) -> torch.Tensor:
     r"""
     Computes an one-layer simple RNN. This operator is usually supported
     via some custom implementation such as CuDNN.
@@ -2532,7 +2532,7 @@ def Reshape_21(data: torch.Tensor, shape: torch.Tensor, *, allowzero: int = 0) -
     raise NotImplementedError
 
 
-def Resize_19(X: torch.Tensor, roi: torch.Tensor, scales: torch.Tensor, sizes: torch.Tensor, *, antialias: int = 0, axes: list[int] | None = None, coordinate_transformation_mode: str = half_pixel, cubic_coeff_a: float = -0.75, exclude_outside: int = 0, extrapolation_value: float = 0.0, keep_aspect_ratio_policy: str = stretch, mode: str = nearest, nearest_mode: str = round_prefer_floor) -> torch.Tensor:
+def Resize_19(X: torch.Tensor, roi: torch.Tensor, scales: torch.Tensor, sizes: torch.Tensor, *, antialias: int = 0, axes: list[int] | None = None, coordinate_transformation_mode: str = 'half_pixel', cubic_coeff_a: float = -0.75, exclude_outside: int = 0, extrapolation_value: float = 0.0, keep_aspect_ratio_policy: str = 'stretch', mode: str = 'nearest', nearest_mode: str = 'round_prefer_floor') -> torch.Tensor:
     r"""
     Resize the input tensor. In general, it calculates every value in the output tensor as a weighted average of neighborhood (a.k.a. sampling locations) in the input tensor.
     Each dimension value of the output tensor is:
@@ -2583,7 +2583,7 @@ def ReverseSequence_10(input: torch.Tensor, sequence_lens: torch.Tensor, *, batc
     raise NotImplementedError
 
 
-def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor, *, coordinate_transformation_mode: str = half_pixel, mode: str = avg, output_height: int = 1, output_width: int = 1, sampling_ratio: int = 0, spatial_scale: float = 1.0) -> torch.Tensor:
+def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor, *, coordinate_transformation_mode: str = 'half_pixel', mode: str = 'avg', output_height: int = 1, output_width: int = 1, sampling_ratio: int = 0, spatial_scale: float = 1.0) -> torch.Tensor:
     r"""
     Region of Interest (RoI) align operation described in the
     [Mask R-CNN paper](https://arxiv.org/abs/1703.06870).
@@ -2812,7 +2812,7 @@ def Scatter_11(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor,
     raise NotImplementedError
 
 
-def ScatterElements_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int = 0, reduction: str = none) -> torch.Tensor:
+def ScatterElements_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int = 0, reduction: str = 'none') -> torch.Tensor:
     r"""
     ScatterElements takes three inputs `data`, `updates`, and `indices` of the same
     rank r >= 1 and an optional attribute axis that identifies an axis of `data`
@@ -2880,7 +2880,7 @@ def ScatterElements_18(data: torch.Tensor, indices: torch.Tensor, updates: torch
     raise NotImplementedError
 
 
-def ScatterND_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, reduction: str = none) -> torch.Tensor:
+def ScatterND_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, reduction: str = 'none') -> torch.Tensor:
     r"""
     ScatterND takes three inputs `data` tensor of rank r >= 1, `indices` tensor of rank q >= 1,
     and `updates` tensor of rank q + r - indices.shape[-1] - 1. The output of the operation
@@ -3207,7 +3207,7 @@ def Softmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     r"""
     The operator computes the normalized exponential values for the given input:
 
-     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1)
+     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1) 
 
     The "axis" attribute indicates the dimension along which Softmax
     will be performed. The output tensor has the same shape
@@ -3216,7 +3216,7 @@ def Softmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     raise NotImplementedError
 
 
-def SoftmaxCrossEntropyLoss_13(scores: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor, *, ignore_index: int | None = None, reduction: str = mean) -> torch.Tensor:
+def SoftmaxCrossEntropyLoss_13(scores: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor, *, ignore_index: int | None = None, reduction: str = 'mean') -> torch.Tensor:
     r"""
     Loss function that measures the softmax cross entropy
     between 'scores' and 'labels'.
@@ -3342,7 +3342,7 @@ def StringConcat_20(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def StringNormalizer_10(X: torch.Tensor, *, case_change_action: str = NONE, is_case_sensitive: int = 0, locale: str | None = None, stopwords: list[str] | None = None) -> torch.Tensor:
+def StringNormalizer_10(X: torch.Tensor, *, case_change_action: str = 'NONE', is_case_sensitive: int = 0, locale: str | None = None, stopwords: list[str] | None = None) -> torch.Tensor:
     r"""
     StringNormalization performs string operations for basic cleaning.
     This operator has only one input (denoted by X) and only one output
@@ -3620,7 +3620,7 @@ def Unsqueeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Upsample_10(X: torch.Tensor, scales: torch.Tensor, *, mode: str = nearest) -> torch.Tensor:
+def Upsample_10(X: torch.Tensor, scales: torch.Tensor, *, mode: str = 'nearest') -> torch.Tensor:
     r"""
     Upsample the input tensor.
     Each dimension value of the output tensor is:

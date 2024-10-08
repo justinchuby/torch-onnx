@@ -14,17 +14,20 @@ def Abs_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Acos_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arccosine (inverse of cosine) of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
+
 def Acosh_9(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic arccosine of the given input tensor element-wise.
     """
     raise NotImplementedError
+
 
 def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -36,7 +39,10 @@ def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def AffineGrid_20(theta: torch.Tensor, size: torch.Tensor, *, align_corners: int) -> torch.Tensor:
+
+def AffineGrid_20(
+    theta: torch.Tensor, size: torch.Tensor, *, align_corners: int
+) -> torch.Tensor:
     r"""
     Generates a 2D or 3D flow field (sampling grid), given a batch of affine matrices theta
     (https://pytorch.org/docs/stable/generated/torch.nn.functional.affine_grid.html).
@@ -68,6 +74,7 @@ def AffineGrid_20(theta: torch.Tensor, size: torch.Tensor, *, align_corners: int
     """
     raise NotImplementedError
 
+
 def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the tensor resulted from performing the `and` logical operation
@@ -77,7 +84,10 @@ def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def ArgMax_13(data: torch.Tensor, *, axis: int, keepdims: int, select_last_index: int) -> torch.Tensor:
+
+def ArgMax_13(
+    data: torch.Tensor, *, axis: int, keepdims: int, select_last_index: int
+) -> torch.Tensor:
     r"""
     Computes the indices of the max elements of the input tensor's element along the
     provided axis. The resulting tensor has the same rank as the input if keepdims equals 1.
@@ -89,7 +99,10 @@ def ArgMax_13(data: torch.Tensor, *, axis: int, keepdims: int, select_last_index
     """
     raise NotImplementedError
 
-def ArgMin_13(data: torch.Tensor, *, axis: int, keepdims: int, select_last_index: int) -> torch.Tensor:
+
+def ArgMin_13(
+    data: torch.Tensor, *, axis: int, keepdims: int, select_last_index: int
+) -> torch.Tensor:
     r"""
     Computes the indices of the min elements of the input tensor's element along the
     provided axis. The resulting tensor has the same rank as the input if keepdims equals 1.
@@ -101,11 +114,13 @@ def ArgMin_13(data: torch.Tensor, *, axis: int, keepdims: int, select_last_index
     """
     raise NotImplementedError
 
+
 def Asin_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arcsine (inverse of sine) of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Asinh_9(input: torch.Tensor) -> torch.Tensor:
     r"""
@@ -113,11 +128,13 @@ def Asinh_9(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Atan_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arctangent (inverse of tangent) of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Atanh_9(input: torch.Tensor) -> torch.Tensor:
     r"""
@@ -125,7 +142,18 @@ def Atanh_9(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def AveragePool_19(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, count_include_pad: int, dilations: list[int], kernel_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def AveragePool_19(
+    X: torch.Tensor,
+    *,
+    auto_pad: str,
+    ceil_mode: int,
+    count_include_pad: int,
+    dilations: list[int],
+    kernel_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     AveragePool consumes an input tensor X and applies average pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -161,7 +189,18 @@ def AveragePool_19(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, count_incl
     """
     raise NotImplementedError
 
-def BatchNormalization_15(X: torch.Tensor, scale: torch.Tensor, B: torch.Tensor, input_mean: torch.Tensor, input_var: torch.Tensor, *, epsilon: float, momentum: float, training_mode: int) -> torch.Tensor:
+
+def BatchNormalization_15(
+    X: torch.Tensor,
+    scale: torch.Tensor,
+    B: torch.Tensor,
+    input_mean: torch.Tensor,
+    input_var: torch.Tensor,
+    *,
+    epsilon: float,
+    momentum: float,
+    training_mode: int,
+) -> torch.Tensor:
     r"""
     Carries out batch normalization as described in the paper
     https://arxiv.org/abs/1502.03167. Depending on the mode it is being run,
@@ -205,6 +244,7 @@ def BatchNormalization_15(X: torch.Tensor, scale: torch.Tensor, B: torch.Tensor,
     """
     raise NotImplementedError
 
+
 def Bernoulli_15(input: torch.Tensor, *, dtype: int, seed: float) -> torch.Tensor:
     r"""
     Draws binary random numbers (0 or 1) from a Bernoulli distribution. The input tensor should be a tensor
@@ -215,6 +255,7 @@ def Bernoulli_15(input: torch.Tensor, *, dtype: int, seed: float) -> torch.Tenso
     implementations (even if a seed is specified).
     """
     raise NotImplementedError
+
 
 def BitShift_11(X: torch.Tensor, Y: torch.Tensor, *, direction: str) -> torch.Tensor:
     r"""
@@ -233,6 +274,7 @@ def BitShift_11(X: torch.Tensor, Y: torch.Tensor, *, direction: str) -> torch.Te
     """
     raise NotImplementedError
 
+
 def BitwiseAnd_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the tensor resulting from performing the bitwise `and` operation
@@ -242,11 +284,13 @@ def BitwiseAnd_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def BitwiseNot_18(X: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the bitwise not of the input tensor element-wise.
     """
     raise NotImplementedError
+
 
 def BitwiseOr_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -257,6 +301,7 @@ def BitwiseOr_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def BitwiseXor_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the tensor resulting from performing the bitwise `xor` operation
@@ -266,11 +311,15 @@ def BitwiseXor_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def BlackmanWindow_17(size: torch.Tensor, *, output_datatype: int, periodic: int) -> torch.Tensor:
+
+def BlackmanWindow_17(
+    size: torch.Tensor, *, output_datatype: int, periodic: int
+) -> torch.Tensor:
     r"""
     Generates a Blackman window as described in the paper https://ieeexplore.ieee.org/document/1455106.
     """
     raise NotImplementedError
+
 
 def Cast_21(input: torch.Tensor, *, saturate: int, to: int) -> torch.Tensor:
     r"""
@@ -341,13 +390,17 @@ def Cast_21(input: torch.Tensor, *, saturate: int, to: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def CastLike_21(input: torch.Tensor, target_type: torch.Tensor, *, saturate: int) -> torch.Tensor:
+
+def CastLike_21(
+    input: torch.Tensor, target_type: torch.Tensor, *, saturate: int
+) -> torch.Tensor:
     r"""
     The operator casts the elements of a given input tensor (the first input) to
     the same data type as the elements of the second input tensor.
     See documentation of the Cast operator for further details.
     """
     raise NotImplementedError
+
 
 def Ceil_13(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -356,6 +409,7 @@ def Ceil_13(X: torch.Tensor) -> torch.Tensor:
     the tensor elementwise. If x is integral, +0, -0, NaN,  or infinite, x itself is returned.
     """
     raise NotImplementedError
+
 
 def Celu_12(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     r"""
@@ -369,7 +423,10 @@ def Celu_12(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def CenterCropPad_18(input_data: torch.Tensor, shape: torch.Tensor, *, axes: list[int]) -> torch.Tensor:
+
+def CenterCropPad_18(
+    input_data: torch.Tensor, shape: torch.Tensor, *, axes: list[int]
+) -> torch.Tensor:
     r"""
     Center crop or pad an input to given dimensions.
 
@@ -382,6 +439,7 @@ def CenterCropPad_18(input_data: torch.Tensor, shape: torch.Tensor, *, axes: lis
     """
     raise NotImplementedError
 
+
 def Clip_13(input: torch.Tensor, min: torch.Tensor, max: torch.Tensor) -> torch.Tensor:
     r"""
     Clip operator limits the given input within an interval. The interval is
@@ -390,7 +448,16 @@ def Clip_13(input: torch.Tensor, min: torch.Tensor, max: torch.Tensor) -> torch.
     """
     raise NotImplementedError
 
-def Col2Im_18(input: torch.Tensor, image_shape: torch.Tensor, block_shape: torch.Tensor, *, dilations: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def Col2Im_18(
+    input: torch.Tensor,
+    image_shape: torch.Tensor,
+    block_shape: torch.Tensor,
+    *,
+    dilations: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     The operator rearranges column blocks back into a multidimensional image
 
@@ -405,7 +472,10 @@ def Col2Im_18(input: torch.Tensor, image_shape: torch.Tensor, block_shape: torch
     """
     raise NotImplementedError
 
-def Compress_11(input: torch.Tensor, condition: torch.Tensor, *, axis: int) -> torch.Tensor:
+
+def Compress_11(
+    input: torch.Tensor, condition: torch.Tensor, *, axis: int
+) -> torch.Tensor:
     r"""
     Selects slices from an input tensor along a given axis where condition evaluates to True for each axis index.
     In case axis is not provided, input is flattened before elements are selected.
@@ -413,13 +483,17 @@ def Compress_11(input: torch.Tensor, condition: torch.Tensor, *, axis: int) -> t
     """
     raise NotImplementedError
 
+
 def Concat_13(inputs: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
     Concatenate a list of tensors into a single tensor. All input tensors must have the same shape, except for the dimension size of the axis to concatenate on.
     """
     raise NotImplementedError
 
-def ConcatFromSequence_11(input_sequence: torch.Tensor, *, axis: int, new_axis: int) -> torch.Tensor:
+
+def ConcatFromSequence_11(
+    input_sequence: torch.Tensor, *, axis: int, new_axis: int
+) -> torch.Tensor:
     r"""
     Concatenate a sequence of tensors into a single tensor.
     All input tensors must have the same shape, except for the dimension size of the axis to concatenate on.
@@ -428,12 +502,23 @@ def ConcatFromSequence_11(input_sequence: torch.Tensor, *, axis: int, new_axis: 
     """
     raise NotImplementedError
 
-def Constant_21(*, value: torch.Tensor, value_float: float, value_floats: list[float], value_int: int, value_ints: list[int], value_string: str, value_strings: list[str]) -> torch.Tensor:
+
+def Constant_21(
+    *,
+    value: torch.Tensor,
+    value_float: float,
+    value_floats: list[float],
+    value_int: int,
+    value_ints: list[int],
+    value_string: str,
+    value_strings: list[str],
+) -> torch.Tensor:
     r"""
     This operator produces a constant tensor. Exactly one of the provided attributes, either value, sparse_value,
     or value_* must be specified.
     """
     raise NotImplementedError
+
 
 def ConstantOfShape_21(input: torch.Tensor, *, value: torch.Tensor) -> torch.Tensor:
     r"""
@@ -441,21 +526,60 @@ def ConstantOfShape_21(input: torch.Tensor, *, value: torch.Tensor) -> torch.Ten
     """
     raise NotImplementedError
 
-def Conv_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str, dilations: list[int], group: int, kernel_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def Conv_11(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    auto_pad: str,
+    dilations: list[int],
+    group: int,
+    kernel_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     The convolution operator consumes an input tensor and a filter, and
     computes the output.
     """
     raise NotImplementedError
 
-def ConvInteger_10(x: torch.Tensor, w: torch.Tensor, x_zero_point: torch.Tensor, w_zero_point: torch.Tensor, *, auto_pad: str, dilations: list[int], group: int, kernel_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def ConvInteger_10(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    x_zero_point: torch.Tensor,
+    w_zero_point: torch.Tensor,
+    *,
+    auto_pad: str,
+    dilations: list[int],
+    group: int,
+    kernel_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     The integer convolution operator consumes an input tensor, its zero-point, a filter, and its zero-point,
     and computes the output. The production MUST never overflow. The accumulation may overflow if and only if in 32 bits.
     """
     raise NotImplementedError
 
-def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_pad: str, dilations: list[int], group: int, kernel_shape: list[int], output_padding: list[int], output_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def ConvTranspose_11(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    auto_pad: str,
+    dilations: list[int],
+    group: int,
+    kernel_shape: list[int],
+    output_padding: list[int],
+    output_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     The convolution transpose operator consumes an input tensor and a filter,
     and computes the output.
@@ -472,11 +596,13 @@ def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor, *, auto_
     """
     raise NotImplementedError
 
+
 def Cos_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the cosine of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Cosh_9(input: torch.Tensor) -> torch.Tensor:
     r"""
@@ -484,7 +610,10 @@ def Cosh_9(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def CumSum_14(x: torch.Tensor, axis: torch.Tensor, *, exclusive: int, reverse: int) -> torch.Tensor:
+
+def CumSum_14(
+    x: torch.Tensor, axis: torch.Tensor, *, exclusive: int, reverse: int
+) -> torch.Tensor:
     r"""
     Performs cumulative sum of the input elements along the given axis.
     By default, it will do the sum inclusively meaning the first element is copied as is.
@@ -508,7 +637,15 @@ def CumSum_14(x: torch.Tensor, axis: torch.Tensor, *, exclusive: int, reverse: i
     """
     raise NotImplementedError
 
-def DFT_20(input: torch.Tensor, dft_length: torch.Tensor, axis: torch.Tensor, *, inverse: int, onesided: int) -> torch.Tensor:
+
+def DFT_20(
+    input: torch.Tensor,
+    dft_length: torch.Tensor,
+    axis: torch.Tensor,
+    *,
+    inverse: int,
+    onesided: int,
+) -> torch.Tensor:
     r"""
     Computes the discrete Fourier Transform (DFT) of the input.
 
@@ -530,12 +667,27 @@ def DFT_20(input: torch.Tensor, dft_length: torch.Tensor, axis: torch.Tensor, *,
     """
     raise NotImplementedError
 
-def DeformConv_19(X: torch.Tensor, W: torch.Tensor, offset: torch.Tensor, B: torch.Tensor, mask: torch.Tensor, *, dilations: list[int], group: int, kernel_shape: list[int], offset_group: int, pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def DeformConv_19(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    offset: torch.Tensor,
+    B: torch.Tensor,
+    mask: torch.Tensor,
+    *,
+    dilations: list[int],
+    group: int,
+    kernel_shape: list[int],
+    offset_group: int,
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     Performs deformable convolution as described in https://arxiv.org/abs/1703.06211 and https://arxiv.org/abs/1811.11168.
     This operator specification supports the general N-D case. Note that most common use cases have 2D or 3D data.
     """
     raise NotImplementedError
+
 
 def DepthToSpace_13(input: torch.Tensor, *, blocksize: int, mode: str) -> torch.Tensor:
     r"""
@@ -565,7 +717,15 @@ def DepthToSpace_13(input: torch.Tensor, *, blocksize: int, mode: str) -> torch.
     """
     raise NotImplementedError
 
-def DequantizeLinear_21(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.Tensor, *, axis: int, block_size: int) -> torch.Tensor:
+
+def DequantizeLinear_21(
+    x: torch.Tensor,
+    x_scale: torch.Tensor,
+    x_zero_point: torch.Tensor,
+    *,
+    axis: int,
+    block_size: int,
+) -> torch.Tensor:
     r"""
     The linear dequantization operator. It consumes a quantized tensor, a scale, and a zero point to compute the
     full-precision tensor. The dequantization formula is `y = (x - x_zero_point) * x_scale`. `x_scale` and `x_zero_point`
@@ -580,6 +740,7 @@ def DequantizeLinear_21(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: to
     """
     raise NotImplementedError
 
+
 def Det_11(X: torch.Tensor) -> torch.Tensor:
     r"""
     Det calculates determinant of a square matrix or batches of square matrices.
@@ -589,6 +750,7 @@ def Det_11(X: torch.Tensor) -> torch.Tensor:
     e.g., When the input is 2-D, the output is a scalar(shape is empty: `[]`).
     """
     raise NotImplementedError
+
 
 def Div_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -600,7 +762,10 @@ def Div_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Dropout_13(data: torch.Tensor, ratio: torch.Tensor, training_mode: torch.Tensor, *, seed: int) -> torch.Tensor:
+
+def Dropout_13(
+    data: torch.Tensor, ratio: torch.Tensor, training_mode: torch.Tensor, *, seed: int
+) -> torch.Tensor:
     r"""
     Dropout takes an input floating-point tensor, an optional input ratio (floating-point scalar) and an optional input training_mode (boolean scalar). It produces two tensor outputs,
     output (floating-point tensor) and mask (optional `Tensor<bool>`). If `training_mode` is true then the output Y will be a random dropout;
@@ -616,6 +781,7 @@ def Dropout_13(data: torch.Tensor, ratio: torch.Tensor, training_mode: torch.Ten
     This operator has **optional** inputs/outputs. See [the doc](IR.md) for more details about the representation of optional arguments. An empty string may be used in the place of an actual argument's name to indicate a missing argument. Trailing optional arguments (those not followed by an argument that is present) may also be simply omitted.
     """
     raise NotImplementedError
+
 
 def DynamicQuantizeLinear_11(x: torch.Tensor) -> torch.Tensor:
     r"""
@@ -649,6 +815,7 @@ def DynamicQuantizeLinear_11(x: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Einsum_12(Inputs: torch.Tensor, *, equation: str) -> torch.Tensor:
     r"""
     An einsum of the form `term1, term2 -> output-term` produces an output tensor using the following equation
@@ -679,6 +846,7 @@ def Einsum_12(Inputs: torch.Tensor, *, equation: str) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Elu_6(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     r"""
     Elu takes one input data (Tensor<T>) and produces one output data
@@ -686,6 +854,7 @@ def Elu_6(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     0`, `f(x) = x for x >= 0`., is applied to the tensor elementwise.
     """
     raise NotImplementedError
+
 
 def Equal_19(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -696,17 +865,20 @@ def Equal_19(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Erf_13(input: torch.Tensor) -> torch.Tensor:
     r"""
     Computes the error function of the given input tensor element-wise.
     """
     raise NotImplementedError
 
+
 def Exp_13(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the exponential of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Expand_13(input: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     r"""
@@ -721,6 +893,7 @@ def Expand_13(input: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def EyeLike_9(input: torch.Tensor, *, dtype: int, k: int) -> torch.Tensor:
     r"""
     Generate a 2D tensor (matrix) with ones on the diagonal and zeros everywhere else. Only 2D
@@ -733,6 +906,7 @@ def EyeLike_9(input: torch.Tensor, *, dtype: int, k: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Flatten_21(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
     Flattens the input tensor into a 2D matrix. If input tensor has shape
@@ -740,6 +914,7 @@ def Flatten_21(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     (d_0 X d_1 ... d_(axis-1), d_axis X d_(axis+1) ... X dn).
     """
     raise NotImplementedError
+
 
 def Floor_13(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -749,7 +924,24 @@ def Floor_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def GRU_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float], activation_beta: list[float], activations: list[str], clip: float, direction: str, hidden_size: int, layout: int, linear_before_reset: int) -> torch.Tensor:
+
+def GRU_14(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    R: torch.Tensor,
+    B: torch.Tensor,
+    sequence_lens: torch.Tensor,
+    initial_h: torch.Tensor,
+    *,
+    activation_alpha: list[float],
+    activation_beta: list[float],
+    activations: list[str],
+    clip: float,
+    direction: str,
+    hidden_size: int,
+    layout: int,
+    linear_before_reset: int,
+) -> torch.Tensor:
     r"""
     Computes an one-layer GRU. This operator is usually supported via some custom
     implementation such as CuDNN.
@@ -800,6 +992,7 @@ def GRU_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, s
     This operator has **optional** inputs/outputs. See [the doc](IR.md) for more details about the representation of optional arguments. An empty string may be used in the place of an actual argument's name to indicate a missing argument. Trailing optional arguments (those not followed by an argument that is present) may also be simply omitted.
     """
     raise NotImplementedError
+
 
 def Gather_13(data: torch.Tensor, indices: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
@@ -854,7 +1047,10 @@ def Gather_13(data: torch.Tensor, indices: torch.Tensor, *, axis: int) -> torch.
     """
     raise NotImplementedError
 
-def GatherElements_13(data: torch.Tensor, indices: torch.Tensor, *, axis: int) -> torch.Tensor:
+
+def GatherElements_13(
+    data: torch.Tensor, indices: torch.Tensor, *, axis: int
+) -> torch.Tensor:
     r"""
     GatherElements takes two inputs `data` and `indices` of the same rank r >= 1
     and an optional attribute `axis` that identifies an axis of `data`
@@ -910,7 +1106,10 @@ def GatherElements_13(data: torch.Tensor, indices: torch.Tensor, *, axis: int) -
     """
     raise NotImplementedError
 
-def GatherND_13(data: torch.Tensor, indices: torch.Tensor, *, batch_dims: int) -> torch.Tensor:
+
+def GatherND_13(
+    data: torch.Tensor, indices: torch.Tensor, *, batch_dims: int
+) -> torch.Tensor:
     r"""
     Given `data` tensor of rank `r` >= 1, `indices` tensor of rank `q` >= 1, and `batch_dims` integer `b`, this operator gathers
     slices of `data` into an output tensor of rank `q + r - indices_shape[-1] - 1 - b`.
@@ -999,6 +1198,7 @@ def GatherND_13(data: torch.Tensor, indices: torch.Tensor, *, batch_dims: int) -
     """
     raise NotImplementedError
 
+
 def Gelu_20(X: torch.Tensor, *, approximate: str) -> torch.Tensor:
     r"""
     Gelu takes one input data (Tensor<T>) and produces one
@@ -1010,7 +1210,17 @@ def Gelu_20(X: torch.Tensor, *, approximate: str) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Gemm_13(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor, *, alpha: float, beta: float, transA: int, transB: int) -> torch.Tensor:
+
+def Gemm_13(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+    *,
+    alpha: float,
+    beta: float,
+    transA: int,
+    transB: int,
+) -> torch.Tensor:
     r"""
     General Matrix multiplication:
     https://en.wikipedia.org/wiki/Basic_Linear_Algebra_Subprograms#Level_3
@@ -1027,6 +1237,7 @@ def Gemm_13(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor, *, alpha: float, 
     """
     raise NotImplementedError
 
+
 def GlobalAveragePool_1(X: torch.Tensor) -> torch.Tensor:
     r"""
     GlobalAveragePool consumes an input tensor X and applies average pooling across
@@ -1034,6 +1245,7 @@ def GlobalAveragePool_1(X: torch.Tensor) -> torch.Tensor:
     equal to the spatial dimension of input tensor.
     """
     raise NotImplementedError
+
 
 def GlobalLpPool_2(X: torch.Tensor, *, p: int) -> torch.Tensor:
     r"""
@@ -1043,6 +1255,7 @@ def GlobalLpPool_2(X: torch.Tensor, *, p: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def GlobalMaxPool_1(X: torch.Tensor) -> torch.Tensor:
     r"""
     GlobalMaxPool consumes an input tensor X and applies max pooling across
@@ -1050,6 +1263,7 @@ def GlobalMaxPool_1(X: torch.Tensor) -> torch.Tensor:
     equal to the spatial dimension of input tensor.
     """
     raise NotImplementedError
+
 
 def Greater_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1060,6 +1274,7 @@ def Greater_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def GreaterOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the tensor resulted from performing the `greater_equal` logical operation
@@ -1069,7 +1284,15 @@ def GreaterOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def GridSample_20(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int, mode: str, padding_mode: str) -> torch.Tensor:
+
+def GridSample_20(
+    X: torch.Tensor,
+    grid: torch.Tensor,
+    *,
+    align_corners: int,
+    mode: str,
+    padding_mode: str,
+) -> torch.Tensor:
     r"""
     Given an input `X` and a flow-field `grid`, computes the output `Y` using `X` values and pixel locations from the `grid`.
     For spatial input `X` with shape (N, C, H, W), the `grid` will have shape (N, H_out, W_out, 2),
@@ -1092,7 +1315,16 @@ def GridSample_20(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int, mo
     """
     raise NotImplementedError
 
-def GroupNormalization_21(X: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, *, epsilon: float, num_groups: int, stash_type: int) -> torch.Tensor:
+
+def GroupNormalization_21(
+    X: torch.Tensor,
+    scale: torch.Tensor,
+    bias: torch.Tensor,
+    *,
+    epsilon: float,
+    num_groups: int,
+    stash_type: int,
+) -> torch.Tensor:
     r"""
     A GroupNormalization function. Carries out group normalization as described in
     the paper https://arxiv.org/abs/1803.08494
@@ -1120,17 +1352,24 @@ def GroupNormalization_21(X: torch.Tensor, scale: torch.Tensor, bias: torch.Tens
     """
     raise NotImplementedError
 
-def HammingWindow_17(size: torch.Tensor, *, output_datatype: int, periodic: int) -> torch.Tensor:
+
+def HammingWindow_17(
+    size: torch.Tensor, *, output_datatype: int, periodic: int
+) -> torch.Tensor:
     r"""
     Generates a Hamming window as described in the paper https://ieeexplore.ieee.org/document/1455106.
     """
     raise NotImplementedError
 
-def HannWindow_17(size: torch.Tensor, *, output_datatype: int, periodic: int) -> torch.Tensor:
+
+def HannWindow_17(
+    size: torch.Tensor, *, output_datatype: int, periodic: int
+) -> torch.Tensor:
     r"""
     Generates a Hann window as described in the paper https://ieeexplore.ieee.org/document/1455106.
     """
     raise NotImplementedError
+
 
 def HardSigmoid_6(X: torch.Tensor, *, alpha: float, beta: float) -> torch.Tensor:
     r"""
@@ -1140,6 +1379,7 @@ def HardSigmoid_6(X: torch.Tensor, *, alpha: float, beta: float) -> torch.Tensor
     """
     raise NotImplementedError
 
+
 def HardSwish_14(X: torch.Tensor) -> torch.Tensor:
     r"""
     HardSwish takes one input data (Tensor<T>) and produces one output data (Tensor<T>) where
@@ -1147,6 +1387,7 @@ def HardSwish_14(X: torch.Tensor) -> torch.Tensor:
     where alpha = 1/6 and beta = 0.5, is applied to the tensor elementwise.
     """
     raise NotImplementedError
+
 
 def Hardmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
@@ -1160,17 +1401,25 @@ def Hardmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Identity_21(input: torch.Tensor) -> torch.Tensor:
     r"""
     Identity operator
     """
     raise NotImplementedError
 
-def If_21(cond: torch.Tensor, *, else_branch: torch.fx.GraphModule, then_branch: torch.fx.GraphModule) -> torch.Tensor:
+
+def If_21(
+    cond: torch.Tensor,
+    *,
+    else_branch: torch.fx.GraphModule,
+    then_branch: torch.fx.GraphModule,
+) -> torch.Tensor:
     r"""
     If conditional
     """
     raise NotImplementedError
+
 
 def ImageDecoder_20(encoded_stream: torch.Tensor, *, pixel_format: str) -> torch.Tensor:
     r"""
@@ -1200,7 +1449,10 @@ def ImageDecoder_20(encoded_stream: torch.Tensor, *, pixel_format: str) -> torch
     """
     raise NotImplementedError
 
-def InstanceNormalization_6(input: torch.Tensor, scale: torch.Tensor, B: torch.Tensor, *, epsilon: float) -> torch.Tensor:
+
+def InstanceNormalization_6(
+    input: torch.Tensor, scale: torch.Tensor, B: torch.Tensor, *, epsilon: float
+) -> torch.Tensor:
     r"""
     Carries out instance normalization as described in the paper
     https://arxiv.org/abs/1607.08022.
@@ -1210,11 +1462,15 @@ def InstanceNormalization_6(input: torch.Tensor, scale: torch.Tensor, B: torch.T
     """
     raise NotImplementedError
 
-def IsInf_20(X: torch.Tensor, *, detect_negative: int, detect_positive: int) -> torch.Tensor:
+
+def IsInf_20(
+    X: torch.Tensor, *, detect_negative: int, detect_positive: int
+) -> torch.Tensor:
     r"""
     Map infinity to true and other values to false.
     """
     raise NotImplementedError
+
 
 def IsNaN_20(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1222,7 +1478,10 @@ def IsNaN_20(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def LRN_13(X: torch.Tensor, *, alpha: float, beta: float, bias: float, size: int) -> torch.Tensor:
+
+def LRN_13(
+    X: torch.Tensor, *, alpha: float, beta: float, bias: float, size: int
+) -> torch.Tensor:
     r"""
     Local Response Normalization proposed in the [AlexNet paper](https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf).
     It normalizes over local input regions.
@@ -1237,7 +1496,26 @@ def LRN_13(X: torch.Tensor, *, alpha: float, beta: float, bias: float, size: int
     """
     raise NotImplementedError
 
-def LSTM_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, initial_c: torch.Tensor, P: torch.Tensor, *, activation_alpha: list[float], activation_beta: list[float], activations: list[str], clip: float, direction: str, hidden_size: int, input_forget: int, layout: int) -> torch.Tensor:
+
+def LSTM_14(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    R: torch.Tensor,
+    B: torch.Tensor,
+    sequence_lens: torch.Tensor,
+    initial_h: torch.Tensor,
+    initial_c: torch.Tensor,
+    P: torch.Tensor,
+    *,
+    activation_alpha: list[float],
+    activation_beta: list[float],
+    activations: list[str],
+    clip: float,
+    direction: str,
+    hidden_size: int,
+    input_forget: int,
+    layout: int,
+) -> torch.Tensor:
     r"""
     Computes an one-layer LSTM. This operator is usually supported via some
     custom implementation such as CuDNN.
@@ -1292,7 +1570,16 @@ def LSTM_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, 
     """
     raise NotImplementedError
 
-def LayerNormalization_17(X: torch.Tensor, Scale: torch.Tensor, B: torch.Tensor, *, axis: int, epsilon: float, stash_type: int) -> torch.Tensor:
+
+def LayerNormalization_17(
+    X: torch.Tensor,
+    Scale: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    axis: int,
+    epsilon: float,
+    stash_type: int,
+) -> torch.Tensor:
     r"""
     This is layer normalization defined in ONNX as function.
     The overall computation can be split into two stages.
@@ -1338,6 +1625,7 @@ def LayerNormalization_17(X: torch.Tensor, Scale: torch.Tensor, B: torch.Tensor,
     """
     raise NotImplementedError
 
+
 def LeakyRelu_16(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     r"""
     LeakyRelu takes input data (Tensor<T>) and an argument alpha, and produces one
@@ -1345,6 +1633,7 @@ def LeakyRelu_16(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     `f(x) = x for x >= 0`, is applied to the data tensor elementwise.
     """
     raise NotImplementedError
+
 
 def Less_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1355,6 +1644,7 @@ def Less_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def LessOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the tensor resulted from performing the `less_equal` logical operation
@@ -1364,11 +1654,13 @@ def LessOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Log_13(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the natural log of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def LogSoftmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
@@ -1382,7 +1674,14 @@ def LogSoftmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Loop_21(M: torch.Tensor, cond: torch.Tensor, v_initial: torch.Tensor, *, body: torch.fx.GraphModule) -> torch.Tensor:
+
+def Loop_21(
+    M: torch.Tensor,
+    cond: torch.Tensor,
+    v_initial: torch.Tensor,
+    *,
+    body: torch.fx.GraphModule,
+) -> torch.Tensor:
     r"""
     Generic Looping construct. This loop has multiple termination conditions:
 
@@ -1522,13 +1821,25 @@ def Loop_21(M: torch.Tensor, cond: torch.Tensor, v_initial: torch.Tensor, *, bod
     """
     raise NotImplementedError
 
+
 def LpNormalization_1(input: torch.Tensor, *, axis: int, p: int) -> torch.Tensor:
     r"""
     Given a matrix, apply Lp-normalization along the provided axis.
     """
     raise NotImplementedError
 
-def LpPool_18(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, dilations: list[int], kernel_shape: list[int], p: int, pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def LpPool_18(
+    X: torch.Tensor,
+    *,
+    auto_pad: str,
+    ceil_mode: int,
+    dilations: list[int],
+    kernel_shape: list[int],
+    p: int,
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     LpPool consumes an input tensor X and applies Lp pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1556,18 +1867,26 @@ def LpPool_18(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, dilations: list
     """
     raise NotImplementedError
 
+
 def MatMul_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html
     """
     raise NotImplementedError
 
-def MatMulInteger_10(A: torch.Tensor, B: torch.Tensor, a_zero_point: torch.Tensor, b_zero_point: torch.Tensor) -> torch.Tensor:
+
+def MatMulInteger_10(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    a_zero_point: torch.Tensor,
+    b_zero_point: torch.Tensor,
+) -> torch.Tensor:
     r"""
     Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html.
     The production MUST never overflow. The accumulation may overflow if and only if in 32 bits.
     """
     raise NotImplementedError
+
 
 def Max_13(data_0: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1577,7 +1896,18 @@ def Max_13(data_0: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def MaxPool_12(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, dilations: list[int], kernel_shape: list[int], pads: list[int], storage_order: int, strides: list[int]) -> torch.Tensor:
+
+def MaxPool_12(
+    X: torch.Tensor,
+    *,
+    auto_pad: str,
+    ceil_mode: int,
+    dilations: list[int],
+    kernel_shape: list[int],
+    pads: list[int],
+    storage_order: int,
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     MaxPool consumes an input tensor X and applies max pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1613,7 +1943,14 @@ def MaxPool_12(X: torch.Tensor, *, auto_pad: str, ceil_mode: int, dilations: lis
     """
     raise NotImplementedError
 
-def MaxRoiPool_1(X: torch.Tensor, rois: torch.Tensor, *, pooled_shape: list[int], spatial_scale: float) -> torch.Tensor:
+
+def MaxRoiPool_1(
+    X: torch.Tensor,
+    rois: torch.Tensor,
+    *,
+    pooled_shape: list[int],
+    spatial_scale: float,
+) -> torch.Tensor:
     r"""
     ROI max pool consumes an input tensor X and region of interests (RoIs) to
     apply max pooling across each RoI, to produce output 4-D tensor of shape
@@ -1621,7 +1958,16 @@ def MaxRoiPool_1(X: torch.Tensor, rois: torch.Tensor, *, pooled_shape: list[int]
     """
     raise NotImplementedError
 
-def MaxUnpool_11(X: torch.Tensor, I: torch.Tensor, output_shape: torch.Tensor, *, kernel_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def MaxUnpool_11(
+    X: torch.Tensor,
+    I: torch.Tensor,
+    output_shape: torch.Tensor,
+    *,
+    kernel_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     MaxUnpool essentially computes the partial inverse of the MaxPool op.
      The input information to this op is typically the output information from a MaxPool op. The first
@@ -1644,6 +1990,7 @@ def MaxUnpool_11(X: torch.Tensor, I: torch.Tensor, output_shape: torch.Tensor, *
     """
     raise NotImplementedError
 
+
 def Mean_13(data_0: torch.Tensor) -> torch.Tensor:
     r"""
     Element-wise mean of each of the input tensors (with Numpy-style broadcasting support).
@@ -1652,6 +1999,7 @@ def Mean_13(data_0: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def MeanVarianceNormalization_13(X: torch.Tensor, *, axes: list[int]) -> torch.Tensor:
     r"""
     A MeanVarianceNormalization Function: Perform mean variance normalization
@@ -1659,7 +2007,16 @@ def MeanVarianceNormalization_13(X: torch.Tensor, *, axes: list[int]) -> torch.T
     """
     raise NotImplementedError
 
-def MelWeightMatrix_17(num_mel_bins: torch.Tensor, dft_length: torch.Tensor, sample_rate: torch.Tensor, lower_edge_hertz: torch.Tensor, upper_edge_hertz: torch.Tensor, *, output_datatype: int) -> torch.Tensor:
+
+def MelWeightMatrix_17(
+    num_mel_bins: torch.Tensor,
+    dft_length: torch.Tensor,
+    sample_rate: torch.Tensor,
+    lower_edge_hertz: torch.Tensor,
+    upper_edge_hertz: torch.Tensor,
+    *,
+    output_datatype: int,
+) -> torch.Tensor:
     r"""
     Generate a MelWeightMatrix that can be used to re-weight a Tensor containing a linearly sampled frequency spectra (from DFT or STFT) into num_mel_bins frequency information based on the [lower_edge_hertz, upper_edge_hertz] range on the mel scale.
     This function defines the mel scale in terms of a frequency in hertz according to the following formula:
@@ -1672,6 +2029,7 @@ def MelWeightMatrix_17(num_mel_bins: torch.Tensor, dft_length: torch.Tensor, sam
     """
     raise NotImplementedError
 
+
 def Min_13(data_0: torch.Tensor) -> torch.Tensor:
     r"""
     Element-wise min of each of the input tensors (with Numpy-style broadcasting support).
@@ -1679,6 +2037,7 @@ def Min_13(data_0: torch.Tensor) -> torch.Tensor:
     This operator supports **multidirectional (i.e., Numpy-style) broadcasting**; for more details please check [the doc](Broadcasting.md).
     """
     raise NotImplementedError
+
 
 def Mish_18(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1691,6 +2050,7 @@ def Mish_18(X: torch.Tensor) -> torch.Tensor:
     ```
     """
     raise NotImplementedError
+
 
 def Mod_13(A: torch.Tensor, B: torch.Tensor, *, fmod: int) -> torch.Tensor:
     r"""
@@ -1710,6 +2070,7 @@ def Mod_13(A: torch.Tensor, B: torch.Tensor, *, fmod: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Mul_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
     Performs element-wise binary multiplication (with Numpy-style broadcasting support).
@@ -1720,12 +2081,16 @@ def Mul_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Multinomial_7(input: torch.Tensor, *, dtype: int, sample_size: int, seed: float) -> torch.Tensor:
+
+def Multinomial_7(
+    input: torch.Tensor, *, dtype: int, sample_size: int, seed: float
+) -> torch.Tensor:
     r"""
     Generate a tensor of samples from a multinomial distribution according to the probabilities
     of each of the possible outcomes.
     """
     raise NotImplementedError
+
 
 def Neg_13(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1735,7 +2100,15 @@ def Neg_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def NegativeLogLikelihoodLoss_13(input: torch.Tensor, target: torch.Tensor, weight: torch.Tensor, *, ignore_index: int, reduction: str) -> torch.Tensor:
+
+def NegativeLogLikelihoodLoss_13(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    weight: torch.Tensor,
+    *,
+    ignore_index: int,
+    reduction: str,
+) -> torch.Tensor:
     r"""
     A NegativeLogLikelihoodLoss operator computes (weighted) negative log likelihood loss.
     Its "input" tensor has the shape of (N, C, d1, d2, ..., dk) where k >= 0.
@@ -1841,7 +2214,16 @@ def NegativeLogLikelihoodLoss_13(input: torch.Tensor, target: torch.Tensor, weig
     """
     raise NotImplementedError
 
-def NonMaxSuppression_11(boxes: torch.Tensor, scores: torch.Tensor, max_output_boxes_per_class: torch.Tensor, iou_threshold: torch.Tensor, score_threshold: torch.Tensor, *, center_point_box: int) -> torch.Tensor:
+
+def NonMaxSuppression_11(
+    boxes: torch.Tensor,
+    scores: torch.Tensor,
+    max_output_boxes_per_class: torch.Tensor,
+    iou_threshold: torch.Tensor,
+    score_threshold: torch.Tensor,
+    *,
+    center_point_box: int,
+) -> torch.Tensor:
     r"""
     Filter out boxes that have high intersection-over-union (IOU) overlap with previously selected boxes.
     Bounding boxes with score less than score_threshold are removed. Bounding box format is indicated by attribute center_point_box.
@@ -1853,6 +2235,7 @@ def NonMaxSuppression_11(boxes: torch.Tensor, scores: torch.Tensor, max_output_b
     """
     raise NotImplementedError
 
+
 def NonZero_13(X: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the indices of the elements that are non-zero
@@ -1863,13 +2246,17 @@ def NonZero_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Not_1(X: torch.Tensor) -> torch.Tensor:
     r"""
     Returns the negation of the input tensor element-wise.
     """
     raise NotImplementedError
 
-def OneHot_11(indices: torch.Tensor, depth: torch.Tensor, values: torch.Tensor, *, axis: int) -> torch.Tensor:
+
+def OneHot_11(
+    indices: torch.Tensor, depth: torch.Tensor, values: torch.Tensor, *, axis: int
+) -> torch.Tensor:
     r"""
     Produces a one-hot tensor based on inputs.
     The locations represented by the index values in the 'indices' input tensor will have 'on_value'
@@ -1892,12 +2279,14 @@ def OneHot_11(indices: torch.Tensor, depth: torch.Tensor, values: torch.Tensor, 
     """
     raise NotImplementedError
 
+
 def Optional_15(input: torch.Tensor, *, type: torch.dtype) -> torch.Tensor:
     r"""
     Constructs an optional-type value containing either an empty optional of a certain type specified by the attribute,
     or a non-empty value containing the input element.
     """
     raise NotImplementedError
+
 
 def Or_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -1908,6 +2297,7 @@ def Or_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def PRelu_16(X: torch.Tensor, slope: torch.Tensor) -> torch.Tensor:
     r"""
     PRelu takes input data (Tensor<T>) and slope tensor as input, and produces one
@@ -1917,7 +2307,15 @@ def PRelu_16(X: torch.Tensor, slope: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Pad_21(data: torch.Tensor, pads: torch.Tensor, constant_value: torch.Tensor, axes: torch.Tensor, *, mode: str) -> torch.Tensor:
+
+def Pad_21(
+    data: torch.Tensor,
+    pads: torch.Tensor,
+    constant_value: torch.Tensor,
+    axes: torch.Tensor,
+    *,
+    mode: str,
+) -> torch.Tensor:
     r"""
     Given a tensor containing the data to be padded (`data`), a tensor containing the number of start and end pad values for axis (`pads`), (optionally) a `mode`, and (optionally) `constant_value`,
     a padded tensor (`output`) is generated.
@@ -2022,6 +2420,7 @@ def Pad_21(data: torch.Tensor, pads: torch.Tensor, constant_value: torch.Tensor,
     """
     raise NotImplementedError
 
+
 def Pow_15(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     r"""
     Pow takes input data (Tensor<T>) and exponent Tensor, and
@@ -2031,7 +2430,25 @@ def Pow_15(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def QLinearConv_10(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.Tensor, w: torch.Tensor, w_scale: torch.Tensor, w_zero_point: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor, B: torch.Tensor, *, auto_pad: str, dilations: list[int], group: int, kernel_shape: list[int], pads: list[int], strides: list[int]) -> torch.Tensor:
+
+def QLinearConv_10(
+    x: torch.Tensor,
+    x_scale: torch.Tensor,
+    x_zero_point: torch.Tensor,
+    w: torch.Tensor,
+    w_scale: torch.Tensor,
+    w_zero_point: torch.Tensor,
+    y_scale: torch.Tensor,
+    y_zero_point: torch.Tensor,
+    B: torch.Tensor,
+    *,
+    auto_pad: str,
+    dilations: list[int],
+    group: int,
+    kernel_shape: list[int],
+    pads: list[int],
+    strides: list[int],
+) -> torch.Tensor:
     r"""
     The convolution operator consumes a quantized input tensor, its scale and zero point,
     a quantized filter, its scale and zero point, and output's scale and zero point,
@@ -2043,7 +2460,17 @@ def QLinearConv_10(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.T
     """
     raise NotImplementedError
 
-def QLinearMatMul_21(a: torch.Tensor, a_scale: torch.Tensor, a_zero_point: torch.Tensor, b: torch.Tensor, b_scale: torch.Tensor, b_zero_point: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor) -> torch.Tensor:
+
+def QLinearMatMul_21(
+    a: torch.Tensor,
+    a_scale: torch.Tensor,
+    a_zero_point: torch.Tensor,
+    b: torch.Tensor,
+    b_scale: torch.Tensor,
+    b_zero_point: torch.Tensor,
+    y_scale: torch.Tensor,
+    y_zero_point: torch.Tensor,
+) -> torch.Tensor:
     r"""
     Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html.
     It consumes two quantized input tensors, their scales and zero points, scale and zero point of output,
@@ -2059,7 +2486,17 @@ def QLinearMatMul_21(a: torch.Tensor, a_scale: torch.Tensor, a_zero_point: torch
     """
     raise NotImplementedError
 
-def QuantizeLinear_21(x: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor, *, axis: int, block_size: int, output_dtype: int, saturate: int) -> torch.Tensor:
+
+def QuantizeLinear_21(
+    x: torch.Tensor,
+    y_scale: torch.Tensor,
+    y_zero_point: torch.Tensor,
+    *,
+    axis: int,
+    block_size: int,
+    output_dtype: int,
+    saturate: int,
+) -> torch.Tensor:
     r"""
     The linear quantization operator consumes a high-precision tensor, a scale, and a zero point to compute the
     low-precision/quantized tensor. The scale factor and zero point must have the same shape, determining the quantization
@@ -2089,7 +2526,23 @@ def QuantizeLinear_21(x: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torc
     """
     raise NotImplementedError
 
-def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, sequence_lens: torch.Tensor, initial_h: torch.Tensor, *, activation_alpha: list[float], activation_beta: list[float], activations: list[str], clip: float, direction: str, hidden_size: int, layout: int) -> torch.Tensor:
+
+def RNN_14(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    R: torch.Tensor,
+    B: torch.Tensor,
+    sequence_lens: torch.Tensor,
+    initial_h: torch.Tensor,
+    *,
+    activation_alpha: list[float],
+    activation_beta: list[float],
+    activations: list[str],
+    clip: float,
+    direction: str,
+    hidden_size: int,
+    layout: int,
+) -> torch.Tensor:
     r"""
     Computes an one-layer simple RNN. This operator is usually supported
     via some custom implementation such as CuDNN.
@@ -2134,7 +2587,10 @@ def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor, s
     """
     raise NotImplementedError
 
-def RandomNormal_1(*, dtype: int, mean: float, scale: float, seed: float, shape: list[int]) -> torch.Tensor:
+
+def RandomNormal_1(
+    *, dtype: int, mean: float, scale: float, seed: float, shape: list[int]
+) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a normal distribution. The shape
     of the tensor is specified by the `shape` argument and the parameter of the normal distribution
@@ -2146,7 +2602,10 @@ def RandomNormal_1(*, dtype: int, mean: float, scale: float, seed: float, shape:
     """
     raise NotImplementedError
 
-def RandomNormalLike_1(input: torch.Tensor, *, dtype: int, mean: float, scale: float, seed: float) -> torch.Tensor:
+
+def RandomNormalLike_1(
+    input: torch.Tensor, *, dtype: int, mean: float, scale: float, seed: float
+) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a normal distribution.
     The shape of the output tensor is copied from the shape of the input tensor,
@@ -2158,7 +2617,10 @@ def RandomNormalLike_1(input: torch.Tensor, *, dtype: int, mean: float, scale: f
     """
     raise NotImplementedError
 
-def RandomUniform_1(*, dtype: int, high: float, low: float, seed: float, shape: list[int]) -> torch.Tensor:
+
+def RandomUniform_1(
+    *, dtype: int, high: float, low: float, seed: float, shape: list[int]
+) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a uniform distribution. The shape
     of the tensor is specified by the `shape` argument and the range by `low` and `high`.
@@ -2169,7 +2631,10 @@ def RandomUniform_1(*, dtype: int, high: float, low: float, seed: float, shape: 
     """
     raise NotImplementedError
 
-def RandomUniformLike_1(input: torch.Tensor, *, dtype: int, high: float, low: float, seed: float) -> torch.Tensor:
+
+def RandomUniformLike_1(
+    input: torch.Tensor, *, dtype: int, high: float, low: float, seed: float
+) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a uniform distribution.
     The shape of the output tensor is copied from the shape of the input tensor,
@@ -2181,7 +2646,10 @@ def RandomUniformLike_1(input: torch.Tensor, *, dtype: int, high: float, low: fl
     """
     raise NotImplementedError
 
-def Range_11(start: torch.Tensor, limit: torch.Tensor, delta: torch.Tensor) -> torch.Tensor:
+
+def Range_11(
+    start: torch.Tensor, limit: torch.Tensor, delta: torch.Tensor
+) -> torch.Tensor:
     r"""
     Generate a tensor containing a sequence of numbers that begin at `start` and extends by increments of `delta`
     up to `limit` (exclusive).
@@ -2216,6 +2684,7 @@ def Range_11(start: torch.Tensor, limit: torch.Tensor, delta: torch.Tensor) -> t
     """
     raise NotImplementedError
 
+
 def Reciprocal_13(X: torch.Tensor) -> torch.Tensor:
     r"""
     Reciprocal takes one input data (Tensor<T>) and produces one output data
@@ -2224,7 +2693,10 @@ def Reciprocal_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def ReduceL1_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceL1_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the L1 norm of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2237,7 +2709,10 @@ def ReduceL1_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_w
     """
     raise NotImplementedError
 
-def ReduceL2_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceL2_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the L2 norm of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2250,7 +2725,10 @@ def ReduceL2_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_w
     """
     raise NotImplementedError
 
-def ReduceLogSum_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceLogSum_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the log sum of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2263,7 +2741,10 @@ def ReduceLogSum_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, no
     """
     raise NotImplementedError
 
-def ReduceLogSumExp_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceLogSumExp_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the log sum exponent of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2276,7 +2757,10 @@ def ReduceLogSumExp_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int,
     """
     raise NotImplementedError
 
-def ReduceMax_20(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceMax_20(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the max of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2291,7 +2775,10 @@ def ReduceMax_20(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_
     """
     raise NotImplementedError
 
-def ReduceMean_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceMean_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the mean of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2304,7 +2791,10 @@ def ReduceMean_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop
     """
     raise NotImplementedError
 
-def ReduceMin_20(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceMin_20(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the min of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2319,7 +2809,10 @@ def ReduceMin_20(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_
     """
     raise NotImplementedError
 
-def ReduceProd_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceProd_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the product of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2332,7 +2825,10 @@ def ReduceProd_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop
     """
     raise NotImplementedError
 
-def ReduceSum_13(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceSum_13(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the sum of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2345,7 +2841,10 @@ def ReduceSum_13(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_
     """
     raise NotImplementedError
 
-def ReduceSumSquare_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int) -> torch.Tensor:
+
+def ReduceSumSquare_18(
+    data: torch.Tensor, axes: torch.Tensor, *, keepdims: int, noop_with_empty_axes: int
+) -> torch.Tensor:
     r"""
     Computes the sum square of the input tensor's elements along the provided axes. The resulting
     tensor has the same rank as the input if `keepdims` equals 1. If `keepdims` equals 0, then
@@ -2358,11 +2857,13 @@ def ReduceSumSquare_18(data: torch.Tensor, axes: torch.Tensor, *, keepdims: int,
     """
     raise NotImplementedError
 
+
 def RegexFullMatch_20(X: torch.Tensor, *, pattern: str) -> torch.Tensor:
     r"""
     RegexFullMatch performs a full regex match on each element of the input tensor. If an element fully matches the regex pattern specified as an attribute, the corresponding element in the output is True and it is False otherwise. [RE2](https://github.com/google/re2/wiki/Syntax) regex syntax is used.
     """
     raise NotImplementedError
+
 
 def Relu_14(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -2372,7 +2873,10 @@ def Relu_14(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Reshape_21(data: torch.Tensor, shape: torch.Tensor, *, allowzero: int) -> torch.Tensor:
+
+def Reshape_21(
+    data: torch.Tensor, shape: torch.Tensor, *, allowzero: int
+) -> torch.Tensor:
     r"""
     Reshape the input tensor similar to numpy.reshape.
     First input is the data tensor, second input is a shape tensor which specifies the output shape. It outputs the reshaped tensor.
@@ -2390,7 +2894,23 @@ def Reshape_21(data: torch.Tensor, shape: torch.Tensor, *, allowzero: int) -> to
     """
     raise NotImplementedError
 
-def Resize_19(X: torch.Tensor, roi: torch.Tensor, scales: torch.Tensor, sizes: torch.Tensor, *, antialias: int, axes: list[int], coordinate_transformation_mode: str, cubic_coeff_a: float, exclude_outside: int, extrapolation_value: float, keep_aspect_ratio_policy: str, mode: str, nearest_mode: str) -> torch.Tensor:
+
+def Resize_19(
+    X: torch.Tensor,
+    roi: torch.Tensor,
+    scales: torch.Tensor,
+    sizes: torch.Tensor,
+    *,
+    antialias: int,
+    axes: list[int],
+    coordinate_transformation_mode: str,
+    cubic_coeff_a: float,
+    exclude_outside: int,
+    extrapolation_value: float,
+    keep_aspect_ratio_policy: str,
+    mode: str,
+    nearest_mode: str,
+) -> torch.Tensor:
     r"""
     Resize the input tensor. In general, it calculates every value in the output tensor as a weighted average of neighborhood (a.k.a. sampling locations) in the input tensor.
     Each dimension value of the output tensor is:
@@ -2401,7 +2921,10 @@ def Resize_19(X: torch.Tensor, roi: torch.Tensor, scales: torch.Tensor, sizes: t
     """
     raise NotImplementedError
 
-def ReverseSequence_10(input: torch.Tensor, sequence_lens: torch.Tensor, *, batch_axis: int, time_axis: int) -> torch.Tensor:
+
+def ReverseSequence_10(
+    input: torch.Tensor, sequence_lens: torch.Tensor, *, batch_axis: int, time_axis: int
+) -> torch.Tensor:
     r"""
     Reverse batch of sequences having different lengths specified by `sequence_lens`.
 
@@ -2439,7 +2962,19 @@ def ReverseSequence_10(input: torch.Tensor, sequence_lens: torch.Tensor, *, batc
     """
     raise NotImplementedError
 
-def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor, *, coordinate_transformation_mode: str, mode: str, output_height: int, output_width: int, sampling_ratio: int, spatial_scale: float) -> torch.Tensor:
+
+def RoiAlign_16(
+    X: torch.Tensor,
+    rois: torch.Tensor,
+    batch_indices: torch.Tensor,
+    *,
+    coordinate_transformation_mode: str,
+    mode: str,
+    output_height: int,
+    output_width: int,
+    sampling_ratio: int,
+    spatial_scale: float,
+) -> torch.Tensor:
     r"""
     Region of Interest (RoI) align operation described in the
     [Mask R-CNN paper](https://arxiv.org/abs/1703.06870).
@@ -2454,6 +2989,7 @@ def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor
     through bilinear interpolation.
     """
     raise NotImplementedError
+
 
 def Round_11(X: torch.Tensor) -> torch.Tensor:
     r"""
@@ -2474,13 +3010,31 @@ def Round_11(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def STFT_17(signal: torch.Tensor, frame_step: torch.Tensor, window: torch.Tensor, frame_length: torch.Tensor, *, onesided: int) -> torch.Tensor:
+
+def STFT_17(
+    signal: torch.Tensor,
+    frame_step: torch.Tensor,
+    window: torch.Tensor,
+    frame_length: torch.Tensor,
+    *,
+    onesided: int,
+) -> torch.Tensor:
     r"""
     Computes the Short-time Fourier Transform of the signal.
     """
     raise NotImplementedError
 
-def Scan_21(initial_state_and_scan_inputs: torch.Tensor, *, body: torch.fx.GraphModule, num_scan_inputs: int, scan_input_axes: list[int], scan_input_directions: list[int], scan_output_axes: list[int], scan_output_directions: list[int]) -> torch.Tensor:
+
+def Scan_21(
+    initial_state_and_scan_inputs: torch.Tensor,
+    *,
+    body: torch.fx.GraphModule,
+    num_scan_inputs: int,
+    scan_input_axes: list[int],
+    scan_input_directions: list[int],
+    scan_output_axes: list[int],
+    scan_output_directions: list[int],
+) -> torch.Tensor:
     r"""
     Scan can be used to iterate over one or more scan_input tensors,
     constructing zero or more scan_output tensors. It combines ideas from general recurrences,
@@ -2605,7 +3159,10 @@ def Scan_21(initial_state_and_scan_inputs: torch.Tensor, *, body: torch.fx.Graph
     """
     raise NotImplementedError
 
-def Scatter_11(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int) -> torch.Tensor:
+
+def Scatter_11(
+    data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int
+) -> torch.Tensor:
     r"""
     This operator is deprecated. Please use ScatterElements, which provides the same functionality.
 
@@ -2663,7 +3220,15 @@ def Scatter_11(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor,
     """
     raise NotImplementedError
 
-def ScatterElements_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int, reduction: str) -> torch.Tensor:
+
+def ScatterElements_18(
+    data: torch.Tensor,
+    indices: torch.Tensor,
+    updates: torch.Tensor,
+    *,
+    axis: int,
+    reduction: str,
+) -> torch.Tensor:
     r"""
     ScatterElements takes three inputs `data`, `updates`, and `indices` of the same
     rank r >= 1 and an optional attribute axis that identifies an axis of `data`
@@ -2730,7 +3295,10 @@ def ScatterElements_18(data: torch.Tensor, indices: torch.Tensor, updates: torch
     """
     raise NotImplementedError
 
-def ScatterND_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, reduction: str) -> torch.Tensor:
+
+def ScatterND_18(
+    data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, reduction: str
+) -> torch.Tensor:
     r"""
     ScatterND takes three inputs `data` tensor of rank r >= 1, `indices` tensor of rank q >= 1,
     and `updates` tensor of rank q + r - indices.shape[-1] - 1. The output of the operation
@@ -2810,6 +3378,7 @@ def ScatterND_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tenso
     """
     raise NotImplementedError
 
+
 def Selu_6(X: torch.Tensor, *, alpha: float, gamma: float) -> torch.Tensor:
     r"""
     Selu takes one input data (Tensor<T>) and produces one output data
@@ -2819,6 +3388,7 @@ def Selu_6(X: torch.Tensor, *, alpha: float, gamma: float) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def SequenceAt_11(input_sequence: torch.Tensor, position: torch.Tensor) -> torch.Tensor:
     r"""
     Outputs a tensor copy from the tensor at 'position' in 'input_sequence'.
@@ -2827,6 +3397,7 @@ def SequenceAt_11(input_sequence: torch.Tensor, position: torch.Tensor) -> torch
     """
     raise NotImplementedError
 
+
 def SequenceConstruct_11(inputs: torch.Tensor) -> torch.Tensor:
     r"""
     Construct a tensor sequence containing 'inputs' tensors.
@@ -2834,13 +3405,17 @@ def SequenceConstruct_11(inputs: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def SequenceEmpty_11(*, dtype: int) -> torch.Tensor:
     r"""
     Construct an empty tensor sequence, with given data type.
     """
     raise NotImplementedError
 
-def SequenceErase_11(input_sequence: torch.Tensor, position: torch.Tensor) -> torch.Tensor:
+
+def SequenceErase_11(
+    input_sequence: torch.Tensor, position: torch.Tensor
+) -> torch.Tensor:
     r"""
     Outputs a tensor sequence that removes the tensor at 'position' from 'input_sequence'.
     Accepted range for 'position' is in `[-n, n - 1]`, where `n` is the number of tensors in 'input_sequence'.
@@ -2849,7 +3424,10 @@ def SequenceErase_11(input_sequence: torch.Tensor, position: torch.Tensor) -> to
     """
     raise NotImplementedError
 
-def SequenceInsert_11(input_sequence: torch.Tensor, tensor: torch.Tensor, position: torch.Tensor) -> torch.Tensor:
+
+def SequenceInsert_11(
+    input_sequence: torch.Tensor, tensor: torch.Tensor, position: torch.Tensor
+) -> torch.Tensor:
     r"""
     Outputs a tensor sequence that inserts 'tensor' into 'input_sequence' at 'position'.
     'tensor' must have the same data type as 'input_sequence'.
@@ -2859,13 +3437,20 @@ def SequenceInsert_11(input_sequence: torch.Tensor, tensor: torch.Tensor, positi
     """
     raise NotImplementedError
 
+
 def SequenceLength_11(input_sequence: torch.Tensor) -> torch.Tensor:
     r"""
     Produces a scalar(tensor of empty shape) containing the number of tensors in 'input_sequence'.
     """
     raise NotImplementedError
 
-def SequenceMap_17(input_sequence: torch.Tensor, additional_inputs: torch.Tensor, *, body: torch.fx.GraphModule) -> torch.Tensor:
+
+def SequenceMap_17(
+    input_sequence: torch.Tensor,
+    additional_inputs: torch.Tensor,
+    *,
+    body: torch.fx.GraphModule,
+) -> torch.Tensor:
     r"""
     Applies a sub-graph to each sample in the input sequence(s).
 
@@ -2883,6 +3468,7 @@ def SequenceMap_17(input_sequence: torch.Tensor, additional_inputs: torch.Tensor
     or in any order. Users cannot expect any specific ordering in which each subgraph is computed.
     """
     raise NotImplementedError
+
 
 def Shape_21(data: torch.Tensor, *, end: int, start: int) -> torch.Tensor:
     r"""
@@ -2927,6 +3513,7 @@ def Shape_21(data: torch.Tensor, *, end: int, start: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Shrink_9(input: torch.Tensor, *, bias: float, lambd: float) -> torch.Tensor:
     r"""
     Shrink takes one input data (Tensor<numeric>) and produces one Tensor output,
@@ -2936,6 +3523,7 @@ def Shrink_9(input: torch.Tensor, *, bias: float, lambd: float) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Sigmoid_13(X: torch.Tensor) -> torch.Tensor:
     r"""
     Sigmoid takes one input data (Tensor<T>) and produces one output data
@@ -2944,6 +3532,7 @@ def Sigmoid_13(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Sign_13(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculate the sign of the given input tensor element-wise.
@@ -2951,11 +3540,13 @@ def Sign_13(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Sin_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the sine of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Sinh_9(input: torch.Tensor) -> torch.Tensor:
     r"""
@@ -2963,13 +3554,21 @@ def Sinh_9(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Size_21(data: torch.Tensor) -> torch.Tensor:
     r"""
     Takes a tensor as input and outputs a int64 scalar that equals to the total number of elements of the input tensor.
     """
     raise NotImplementedError
 
-def Slice_13(data: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor, axes: torch.Tensor, steps: torch.Tensor) -> torch.Tensor:
+
+def Slice_13(
+    data: torch.Tensor,
+    starts: torch.Tensor,
+    ends: torch.Tensor,
+    axes: torch.Tensor,
+    steps: torch.Tensor,
+) -> torch.Tensor:
     r"""
     Produces a slice of the input tensor along multiple axes. Similar to numpy:
     https://numpy.org/doc/stable/user/basics.indexing.html?highlight=slice#slicing-and-striding
@@ -3036,11 +3635,12 @@ def Slice_13(data: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor, axes:
     """
     raise NotImplementedError
 
+
 def Softmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     r"""
     The operator computes the normalized exponential values for the given input:
 
-     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1) 
+     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1)
 
     The "axis" attribute indicates the dimension along which Softmax
     will be performed. The output tensor has the same shape
@@ -3048,7 +3648,15 @@ def Softmax_13(input: torch.Tensor, *, axis: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def SoftmaxCrossEntropyLoss_13(scores: torch.Tensor, labels: torch.Tensor, weights: torch.Tensor, *, ignore_index: int, reduction: str) -> torch.Tensor:
+
+def SoftmaxCrossEntropyLoss_13(
+    scores: torch.Tensor,
+    labels: torch.Tensor,
+    weights: torch.Tensor,
+    *,
+    ignore_index: int,
+    reduction: str,
+) -> torch.Tensor:
     r"""
     Loss function that measures the softmax cross entropy
     between 'scores' and 'labels'.
@@ -3093,6 +3701,7 @@ def SoftmaxCrossEntropyLoss_13(scores: torch.Tensor, labels: torch.Tensor, weigh
     """
     raise NotImplementedError
 
+
 def Softplus_1(X: torch.Tensor) -> torch.Tensor:
     r"""
     Softplus takes one input data (Tensor<T>) and produces one output data
@@ -3101,11 +3710,13 @@ def Softplus_1(X: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Softsign_1(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the softsign (x/(1+|x|)) of the given input tensor element-wise.
     """
     raise NotImplementedError
+
 
 def SpaceToDepth_13(input: torch.Tensor, *, blocksize: int) -> torch.Tensor:
     r"""
@@ -3115,7 +3726,10 @@ def SpaceToDepth_13(input: torch.Tensor, *, blocksize: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def Split_18(input: torch.Tensor, split: torch.Tensor, *, axis: int, num_outputs: int) -> torch.Tensor:
+
+def Split_18(
+    input: torch.Tensor, split: torch.Tensor, *, axis: int, num_outputs: int
+) -> torch.Tensor:
     r"""
     Split a tensor into a list of tensors, along the specified 'axis'.
     Either input 'split' or the attribute 'num_outputs' should be specified, but not both.
@@ -3125,7 +3739,10 @@ def Split_18(input: torch.Tensor, split: torch.Tensor, *, axis: int, num_outputs
     """
     raise NotImplementedError
 
-def SplitToSequence_11(input: torch.Tensor, split: torch.Tensor, *, axis: int, keepdims: int) -> torch.Tensor:
+
+def SplitToSequence_11(
+    input: torch.Tensor, split: torch.Tensor, *, axis: int, keepdims: int
+) -> torch.Tensor:
     r"""
     Split a tensor into a sequence of tensors, along the specified 'axis'.
     Lengths of the parts can be specified using the optional argument 'split'.
@@ -3142,6 +3759,7 @@ def SplitToSequence_11(input: torch.Tensor, split: torch.Tensor, *, axis: int, k
     """
     raise NotImplementedError
 
+
 def Sqrt_13(X: torch.Tensor) -> torch.Tensor:
     r"""
     Square root takes one input data (Tensor<T>) and produces one output data
@@ -3149,6 +3767,7 @@ def Sqrt_13(X: torch.Tensor) -> torch.Tensor:
     the tensor elementwise. If x is negative, then it will return NaN.
     """
     raise NotImplementedError
+
 
 def Squeeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     r"""
@@ -3159,13 +3778,22 @@ def Squeeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def StringConcat_20(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     r"""
     StringConcat concatenates string tensors elementwise (with NumPy-style broadcasting support)
     """
     raise NotImplementedError
 
-def StringNormalizer_10(X: torch.Tensor, *, case_change_action: str, is_case_sensitive: int, locale: str, stopwords: list[str]) -> torch.Tensor:
+
+def StringNormalizer_10(
+    X: torch.Tensor,
+    *,
+    case_change_action: str,
+    is_case_sensitive: int,
+    locale: str,
+    stopwords: list[str],
+) -> torch.Tensor:
     r"""
     StringNormalization performs string operations for basic cleaning.
     This operator has only one input (denoted by X) and only one output
@@ -3179,6 +3807,7 @@ def StringNormalizer_10(X: torch.Tensor, *, case_change_action: str, is_case_sen
     """
     raise NotImplementedError
 
+
 def StringSplit_20(X: torch.Tensor, *, delimiter: str, maxsplit: int) -> torch.Tensor:
     r"""
     StringSplit splits a string tensor's elements into substrings based on a delimiter attribute and a maxsplit attribute.
@@ -3188,6 +3817,7 @@ def StringSplit_20(X: torch.Tensor, *, delimiter: str, maxsplit: int) -> torch.T
     The second output tensor represents the number of substrings generated. `maxsplit` can be used to limit the number of splits performed - after the `maxsplit`th split if the string is not fully split, the trailing suffix of input string after the final split point is also added. For elements where fewer splits are possible than specified in `maxsplit`, it has no effect.
     """
     raise NotImplementedError
+
 
 def Sub_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
@@ -3199,6 +3829,7 @@ def Sub_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Sum_13(data_0: torch.Tensor) -> torch.Tensor:
     r"""
     Element-wise sum of each of the input tensors (with Numpy-style broadcasting support).
@@ -3207,11 +3838,13 @@ def Sum_13(data_0: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Tan_7(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the tangent of the given input tensor, element-wise.
     """
     raise NotImplementedError
+
 
 def Tanh_13(input: torch.Tensor) -> torch.Tensor:
     r"""
@@ -3219,7 +3852,20 @@ def Tanh_13(input: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def TfIdfVectorizer_9(X: torch.Tensor, *, max_gram_length: int, max_skip_count: int, min_gram_length: int, mode: str, ngram_counts: list[int], ngram_indexes: list[int], pool_int64s: list[int], pool_strings: list[str], weights: list[float]) -> torch.Tensor:
+
+def TfIdfVectorizer_9(
+    X: torch.Tensor,
+    *,
+    max_gram_length: int,
+    max_skip_count: int,
+    min_gram_length: int,
+    mode: str,
+    ngram_counts: list[int],
+    ngram_indexes: list[int],
+    pool_int64s: list[int],
+    pool_strings: list[str],
+    weights: list[float],
+) -> torch.Tensor:
     r"""
     This transform extracts n-grams from the input sequence and save them as a vector. Input can
     be either a 1-D or 2-D tensor. For 1-D input, output is the n-gram representation of that input.
@@ -3251,6 +3897,7 @@ def TfIdfVectorizer_9(X: torch.Tensor, *, max_gram_length: int, max_skip_count: 
     """
     raise NotImplementedError
 
+
 def ThresholdedRelu_10(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     r"""
     ThresholdedRelu takes one input data (Tensor<T>) and produces one output data
@@ -3258,6 +3905,7 @@ def ThresholdedRelu_10(X: torch.Tensor, *, alpha: float) -> torch.Tensor:
     is applied to the tensor elementwise.
     """
     raise NotImplementedError
+
 
 def Tile_13(input: torch.Tensor, repeats: torch.Tensor) -> torch.Tensor:
     r"""
@@ -3267,7 +3915,10 @@ def Tile_13(input: torch.Tensor, repeats: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
-def TopK_11(X: torch.Tensor, K: torch.Tensor, *, axis: int, largest: int, sorted: int) -> torch.Tensor:
+
+def TopK_11(
+    X: torch.Tensor, K: torch.Tensor, *, axis: int, largest: int, sorted: int
+) -> torch.Tensor:
     r"""
     Retrieve the top-K largest or smallest elements along a specified axis. Given an input tensor of
     shape [a_0, a_1, ..., a_{n-1}] and integer argument k, return two outputs:
@@ -3287,6 +3938,7 @@ def TopK_11(X: torch.Tensor, K: torch.Tensor, *, axis: int, largest: int, sorted
     """
     raise NotImplementedError
 
+
 def Transpose_21(data: torch.Tensor, *, perm: list[int]) -> torch.Tensor:
     r"""
     Transpose the input tensor similar to numpy.transpose. For example, when
@@ -3294,6 +3946,7 @@ def Transpose_21(data: torch.Tensor, *, perm: list[int]) -> torch.Tensor:
     will be (2, 1, 3).
     """
     raise NotImplementedError
+
 
 def Trilu_14(input: torch.Tensor, k: torch.Tensor, *, upper: int) -> torch.Tensor:
     r"""
@@ -3311,6 +3964,7 @@ def Trilu_14(input: torch.Tensor, k: torch.Tensor, *, upper: int) -> torch.Tenso
     A negative k value excludes the main diagonal and (|k|-1) diagonals below it.
     """
     raise NotImplementedError
+
 
 def Unique_11(X: torch.Tensor, *, axis: int, sorted: int) -> torch.Tensor:
     r"""
@@ -3414,6 +4068,7 @@ def Unique_11(X: torch.Tensor, *, axis: int, sorted: int) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Unsqueeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     r"""
     Insert single-dimensional entries to the shape of an input tensor (`data`).
@@ -3429,6 +4084,7 @@ def Unsqueeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     """
     raise NotImplementedError
 
+
 def Upsample_10(X: torch.Tensor, scales: torch.Tensor, *, mode: str) -> torch.Tensor:
     r"""
     Upsample the input tensor.
@@ -3436,6 +4092,7 @@ def Upsample_10(X: torch.Tensor, scales: torch.Tensor, *, mode: str) -> torch.Te
       output_dimension = floor(input_dimension * scale).
     """
     raise NotImplementedError
+
 
 def Where_16(condition: torch.Tensor, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     r"""
@@ -3447,6 +4104,7 @@ def Where_16(condition: torch.Tensor, X: torch.Tensor, Y: torch.Tensor) -> torch
     This operator supports **multidirectional (i.e., Numpy-style) broadcasting**; for more details please check [the doc](Broadcasting.md).
     """
     raise NotImplementedError
+
 
 def Xor_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""

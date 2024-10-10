@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import torch
-from torch_onnx import _capture_strategies
 from torch.testing._internal import common_utils
+
+from torch_onnx import _capture_strategies
 
 
 @common_utils.instantiate_parametrized_tests

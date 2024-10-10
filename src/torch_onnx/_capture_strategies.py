@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import abc
 import contextlib
-import logging
 import dataclasses
 import datetime
+import logging
 import os
 import pathlib
 from typing import TYPE_CHECKING, Any, Callable
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
 
 def _verbose_printer(verbose: bool | None) -> Callable[..., None]:
     """Prints messages based on `verbose`."""

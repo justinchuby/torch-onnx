@@ -22,12 +22,12 @@ def _get_supported_dtypes(op: str, opset_version: int) -> common_dtype._dispatch
 
 
 class OnnxUnaryUfuncInfo(opinfo_core.UnaryUfuncInfo):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, **kwargs) -> None:
         opinfo_name = f"ops.onnx.{name}"
         op = getattr(torch_onnx.ops, name)
         op_name, opset_version = name.rsplit("_", 1)
         dtypes = _get_supported_dtypes(op_name, int(opset_version))
-        super().__init__(opinfo_name, op=op, dtypes=dtypes)
+        super().__init__(opinfo_name, op=op, dtypes=dtypes, **kwargs)
 
 
 op_db = [

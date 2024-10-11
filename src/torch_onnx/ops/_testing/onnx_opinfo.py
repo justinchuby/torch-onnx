@@ -30,8 +30,42 @@ class OnnxUnaryUfuncInfo(opinfo_core.UnaryUfuncInfo):
         super().__init__(opinfo_name, op=op, dtypes=dtypes, **kwargs)
 
 
+class OnnxBinaryUfuncInfo(opinfo_core.BinaryUfuncInfo):
+    def __init__(self, name: str, **kwargs) -> None:
+        opinfo_name = f"ops.onnx.{name}"
+        op = getattr(torch_onnx.ops, name)
+        op_name, opset_version = name.rsplit("_", 1)
+        dtypes = _get_supported_dtypes(op_name, int(opset_version))
+        super().__init__(opinfo_name, op=op, dtypes=dtypes, **kwargs)
+
+
+class PlaceHolder(opinfo_core.OpInfo):
+    pass
+
 op_db = [
     OnnxUnaryUfuncInfo("Abs_13"),
     OnnxUnaryUfuncInfo("Acos_7"),
     OnnxUnaryUfuncInfo("Acosh_9"),
+    OnnxUnaryUfuncInfo("Add_14"),
+    PlaceHolder("AffineGrid_20"),
+    OnnxUnaryUfuncInfo("And_7"),
+    PlaceHolder("ArgMax_13"),
+    PlaceHolder("ArgMin_13"),
+    OnnxUnaryUfuncInfo("Asin_7"),
+    OnnxUnaryUfuncInfo("Asinh_9"),
+    OnnxUnaryUfuncInfo("Atan_7"),
+    OnnxUnaryUfuncInfo("Atanh_9"),
+    PlaceHolder("AveragePool_19"),
+    PlaceHolder("BatchNormalization_15"),
+    PlaceHolder("Bernoulli_15"),
+    PlaceHolder("BitShift_11"),
+    OnnxBinaryUfuncInfo("BitwiseAnd_18"),
+    OnnxBinaryUfuncInfo("BitwiseNot_18"),
+    OnnxBinaryUfuncInfo("BitwiseOr_18"),
+    OnnxBinaryUfuncInfo("BitwiseXor_18"),
+    PlaceHolder("BlackmanWindow_17"),
+    PlaceHolder("Cast_21"),
+    PlaceHolder("CastLike_21"),
+    OnnxUnaryUfuncInfo("Ceil_13"),
+    PlaceHolder("Celu_12"),
 ]

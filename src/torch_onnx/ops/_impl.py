@@ -2,85 +2,82 @@ from __future__ import annotations
 
 import torch
 import torch.fx
-import functools
 
 _ONNX_DECOMP_TABLE = {}
 
 
 def _register_op(func):
     func_name = func.__name__
-    torch_op = torch.library.custom_op(f"onnx::{func_name}", mutates_args=[])(func)
-    _ONNX_DECOMP_TABLE[torch_op] = func
+    torch_op = torch.library.custom_op(f"onnx::{func_name}", mutates_args=())(func)
+    _ONNX_DECOMP_TABLE[getattr(torch.ops.onnx, func_name).default] = func
     return torch_op
 
 
 @_register_op
 def Abs_13(X: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.abs(X)
 
 
-@_register_op
+@Abs_13.register_fake
+def Abs_13_meta(X: torch.Tensor) -> torch.Tensor:
+    return torch.empty_like(X)
+
+
+class Model(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return Abs_13(x)
+
+
 def Acos_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Acosh_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def AffineGrid_20(
     theta: torch.Tensor, size: torch.Tensor, *, align_corners: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def ArgMax_13(
     data: torch.Tensor, *, axis: int = 0, keepdims: int = 1, select_last_index: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def ArgMin_13(
     data: torch.Tensor, *, axis: int = 0, keepdims: int = 1, select_last_index: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Asin_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Asinh_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Atan_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Atanh_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def AveragePool_22(
     X: torch.Tensor,
     *,
@@ -95,7 +92,6 @@ def AveragePool_22(
     raise NotImplementedError
 
 
-@_register_op
 def BatchNormalization_15(
     X: torch.Tensor,
     scale: torch.Tensor,
@@ -110,75 +106,62 @@ def BatchNormalization_15(
     raise NotImplementedError
 
 
-@_register_op
 def Bernoulli_22(
     input: torch.Tensor, *, dtype: int | None = None, seed: float | None = None
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BitShift_11(X: torch.Tensor, Y: torch.Tensor, *, direction: str) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BitwiseAnd_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BitwiseNot_18(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BitwiseOr_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BitwiseXor_18(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def BlackmanWindow_17(
     size: torch.Tensor, *, output_datatype: int = 1, periodic: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Cast_21(input: torch.Tensor, *, saturate: int = 1, to: int) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def CastLike_21(
     input: torch.Tensor, target_type: torch.Tensor, *, saturate: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Ceil_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Celu_12(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def CenterCropPad_18(
     input_data: torch.Tensor, shape: torch.Tensor, *, axes: list[int] | None = None
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Clip_13(
     input: torch.Tensor,
     min: torch.Tensor | None = None,
@@ -187,7 +170,6 @@ def Clip_13(
     raise NotImplementedError
 
 
-@_register_op
 def Col2Im_18(
     input: torch.Tensor,
     image_shape: torch.Tensor,
@@ -200,19 +182,16 @@ def Col2Im_18(
     raise NotImplementedError
 
 
-@_register_op
 def Compress_11(
     input: torch.Tensor, condition: torch.Tensor, *, axis: int | None = None
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Concat_13(*inputs: torch.Tensor, axis: int) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Constant_21(
     *,
     value: torch.Tensor | None = None,
@@ -226,14 +205,12 @@ def Constant_21(
     raise NotImplementedError
 
 
-@_register_op
 def ConstantOfShape_21(
     input: torch.Tensor, *, value: torch.Tensor | None = None
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Conv_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -249,7 +226,6 @@ def Conv_22(
     raise NotImplementedError
 
 
-@_register_op
 def ConvInteger_10(
     x: torch.Tensor,
     w: torch.Tensor,
@@ -266,7 +242,6 @@ def ConvInteger_10(
     raise NotImplementedError
 
 
-@_register_op
 def ConvTranspose_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -284,24 +259,20 @@ def ConvTranspose_22(
     raise NotImplementedError
 
 
-@_register_op
 def Cos_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Cosh_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def CumSum_14(
     x: torch.Tensor, axis: torch.Tensor, *, exclusive: int = 0, reverse: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def DFT_20(
     input: torch.Tensor,
     dft_length: torch.Tensor | None = None,
@@ -313,7 +284,6 @@ def DFT_20(
     raise NotImplementedError
 
 
-@_register_op
 def DeformConv_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -331,14 +301,12 @@ def DeformConv_22(
     raise NotImplementedError
 
 
-@_register_op
 def DepthToSpace_13(
     input: torch.Tensor, *, blocksize: int, mode: str = "DCR"
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def DequantizeLinear_21(
     x: torch.Tensor,
     x_scale: torch.Tensor,
@@ -350,17 +318,14 @@ def DequantizeLinear_21(
     raise NotImplementedError
 
 
-@_register_op
 def Det_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Div_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Dropout_22(
     data: torch.Tensor,
     ratio: torch.Tensor | None = None,
@@ -371,61 +336,50 @@ def Dropout_22(
     raise NotImplementedError
 
 
-@_register_op
 def DynamicQuantizeLinear_11(
     x: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     raise NotImplementedError
 
 
-@_register_op
 def Einsum_12(*Inputs: torch.Tensor, equation: str) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Elu_22(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Equal_19(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Erf_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Exp_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Expand_13(input: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def EyeLike_22(
     input: torch.Tensor, *, dtype: int | None = None, k: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Flatten_21(input: torch.Tensor, *, axis: int = 1) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Floor_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GRU_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -446,33 +400,28 @@ def GRU_22(
     raise NotImplementedError
 
 
-@_register_op
 def Gather_13(
     data: torch.Tensor, indices: torch.Tensor, *, axis: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GatherElements_13(
     data: torch.Tensor, indices: torch.Tensor, *, axis: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GatherND_13(
     data: torch.Tensor, indices: torch.Tensor, *, batch_dims: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Gelu_20(X: torch.Tensor, *, approximate: str = "none") -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Gemm_13(
     A: torch.Tensor,
     B: torch.Tensor,
@@ -486,32 +435,26 @@ def Gemm_13(
     raise NotImplementedError
 
 
-@_register_op
 def GlobalAveragePool_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GlobalLpPool_22(X: torch.Tensor, *, p: int = 2) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GlobalMaxPool_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Greater_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GreaterOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def GridSample_22(
     X: torch.Tensor,
     grid: torch.Tensor,
@@ -523,7 +466,6 @@ def GridSample_22(
     raise NotImplementedError
 
 
-@_register_op
 def GroupNormalization_21(
     X: torch.Tensor,
     scale: torch.Tensor,
@@ -536,43 +478,36 @@ def GroupNormalization_21(
     raise NotImplementedError
 
 
-@_register_op
 def HammingWindow_17(
     size: torch.Tensor, *, output_datatype: int = 1, periodic: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def HannWindow_17(
     size: torch.Tensor, *, output_datatype: int = 1, periodic: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def HardSigmoid_22(
     X: torch.Tensor, *, alpha: float = 0.20000000298023224, beta: float = 0.5
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def HardSwish_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Hardmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Identity_21(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def If_21(
     cond: torch.Tensor,
     *,
@@ -582,14 +517,12 @@ def If_21(
     raise NotImplementedError
 
 
-@_register_op
 def ImageDecoder_20(
     encoded_stream: torch.Tensor, *, pixel_format: str = "RGB"
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def InstanceNormalization_22(
     input: torch.Tensor,
     scale: torch.Tensor,
@@ -600,19 +533,16 @@ def InstanceNormalization_22(
     raise NotImplementedError
 
 
-@_register_op
 def IsInf_20(
     X: torch.Tensor, *, detect_negative: int = 1, detect_positive: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def IsNaN_20(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def LRN_13(
     X: torch.Tensor,
     *,
@@ -624,7 +554,6 @@ def LRN_13(
     raise NotImplementedError
 
 
-@_register_op
 def LSTM_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -647,7 +576,6 @@ def LSTM_22(
     raise NotImplementedError
 
 
-@_register_op
 def LayerNormalization_17(
     X: torch.Tensor,
     Scale: torch.Tensor,
@@ -660,34 +588,28 @@ def LayerNormalization_17(
     raise NotImplementedError
 
 
-@_register_op
 def LeakyRelu_16(
     X: torch.Tensor, *, alpha: float = 0.009999999776482582
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Less_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def LessOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Log_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def LogSoftmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Loop_21(
     M: torch.Tensor | None = None,
     cond: torch.Tensor | None = None,
@@ -697,14 +619,12 @@ def Loop_21(
     raise NotImplementedError
 
 
-@_register_op
 def LpNormalization_22(
     input: torch.Tensor, *, axis: int = -1, p: int = 2
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def LpPool_22(
     X: torch.Tensor,
     *,
@@ -719,12 +639,10 @@ def LpPool_22(
     raise NotImplementedError
 
 
-@_register_op
 def MatMul_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def MatMulInteger_10(
     A: torch.Tensor,
     B: torch.Tensor,
@@ -734,12 +652,10 @@ def MatMulInteger_10(
     raise NotImplementedError
 
 
-@_register_op
 def Max_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def MaxPool_22(
     X: torch.Tensor,
     *,
@@ -754,7 +670,6 @@ def MaxPool_22(
     raise NotImplementedError
 
 
-@_register_op
 def MaxRoiPool_22(
     X: torch.Tensor,
     rois: torch.Tensor,
@@ -765,7 +680,6 @@ def MaxRoiPool_22(
     raise NotImplementedError
 
 
-@_register_op
 def MaxUnpool_22(
     X: torch.Tensor,
     I: torch.Tensor,
@@ -778,19 +692,16 @@ def MaxUnpool_22(
     raise NotImplementedError
 
 
-@_register_op
 def Mean_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def MeanVarianceNormalization_13(
     X: torch.Tensor, *, axes: list[int] = (0, 2, 3)
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def MelWeightMatrix_17(
     num_mel_bins: torch.Tensor,
     dft_length: torch.Tensor,
@@ -803,27 +714,22 @@ def MelWeightMatrix_17(
     raise NotImplementedError
 
 
-@_register_op
 def Min_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Mish_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Mod_13(A: torch.Tensor, B: torch.Tensor, *, fmod: int = 0) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Mul_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Multinomial_22(
     input: torch.Tensor,
     *,
@@ -834,12 +740,10 @@ def Multinomial_22(
     raise NotImplementedError
 
 
-@_register_op
 def Neg_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def NegativeLogLikelihoodLoss_22(
     input: torch.Tensor,
     target: torch.Tensor,
@@ -851,7 +755,6 @@ def NegativeLogLikelihoodLoss_22(
     raise NotImplementedError
 
 
-@_register_op
 def NonMaxSuppression_11(
     boxes: torch.Tensor,
     scores: torch.Tensor,
@@ -864,41 +767,34 @@ def NonMaxSuppression_11(
     raise NotImplementedError
 
 
-@_register_op
 def NonZero_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Not_1(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def OneHot_11(
     indices: torch.Tensor, depth: torch.Tensor, values: torch.Tensor, *, axis: int = -1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Optional_15(
     input: torch.Tensor | None = None, *, type: torch.dtype | None = None
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Or_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def PRelu_16(X: torch.Tensor, slope: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Pad_21(
     data: torch.Tensor,
     pads: torch.Tensor,
@@ -910,12 +806,10 @@ def Pad_21(
     raise NotImplementedError
 
 
-@_register_op
 def Pow_15(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def QLinearConv_10(
     x: torch.Tensor,
     x_scale: torch.Tensor,
@@ -937,7 +831,6 @@ def QLinearConv_10(
     raise NotImplementedError
 
 
-@_register_op
 def QLinearMatMul_21(
     a: torch.Tensor,
     a_scale: torch.Tensor,
@@ -951,7 +844,6 @@ def QLinearMatMul_21(
     raise NotImplementedError
 
 
-@_register_op
 def QuantizeLinear_21(
     x: torch.Tensor,
     y_scale: torch.Tensor,
@@ -965,7 +857,6 @@ def QuantizeLinear_21(
     raise NotImplementedError
 
 
-@_register_op
 def RNN_22(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -985,7 +876,6 @@ def RNN_22(
     raise NotImplementedError
 
 
-@_register_op
 def RandomNormal_22(
     *,
     dtype: int = 1,
@@ -997,7 +887,6 @@ def RandomNormal_22(
     raise NotImplementedError
 
 
-@_register_op
 def RandomNormalLike_22(
     input: torch.Tensor,
     *,
@@ -1009,7 +898,6 @@ def RandomNormalLike_22(
     raise NotImplementedError
 
 
-@_register_op
 def RandomUniform_22(
     *,
     dtype: int = 1,
@@ -1021,7 +909,6 @@ def RandomUniform_22(
     raise NotImplementedError
 
 
-@_register_op
 def RandomUniformLike_22(
     input: torch.Tensor,
     *,
@@ -1033,19 +920,16 @@ def RandomUniformLike_22(
     raise NotImplementedError
 
 
-@_register_op
 def Range_11(
     start: torch.Tensor, limit: torch.Tensor, delta: torch.Tensor
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Reciprocal_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def ReduceL1_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1056,7 +940,6 @@ def ReduceL1_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceL2_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1067,7 +950,6 @@ def ReduceL2_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceLogSum_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1078,7 +960,6 @@ def ReduceLogSum_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceLogSumExp_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1089,7 +970,6 @@ def ReduceLogSumExp_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceMax_20(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1100,7 +980,6 @@ def ReduceMax_20(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceMean_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1111,7 +990,6 @@ def ReduceMean_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceMin_20(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1122,7 +1000,6 @@ def ReduceMin_20(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceProd_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1133,7 +1010,6 @@ def ReduceProd_18(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceSum_13(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1144,7 +1020,6 @@ def ReduceSum_13(
     raise NotImplementedError
 
 
-@_register_op
 def ReduceSumSquare_18(
     data: torch.Tensor,
     axes: torch.Tensor | None = None,
@@ -1155,24 +1030,20 @@ def ReduceSumSquare_18(
     raise NotImplementedError
 
 
-@_register_op
 def RegexFullMatch_20(X: torch.Tensor, *, pattern: str | None = None) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Relu_14(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Reshape_21(
     data: torch.Tensor, shape: torch.Tensor, *, allowzero: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Resize_19(
     X: torch.Tensor,
     roi: torch.Tensor | None = None,
@@ -1192,7 +1063,6 @@ def Resize_19(
     raise NotImplementedError
 
 
-@_register_op
 def RoiAlign_22(
     X: torch.Tensor,
     rois: torch.Tensor,
@@ -1208,12 +1078,10 @@ def RoiAlign_22(
     raise NotImplementedError
 
 
-@_register_op
 def Round_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def STFT_17(
     signal: torch.Tensor,
     frame_step: torch.Tensor,
@@ -1225,7 +1093,6 @@ def STFT_17(
     raise NotImplementedError
 
 
-@_register_op
 def Scan_21(
     *initial_state_and_scan_inputs: torch.Tensor,
     body: torch.fx.GraphModule,
@@ -1238,14 +1105,12 @@ def Scan_21(
     raise NotImplementedError
 
 
-@_register_op
 def Scatter_11(
     data: torch.Tensor, indices: torch.Tensor, updates: torch.Tensor, *, axis: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def ScatterElements_18(
     data: torch.Tensor,
     indices: torch.Tensor,
@@ -1257,7 +1122,6 @@ def ScatterElements_18(
     raise NotImplementedError
 
 
-@_register_op
 def ScatterND_18(
     data: torch.Tensor,
     indices: torch.Tensor,
@@ -1268,7 +1132,6 @@ def ScatterND_18(
     raise NotImplementedError
 
 
-@_register_op
 def Selu_22(
     X: torch.Tensor,
     *,
@@ -1278,46 +1141,38 @@ def Selu_22(
     raise NotImplementedError
 
 
-@_register_op
 def Shape_21(
     data: torch.Tensor, *, end: int | None = None, start: int = 0
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Shrink_9(
     input: torch.Tensor, *, bias: float = 0.0, lambd: float = 0.5
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Sigmoid_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Sign_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Sin_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Sinh_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Size_21(data: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Slice_13(
     data: torch.Tensor,
     starts: torch.Tensor,
@@ -1328,12 +1183,10 @@ def Slice_13(
     raise NotImplementedError
 
 
-@_register_op
 def Softmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def SoftmaxCrossEntropyLoss_13(
     scores: torch.Tensor,
     labels: torch.Tensor,
@@ -1345,22 +1198,18 @@ def SoftmaxCrossEntropyLoss_13(
     raise NotImplementedError
 
 
-@_register_op
 def Softplus_22(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Softsign_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def SpaceToDepth_13(input: torch.Tensor, *, blocksize: int) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Split_18(
     input: torch.Tensor,
     split: torch.Tensor | None = None,
@@ -1371,7 +1220,6 @@ def Split_18(
     raise NotImplementedError
 
 
-@_register_op
 def SplitToSequence_11(
     input: torch.Tensor,
     split: torch.Tensor | None = None,
@@ -1382,22 +1230,18 @@ def SplitToSequence_11(
     raise NotImplementedError
 
 
-@_register_op
 def Sqrt_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Squeeze_21(data: torch.Tensor, axes: torch.Tensor | None = None) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def StringConcat_20(X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def StringNormalizer_10(
     X: torch.Tensor,
     *,
@@ -1409,34 +1253,28 @@ def StringNormalizer_10(
     raise NotImplementedError
 
 
-@_register_op
 def StringSplit_20(
     X: torch.Tensor, *, delimiter: str | None = None, maxsplit: int | None = None
 ) -> tuple[torch.Tensor, torch.Tensor]:
     raise NotImplementedError
 
 
-@_register_op
 def Sub_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Sum_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Tan_22(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Tanh_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def TfIdfVectorizer_9(
     X: torch.Tensor,
     *,
@@ -1453,17 +1291,14 @@ def TfIdfVectorizer_9(
     raise NotImplementedError
 
 
-@_register_op
 def ThresholdedRelu_22(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Tile_13(input: torch.Tensor, repeats: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def TopK_11(
     X: torch.Tensor,
     K: torch.Tensor,
@@ -1475,42 +1310,35 @@ def TopK_11(
     raise NotImplementedError
 
 
-@_register_op
 def Transpose_21(data: torch.Tensor, *, perm: list[int] | None = None) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Trilu_14(
     input: torch.Tensor, k: torch.Tensor | None = None, *, upper: int = 1
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Unique_11(
     X: torch.Tensor, *, axis: int | None = None, sorted: int = 1
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     raise NotImplementedError
 
 
-@_register_op
 def Unsqueeze_21(data: torch.Tensor, axes: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Upsample_10(
     X: torch.Tensor, scales: torch.Tensor, *, mode: str = "nearest"
 ) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Where_16(condition: torch.Tensor, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-@_register_op
 def Xor_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError

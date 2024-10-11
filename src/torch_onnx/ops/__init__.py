@@ -3086,7 +3086,7 @@ def Softmax_13(input: torch.Tensor, *, axis: int = -1) -> torch.Tensor:
     r"""
     The operator computes the normalized exponential values for the given input:
 
-     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1) 
+     Softmax(input, axis) = Exp(input) / ReduceSum(Exp(input), axis=axis, keepdims=1)
 
     The "axis" attribute indicates the dimension along which Softmax
     will be performed. The output tensor has the same shape

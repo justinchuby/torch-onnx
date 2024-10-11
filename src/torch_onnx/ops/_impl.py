@@ -10,17 +10,15 @@ def _register_op(func):
     func_name = func.__name__
     torch_op = torch.library.custom_op(f"onnx::{func_name}", mutates_args=())(func)
     _ONNX_DECOMP_TABLE[getattr(torch.ops.onnx, func_name).default] = func
+    # Use the same implementation for the fake implementation
+    # This is possible because we use pure aten ops to implement ONNX ops
+    torch_op.register_fake(func)
     return torch_op
 
 
 @_register_op
 def Abs_13(X: torch.Tensor) -> torch.Tensor:
     return torch.abs(X)
-
-
-@Abs_13.register_fake
-def Abs_13_meta(X: torch.Tensor) -> torch.Tensor:
-    return torch.empty_like(X)
 
 
 class Model(torch.nn.Module):

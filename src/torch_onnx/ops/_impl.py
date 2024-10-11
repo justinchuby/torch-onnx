@@ -1,12 +1,22 @@
 from __future__ import annotations
+from typing import Callable
+import typing
 
 import torch
 import torch.fx
 
+
+_T = typing.TypeVar("_T", bound=Callable)
+
 _ONNX_DECOMP_TABLE = {}
 
 
-def _register_op(func):
+def onnx_aten_decomp_table() -> dict[int, Callable]:
+    """Return the ONNX to ATen decomp table."""
+    return _ONNX_DECOMP_TABLE
+
+
+def _register_op(func: _T) -> _T:
     func_name = func.__name__
     torch_op = torch.library.custom_op(f"onnx::{func_name}", mutates_args=())(func)
     _ONNX_DECOMP_TABLE[getattr(torch.ops.onnx, func_name).default] = func
@@ -19,11 +29,6 @@ def _register_op(func):
 @_register_op
 def Abs_13(X: torch.Tensor) -> torch.Tensor:
     return torch.abs(X)
-
-
-class Model(torch.nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return Abs_13(x)
 
 
 def Acos_22(input: torch.Tensor) -> torch.Tensor:

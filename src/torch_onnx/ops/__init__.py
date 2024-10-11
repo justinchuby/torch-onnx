@@ -18,14 +18,14 @@ def Abs_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Acos_7(input: torch.Tensor) -> torch.Tensor:
+def Acos_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arccosine (inverse of cosine) of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
 
-def Acosh_9(input: torch.Tensor) -> torch.Tensor:
+def Acosh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic arccosine of the given input tensor element-wise.
     """
@@ -112,35 +112,35 @@ def ArgMin_13(data: torch.Tensor, *, axis: int = 0, keepdims: int = 1, select_la
     raise NotImplementedError
 
 
-def Asin_7(input: torch.Tensor) -> torch.Tensor:
+def Asin_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arcsine (inverse of sine) of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
 
-def Asinh_9(input: torch.Tensor) -> torch.Tensor:
+def Asinh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic arcsine of the given input tensor element-wise.
     """
     raise NotImplementedError
 
 
-def Atan_7(input: torch.Tensor) -> torch.Tensor:
+def Atan_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arctangent (inverse of tangent) of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
 
-def Atanh_9(input: torch.Tensor) -> torch.Tensor:
+def Atanh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic arctangent of the given input tensor element-wise.
     """
     raise NotImplementedError
 
 
-def AveragePool_19(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, count_include_pad: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def AveragePool_22(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, count_include_pad: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     AveragePool consumes an input tensor X and applies average pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -222,7 +222,7 @@ def BatchNormalization_15(X: torch.Tensor, scale: torch.Tensor, B: torch.Tensor,
     raise NotImplementedError
 
 
-def Bernoulli_15(input: torch.Tensor, *, dtype: int | None = None, seed: float | None = None) -> torch.Tensor:
+def Bernoulli_22(input: torch.Tensor, *, dtype: int | None = None, seed: float | None = None) -> torch.Tensor:
     r"""
     Draws binary random numbers (0 or 1) from a Bernoulli distribution. The input tensor should be a tensor
     containing probabilities p (a value in the range [0,1]) to be used for drawing the binary random number,
@@ -467,7 +467,7 @@ def ConstantOfShape_21(input: torch.Tensor, *, value: torch.Tensor | None = None
     raise NotImplementedError
 
 
-def Conv_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor | None = None, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def Conv_22(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor | None = None, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The convolution operator consumes an input tensor and a filter, and
     computes the output.
@@ -483,7 +483,7 @@ def ConvInteger_10(x: torch.Tensor, w: torch.Tensor, x_zero_point: torch.Tensor 
     raise NotImplementedError
 
 
-def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor | None = None, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, output_padding: list[int] | None = None, output_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def ConvTranspose_22(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor | None = None, *, auto_pad: str = 'NOTSET', dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, output_padding: list[int] | None = None, output_shape: list[int] | None = None, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     The convolution transpose operator consumes an input tensor and a filter,
     and computes the output.
@@ -501,14 +501,14 @@ def ConvTranspose_11(X: torch.Tensor, W: torch.Tensor, B: torch.Tensor | None = 
     raise NotImplementedError
 
 
-def Cos_7(input: torch.Tensor) -> torch.Tensor:
+def Cos_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the cosine of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
 
-def Cosh_9(input: torch.Tensor) -> torch.Tensor:
+def Cosh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic cosine of the given input tensor element-wise.
     """
@@ -563,7 +563,7 @@ def DFT_20(input: torch.Tensor, dft_length: torch.Tensor | None = None, axis: to
     raise NotImplementedError
 
 
-def DeformConv_19(X: torch.Tensor, W: torch.Tensor, offset: torch.Tensor, B: torch.Tensor | None = None, mask: torch.Tensor | None = None, *, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, offset_group: int = 1, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def DeformConv_22(X: torch.Tensor, W: torch.Tensor, offset: torch.Tensor, B: torch.Tensor | None = None, mask: torch.Tensor | None = None, *, dilations: list[int] | None = None, group: int = 1, kernel_shape: list[int] | None = None, offset_group: int = 1, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     Performs deformable convolution as described in https://arxiv.org/abs/1703.06211 and https://arxiv.org/abs/1811.11168.
     This operator specification supports the general N-D case. Note that most common use cases have 2D or 3D data.
@@ -616,7 +616,7 @@ def DequantizeLinear_21(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: to
     raise NotImplementedError
 
 
-def Det_11(X: torch.Tensor) -> torch.Tensor:
+def Det_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     Det calculates determinant of a square matrix or batches of square matrices.
     Det takes one input tensor of shape `[*, M, M]`, where `*` is zero or more batch dimensions,
@@ -638,7 +638,7 @@ def Div_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Dropout_13(data: torch.Tensor, ratio: torch.Tensor | None = None, training_mode: torch.Tensor | None = None, *, seed: int | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+def Dropout_22(data: torch.Tensor, ratio: torch.Tensor | None = None, training_mode: torch.Tensor | None = None, *, seed: int | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     r"""
     Dropout takes an input floating-point tensor, an optional input ratio (floating-point scalar) and an optional input training_mode (boolean scalar). It produces two tensor outputs,
     output (floating-point tensor) and mask (optional `Tensor<bool>`). If `training_mode` is true then the output Y will be a random dropout;
@@ -720,7 +720,7 @@ def Einsum_12(*Inputs: torch.Tensor, equation: str) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Elu_6(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
+def Elu_22(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
     r"""
     Elu takes one input data (Tensor<T>) and produces one output data
     (Tensor<T>) where the function `f(x) = alpha * (exp(x) - 1.) for x <
@@ -767,7 +767,7 @@ def Expand_13(input: torch.Tensor, shape: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def EyeLike_9(input: torch.Tensor, *, dtype: int | None = None, k: int = 0) -> torch.Tensor:
+def EyeLike_22(input: torch.Tensor, *, dtype: int | None = None, k: int = 0) -> torch.Tensor:
     r"""
     Generate a 2D tensor (matrix) with ones on the diagonal and zeros everywhere else. Only 2D
     tensors are supported, i.e. input T1 must be of rank 2. The shape of the output tensor is the
@@ -798,7 +798,7 @@ def Floor_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GRU_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0, linear_before_reset: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
+def GRU_22(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0, linear_before_reset: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
     r"""
     Computes an one-layer GRU. This operator is usually supported via some custom
     implementation such as CuDNN.
@@ -1082,7 +1082,7 @@ def Gemm_13(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor | None = None, *, 
     raise NotImplementedError
 
 
-def GlobalAveragePool_1(X: torch.Tensor) -> torch.Tensor:
+def GlobalAveragePool_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     GlobalAveragePool consumes an input tensor X and applies average pooling across
     the values in the same channel. This is equivalent to AveragePool with kernel size
@@ -1091,7 +1091,7 @@ def GlobalAveragePool_1(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GlobalLpPool_2(X: torch.Tensor, *, p: int = 2) -> torch.Tensor:
+def GlobalLpPool_22(X: torch.Tensor, *, p: int = 2) -> torch.Tensor:
     r"""
     GlobalLpPool consumes an input tensor X and applies lp pool pooling across
     the values in the same channel. This is equivalent to LpPool with kernel size
@@ -1100,7 +1100,7 @@ def GlobalLpPool_2(X: torch.Tensor, *, p: int = 2) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GlobalMaxPool_1(X: torch.Tensor) -> torch.Tensor:
+def GlobalMaxPool_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     GlobalMaxPool consumes an input tensor X and applies max pooling across
     the values in the same channel. This is equivalent to MaxPool with kernel size
@@ -1129,7 +1129,7 @@ def GreaterOrEqual_16(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def GridSample_20(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int = 0, mode: str = 'linear', padding_mode: str = 'zeros') -> torch.Tensor:
+def GridSample_22(X: torch.Tensor, grid: torch.Tensor, *, align_corners: int = 0, mode: str = 'linear', padding_mode: str = 'zeros') -> torch.Tensor:
     r"""
     Given an input `X` and a flow-field `grid`, computes the output `Y` using `X` values and pixel locations from the `grid`.
     For spatial input `X` with shape (N, C, H, W), the `grid` will have shape (N, H_out, W_out, 2),
@@ -1196,7 +1196,7 @@ def HannWindow_17(size: torch.Tensor, *, output_datatype: int = 1, periodic: int
     raise NotImplementedError
 
 
-def HardSigmoid_6(X: torch.Tensor, *, alpha: float = 0.20000000298023224, beta: float = 0.5) -> torch.Tensor:
+def HardSigmoid_22(X: torch.Tensor, *, alpha: float = 0.20000000298023224, beta: float = 0.5) -> torch.Tensor:
     r"""
     HardSigmoid takes one input data (Tensor<T>) and produces one output data
     (Tensor<T>) where the HardSigmoid function, y = max(0, min(1, alpha * x + beta)),
@@ -1205,7 +1205,7 @@ def HardSigmoid_6(X: torch.Tensor, *, alpha: float = 0.20000000298023224, beta: 
     raise NotImplementedError
 
 
-def HardSwish_14(X: torch.Tensor) -> torch.Tensor:
+def HardSwish_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     HardSwish takes one input data (Tensor<T>) and produces one output data (Tensor<T>) where
     the HardSwish function, y = x * max(0, min(1, alpha * x + beta)) = x * HardSigmoid<alpha, beta>(x),
@@ -1270,7 +1270,7 @@ def ImageDecoder_20(encoded_stream: torch.Tensor, *, pixel_format: str = 'RGB') 
     raise NotImplementedError
 
 
-def InstanceNormalization_6(input: torch.Tensor, scale: torch.Tensor, B: torch.Tensor, *, epsilon: float = 9.999999747378752e-06) -> torch.Tensor:
+def InstanceNormalization_22(input: torch.Tensor, scale: torch.Tensor, B: torch.Tensor, *, epsilon: float = 9.999999747378752e-06) -> torch.Tensor:
     r"""
     Carries out instance normalization as described in the paper
     https://arxiv.org/abs/1607.08022.
@@ -1311,7 +1311,7 @@ def LRN_13(X: torch.Tensor, *, alpha: float = 9.999999747378752e-05, beta: float
     raise NotImplementedError
 
 
-def LSTM_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, initial_c: torch.Tensor | None = None, P: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, input_forget: int = 0, layout: int = 0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def LSTM_22(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, initial_c: torch.Tensor | None = None, P: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] | None = None, clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, input_forget: int = 0, layout: int = 0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     r"""
     Computes an one-layer LSTM. This operator is usually supported via some
     custom implementation such as CuDNN.
@@ -1604,14 +1604,14 @@ def Loop_21(M: torch.Tensor | None = None, cond: torch.Tensor | None = None, *v_
     raise NotImplementedError
 
 
-def LpNormalization_1(input: torch.Tensor, *, axis: int = -1, p: int = 2) -> torch.Tensor:
+def LpNormalization_22(input: torch.Tensor, *, axis: int = -1, p: int = 2) -> torch.Tensor:
     r"""
     Given a matrix, apply Lp-normalization along the provided axis.
     """
     raise NotImplementedError
 
 
-def LpPool_18(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], p: int = 2, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def LpPool_22(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], p: int = 2, pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     LpPool consumes an input tensor X and applies Lp pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1642,14 +1642,14 @@ def LpPool_18(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, 
 
 def MatMul_13(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     r"""
-    Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html
+    Matrix product that behaves like [numpy.matmul](https://numpy.org/doc/stable/reference/generated/numpy.matmul.html).
     """
     raise NotImplementedError
 
 
 def MatMulInteger_10(A: torch.Tensor, B: torch.Tensor, a_zero_point: torch.Tensor | None = None, b_zero_point: torch.Tensor | None = None) -> torch.Tensor:
     r"""
-    Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html.
+    Matrix product that behaves like [numpy.matmul](https://numpy.org/doc/stable/reference/generated/numpy.matmul.html).
     The production MUST never overflow. The accumulation may overflow if and only if in 32 bits.
     """
     raise NotImplementedError
@@ -1664,7 +1664,7 @@ def Max_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def MaxPool_12(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, storage_order: int = 0, strides: list[int] | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+def MaxPool_22(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0, dilations: list[int] | None = None, kernel_shape: list[int], pads: list[int] | None = None, storage_order: int = 0, strides: list[int] | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     r"""
     MaxPool consumes an input tensor X and applies max pooling across
     the tensor according to kernel sizes, stride sizes, and pad lengths.
@@ -1701,7 +1701,7 @@ def MaxPool_12(X: torch.Tensor, *, auto_pad: str = 'NOTSET', ceil_mode: int = 0,
     raise NotImplementedError
 
 
-def MaxRoiPool_1(X: torch.Tensor, rois: torch.Tensor, *, pooled_shape: list[int], spatial_scale: float = 1.0) -> torch.Tensor:
+def MaxRoiPool_22(X: torch.Tensor, rois: torch.Tensor, *, pooled_shape: list[int], spatial_scale: float = 1.0) -> torch.Tensor:
     r"""
     ROI max pool consumes an input tensor X and region of interests (RoIs) to
     apply max pooling across each RoI, to produce output 4-D tensor of shape
@@ -1710,7 +1710,7 @@ def MaxRoiPool_1(X: torch.Tensor, rois: torch.Tensor, *, pooled_shape: list[int]
     raise NotImplementedError
 
 
-def MaxUnpool_11(X: torch.Tensor, I: torch.Tensor, output_shape: torch.Tensor | None = None, *, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
+def MaxUnpool_22(X: torch.Tensor, I: torch.Tensor, output_shape: torch.Tensor | None = None, *, kernel_shape: list[int], pads: list[int] | None = None, strides: list[int] | None = None) -> torch.Tensor:
     r"""
     MaxUnpool essentially computes the partial inverse of the MaxPool op.
      The input information to this op is typically the output information from a MaxPool op. The first
@@ -1774,7 +1774,7 @@ def Min_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Mish_18(X: torch.Tensor) -> torch.Tensor:
+def Mish_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     Mish: A Self Regularized Non-Monotonic Neural Activation Function.
 
@@ -1817,7 +1817,7 @@ def Mul_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Multinomial_7(input: torch.Tensor, *, dtype: int = 6, sample_size: int = 1, seed: float | None = None) -> torch.Tensor:
+def Multinomial_22(input: torch.Tensor, *, dtype: int = 6, sample_size: int = 1, seed: float | None = None) -> torch.Tensor:
     r"""
     Generate a tensor of samples from a multinomial distribution according to the probabilities
     of each of the possible outcomes.
@@ -1834,7 +1834,7 @@ def Neg_13(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def NegativeLogLikelihoodLoss_13(input: torch.Tensor, target: torch.Tensor, weight: torch.Tensor | None = None, *, ignore_index: int | None = None, reduction: str = 'mean') -> torch.Tensor:
+def NegativeLogLikelihoodLoss_22(input: torch.Tensor, target: torch.Tensor, weight: torch.Tensor | None = None, *, ignore_index: int | None = None, reduction: str = 'mean') -> torch.Tensor:
     r"""
     A NegativeLogLikelihoodLoss operator computes (weighted) negative log likelihood loss.
     Its "input" tensor has the shape of (N, C, d1, d2, ..., dk) where k >= 0.
@@ -2155,7 +2155,7 @@ def QLinearConv_10(x: torch.Tensor, x_scale: torch.Tensor, x_zero_point: torch.T
 
 def QLinearMatMul_21(a: torch.Tensor, a_scale: torch.Tensor, a_zero_point: torch.Tensor, b: torch.Tensor, b_scale: torch.Tensor, b_zero_point: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torch.Tensor) -> torch.Tensor:
     r"""
-    Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html.
+    Matrix product that behaves like [numpy.matmul](https://numpy.org/doc/stable/reference/generated/numpy.matmul.html).
     It consumes two quantized input tensors, their scales and zero points, scale and zero point of output,
     and computes the quantized output. The quantization formula is y = saturate((x / y_scale) + y_zero_point).
     For (x / y_scale), it is rounding to nearest ties to even. Refer to https://en.wikipedia.org/wiki/Rounding for details.
@@ -2201,7 +2201,7 @@ def QuantizeLinear_21(x: torch.Tensor, y_scale: torch.Tensor, y_zero_point: torc
     raise NotImplementedError
 
 
-def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] = ('Tanh', 'Tanh'), clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
+def RNN_22(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | None = None, sequence_lens: torch.Tensor | None = None, initial_h: torch.Tensor | None = None, *, activation_alpha: list[float] | None = None, activation_beta: list[float] | None = None, activations: list[str] = ('Tanh', 'Tanh'), clip: float | None = None, direction: str = 'forward', hidden_size: int | None = None, layout: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
     r"""
     Computes an one-layer simple RNN. This operator is usually supported
     via some custom implementation such as CuDNN.
@@ -2247,7 +2247,7 @@ def RNN_14(X: torch.Tensor, W: torch.Tensor, R: torch.Tensor, B: torch.Tensor | 
     raise NotImplementedError
 
 
-def RandomNormal_1(*, dtype: int = 1, mean: float = 0.0, scale: float = 1.0, seed: float | None = None, shape: list[int]) -> torch.Tensor:
+def RandomNormal_22(*, dtype: int = 1, mean: float = 0.0, scale: float = 1.0, seed: float | None = None, shape: list[int]) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a normal distribution. The shape
     of the tensor is specified by the `shape` argument and the parameter of the normal distribution
@@ -2260,7 +2260,7 @@ def RandomNormal_1(*, dtype: int = 1, mean: float = 0.0, scale: float = 1.0, see
     raise NotImplementedError
 
 
-def RandomNormalLike_1(input: torch.Tensor, *, dtype: int | None = None, mean: float = 0.0, scale: float = 1.0, seed: float | None = None) -> torch.Tensor:
+def RandomNormalLike_22(input: torch.Tensor, *, dtype: int | None = None, mean: float = 0.0, scale: float = 1.0, seed: float | None = None) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a normal distribution.
     The shape of the output tensor is copied from the shape of the input tensor,
@@ -2273,7 +2273,7 @@ def RandomNormalLike_1(input: torch.Tensor, *, dtype: int | None = None, mean: f
     raise NotImplementedError
 
 
-def RandomUniform_1(*, dtype: int = 1, high: float = 1.0, low: float = 0.0, seed: float | None = None, shape: list[int]) -> torch.Tensor:
+def RandomUniform_22(*, dtype: int = 1, high: float = 1.0, low: float = 0.0, seed: float | None = None, shape: list[int]) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a uniform distribution. The shape
     of the tensor is specified by the `shape` argument and the range by `low` and `high`.
@@ -2285,7 +2285,7 @@ def RandomUniform_1(*, dtype: int = 1, high: float = 1.0, low: float = 0.0, seed
     raise NotImplementedError
 
 
-def RandomUniformLike_1(input: torch.Tensor, *, dtype: int | None = None, high: float = 1.0, low: float = 0.0, seed: float | None = None) -> torch.Tensor:
+def RandomUniformLike_22(input: torch.Tensor, *, dtype: int | None = None, high: float = 1.0, low: float = 0.0, seed: float | None = None) -> torch.Tensor:
     r"""
     Generate a tensor with random values drawn from a uniform distribution.
     The shape of the output tensor is copied from the shape of the input tensor,
@@ -2534,7 +2534,7 @@ def Resize_19(X: torch.Tensor, roi: torch.Tensor | None = None, scales: torch.Te
     raise NotImplementedError
 
 
-def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor, *, coordinate_transformation_mode: str = 'half_pixel', mode: str = 'avg', output_height: int = 1, output_width: int = 1, sampling_ratio: int = 0, spatial_scale: float = 1.0) -> torch.Tensor:
+def RoiAlign_22(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor, *, coordinate_transformation_mode: str = 'half_pixel', mode: str = 'avg', output_height: int = 1, output_width: int = 1, sampling_ratio: int = 0, spatial_scale: float = 1.0) -> torch.Tensor:
     r"""
     Region of Interest (RoI) align operation described in the
     [Mask R-CNN paper](https://arxiv.org/abs/1703.06870).
@@ -2551,7 +2551,7 @@ def RoiAlign_16(X: torch.Tensor, rois: torch.Tensor, batch_indices: torch.Tensor
     raise NotImplementedError
 
 
-def Round_11(X: torch.Tensor) -> torch.Tensor:
+def Round_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     Round takes one input Tensor and rounds the values, element-wise, meaning
     it finds the nearest integer for each value.
@@ -2912,7 +2912,7 @@ def ScatterND_18(data: torch.Tensor, indices: torch.Tensor, updates: torch.Tenso
     raise NotImplementedError
 
 
-def Selu_6(X: torch.Tensor, *, alpha: float = 1.6732631921768188, gamma: float = 1.0507010221481323) -> torch.Tensor:
+def Selu_22(X: torch.Tensor, *, alpha: float = 1.6732631921768188, gamma: float = 1.0507010221481323) -> torch.Tensor:
     r"""
     Selu takes one input data (Tensor<T>) and produces one output data
     (Tensor<T>) where the scaled exponential linear unit function,
@@ -2993,14 +2993,14 @@ def Sign_13(input: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Sin_7(input: torch.Tensor) -> torch.Tensor:
+def Sin_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the sine of the given input tensor, element-wise.
     """
     raise NotImplementedError
 
 
-def Sinh_9(input: torch.Tensor) -> torch.Tensor:
+def Sinh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic sine of the given input tensor element-wise.
     """
@@ -3141,7 +3141,7 @@ def SoftmaxCrossEntropyLoss_13(scores: torch.Tensor, labels: torch.Tensor, weigh
     raise NotImplementedError
 
 
-def Softplus_1(X: torch.Tensor) -> torch.Tensor:
+def Softplus_22(X: torch.Tensor) -> torch.Tensor:
     r"""
     Softplus takes one input data (Tensor<T>) and produces one output data
     (Tensor<T>) where the softplus function, y = ln(exp(x) + 1), is applied to
@@ -3150,7 +3150,7 @@ def Softplus_1(X: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Softsign_1(input: torch.Tensor) -> torch.Tensor:
+def Softsign_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the softsign (x/(1+|x|)) of the given input tensor element-wise.
     """
@@ -3267,7 +3267,7 @@ def Sum_13(*data_0: torch.Tensor) -> torch.Tensor:
     raise NotImplementedError
 
 
-def Tan_7(input: torch.Tensor) -> torch.Tensor:
+def Tan_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the tangent of the given input tensor, element-wise.
     """
@@ -3314,7 +3314,7 @@ def TfIdfVectorizer_9(X: torch.Tensor, *, max_gram_length: int, max_skip_count: 
     raise NotImplementedError
 
 
-def ThresholdedRelu_10(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
+def ThresholdedRelu_22(X: torch.Tensor, *, alpha: float = 1.0) -> torch.Tensor:
     r"""
     ThresholdedRelu takes one input data (Tensor<T>) and produces one output data
     (Tensor<T>) where the rectified linear function, y = x for x > alpha, y = 0 otherwise,

@@ -31,14 +31,17 @@ def Abs_13(X: torch.Tensor) -> torch.Tensor:
     return torch.abs(X)
 
 
+@_register_op
 def Acos_22(input: torch.Tensor) -> torch.Tensor:
     return torch.acos(input)
 
 
+@_register_op
 def Acosh_22(input: torch.Tensor) -> torch.Tensor:
     return torch.acosh(input)
 
 
+@_register_op
 def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     return torch.add(A, B)
 
@@ -51,6 +54,7 @@ def AffineGrid_20(
     )
 
 
+@_register_op
 def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
     return torch.logical_and(A, B)
 

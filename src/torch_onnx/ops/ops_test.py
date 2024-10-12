@@ -23,6 +23,17 @@ def assert_no_onnx_ops(graph: torch.fx.Graph) -> None:
             raise AssertionError(f"Found an ONNX op in the graph: {node}")
 
 
+def create_args_repr(inputs) -> str:
+    return repr(
+        [
+            f"Tensor<{inp.shape}, dtype={inp.dtype}>"
+            if isinstance(inp, torch.Tensor)
+            else inp
+            for inp in inputs
+        ]
+    )
+
+
 class OpTest(common_utils.TestCase):
     @common_device_type.ops(
         onnx_opinfo.op_db,
@@ -40,41 +51,27 @@ class OpTest(common_utils.TestCase):
                 requires_grad=False,
             )
         ):
-            inputs = (sample.input, *sample.args)
+            args = (sample.input, *sample.args)
             # Provide the repr to subtest because tensors are not serializable in parallel test runs
             with self.subTest(
                 subtest="exported_program",
                 sample_num=i,
-                inputs=repr(
-                    [
-                        f"Tensor<{inp.shape}, dtype={inp.dtype}>"
-                        if isinstance(inp, torch.Tensor)
-                        else inp
-                        for inp in inputs
-                    ]
-                ),
+                args=create_args_repr(args),
                 kwargs=repr(sample.kwargs),
             ):
                 ep = torch.export.export(
-                    Model(), inputs, kwargs=sample.kwargs, strict=False
+                    Model(), args, kwargs=sample.kwargs, strict=False
                 )
                 torch.testing.assert_close(
-                    ep.module()(*inputs, **sample.kwargs),
-                    op.op(*inputs, **sample.kwargs),
+                    ep.module()(*args, **sample.kwargs),
+                    op.op(*args, **sample.kwargs),
                     equal_nan=True,
                 )
 
             with self.subTest(
                 subtest="decomp_to_aten",
                 sample_num=i,
-                inputs=repr(
-                    [
-                        f"Tensor<{inp.shape}, dtype={inp.dtype}>"
-                        if isinstance(inp, torch.Tensor)
-                        else inp
-                        for inp in inputs
-                    ]
-                ),
+                args=create_args_repr(args),
                 kwargs=repr(sample.kwargs),
             ):
                 decomped = ep.run_decompositions(
@@ -82,8 +79,8 @@ class OpTest(common_utils.TestCase):
                 )
                 assert_no_onnx_ops(decomped.graph)
                 torch.testing.assert_close(
-                    decomped.module()(*inputs, **sample.kwargs),
-                    op.op(*inputs, **sample.kwargs),
+                    decomped.module()(*args, **sample.kwargs),
+                    op.op(*args, **sample.kwargs),
                     equal_nan=True,
                 )
 

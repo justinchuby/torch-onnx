@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import typing
-from typing import Callable
+from typing import Any, Callable
 
 import torch
 import torch.fx
@@ -11,7 +11,7 @@ _T = typing.TypeVar("_T", bound=Callable)
 _ONNX_DECOMP_TABLE = {}
 
 
-def onnx_aten_decomp_table() -> dict[int, Callable]:
+def onnx_aten_decomp_table() -> dict[Any, Callable]:
     """Return the ONNX to ATen decomp table."""
     return _ONNX_DECOMP_TABLE
 

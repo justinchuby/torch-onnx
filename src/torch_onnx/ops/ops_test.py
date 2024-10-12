@@ -5,12 +5,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx
 from torch.testing._internal import common_device_type, common_utils
 
+import torch_onnx.ops
 from torch_onnx.ops._testing import onnx_opinfo
 
 if TYPE_CHECKING:
     from torch.testing._internal.opinfo import core as opinfo_core
+
+
+def assert_no_onnx_ops(graph: torch.fx.Graph) -> None:
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if node.target._namespace == "onnx":
+            raise AssertionError(f"Found an ONNX op in the graph: {node}")
 
 
 class OpTest(common_utils.TestCase):
@@ -18,9 +28,7 @@ class OpTest(common_utils.TestCase):
         onnx_opinfo.op_db,
         allowed_dtypes=[torch.float32],
     )
-    def test_op_can_be_exported_to_exported_program(
-        self, device: str, dtype: torch.dtype, op: opinfo_core.OpInfo
-    ):
+    def test_op_(self, device: str, dtype: torch.dtype, op: opinfo_core.OpInfo):
         class Model(torch.nn.Module):
             def forward(self, *args, **kwargs):
                 return op.op(*args, **kwargs)
@@ -35,6 +43,7 @@ class OpTest(common_utils.TestCase):
             inputs = (sample.input, *sample.args)
             # Provide the repr to subtest because tensors are not serializable in parallel test runs
             with self.subTest(
+                subtest="exported_program",
                 sample_num=i,
                 inputs=repr(
                     [
@@ -55,8 +64,28 @@ class OpTest(common_utils.TestCase):
                     equal_nan=True,
                 )
 
-    def test_op_can_be_decomposed_to_aten(self):
-        pass
+            with self.subTest(
+                subtest="decomp_to_aten",
+                sample_num=i,
+                inputs=repr(
+                    [
+                        f"Tensor<{inp.shape}, dtype={inp.dtype}>"
+                        if isinstance(inp, torch.Tensor)
+                        else inp
+                        for inp in inputs
+                    ]
+                ),
+                kwargs=repr(sample.kwargs),
+            ):
+                decomped = ep.run_decompositions(
+                    torch_onnx.ops.onnx_aten_decomp_table()
+                )
+                assert_no_onnx_ops(decomped.graph)
+                torch.testing.assert_close(
+                    decomped.module()(*inputs, **sample.kwargs),
+                    op.op(*inputs, **sample.kwargs),
+                    equal_nan=True,
+                )
 
     def test_op_can_be_exported_to_onnx(self):
         pass

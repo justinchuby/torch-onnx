@@ -7,6 +7,7 @@ import torch
 import torch.fx
 
 from . import _impl
+from ._impl import onnx_aten_decomp_table
 
 
 def Abs_13(X: torch.Tensor) -> torch.Tensor:

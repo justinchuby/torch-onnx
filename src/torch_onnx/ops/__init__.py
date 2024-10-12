@@ -15,21 +15,21 @@ def Abs_13(X: torch.Tensor) -> torch.Tensor:
     (Tensor<T>) where absolute value, y = abs(x), is applied to
     the tensor elementwise.
     """
-    raise NotImplementedError
+    return _impl.Abs_13(X)
 
 
 def Acos_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the arccosine (inverse of cosine) of the given input tensor, element-wise.
     """
-    raise NotImplementedError
+    return _impl.Acos_22(input)
 
 
 def Acosh_22(input: torch.Tensor) -> torch.Tensor:
     r"""
     Calculates the hyperbolic arccosine of the given input tensor element-wise.
     """
-    raise NotImplementedError
+    return _impl.Acos_22(input)
 
 
 def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
@@ -40,7 +40,7 @@ def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
 
     (Opset 14 change): Extend supported types to include uint8, int8, uint16, and int16.
     """
-    raise NotImplementedError
+    return _impl.Add_14(A, B)
 
 
 def AffineGrid_20(theta: torch.Tensor, size: torch.Tensor, *, align_corners: int = 0) -> torch.Tensor:
@@ -83,7 +83,7 @@ def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
 
     This operator supports **multidirectional (i.e., Numpy-style) broadcasting**; for more details please check [the doc](Broadcasting.md).
     """
-    raise NotImplementedError
+    return _impl.And_7(A, B)
 
 
 def ArgMax_13(data: torch.Tensor, *, axis: int = 0, keepdims: int = 1, select_last_index: int = 0) -> torch.Tensor:

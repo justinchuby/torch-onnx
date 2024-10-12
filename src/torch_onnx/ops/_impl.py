@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import Callable
+
 import typing
+from typing import Callable
 
 import torch
 import torch.fx
-
 
 _T = typing.TypeVar("_T", bound=Callable)
 
@@ -32,31 +32,36 @@ def Abs_13(X: torch.Tensor) -> torch.Tensor:
 
 
 def Acos_22(input: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.acos(input)
 
 
 def Acosh_22(input: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.acosh(input)
 
 
 def Add_14(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.add(A, B)
 
 
 def AffineGrid_20(
     theta: torch.Tensor, size: torch.Tensor, *, align_corners: int = 0
 ) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.nn.functional.affine_grid(
+        theta, size.numpy(force=True).tolist(), align_corners=bool(align_corners)
+    )
 
 
 def And_7(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
-    raise NotImplementedError
+    return torch.logical_and(A, B)
 
 
 def ArgMax_13(
     data: torch.Tensor, *, axis: int = 0, keepdims: int = 1, select_last_index: int = 0
 ) -> torch.Tensor:
-    raise NotImplementedError
+    result = torch.argmax(data, dim=axis, keepdim=bool(keepdims))
+    if select_last_index:
+        result = torch.flip(result, dims=[axis])
+    return result
 
 
 def ArgMin_13(

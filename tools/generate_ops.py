@@ -99,7 +99,7 @@ class OpSchema:
         return d
 
     @classmethod
-    def from_onnx_opschema(cls, schema: onnx.defs.OpSchema) -> "OpSchema":
+    def from_onnx_opschema(cls, schema: onnx.defs.OpSchema) -> OpSchema:
         return cls(
             support_level="COMMON"
             if schema.support_level == onnx.defs.OpSchema.SupportType.COMMON
@@ -309,8 +309,6 @@ def _build_signature(schema: OpSchema) -> str:
     )
 
 
-
-
 def _build_impl_scaffold(schema: OpSchema) -> str:
     inputs = [_format_input(input_) for input_ in schema.inputs]
     attributes = [
@@ -351,6 +349,7 @@ def _build_py(schemas: list[OpSchema]):
         + "from . import _impl\n\n\n"
         + "\n\n\n".join(signatures)
     )
+
 
 def _build_py_impl(schemas: list[OpSchema]):
     """Build a .py file."""

@@ -23,6 +23,14 @@ def assert_no_onnx_ops(graph: torch.fx.Graph) -> None:
             raise AssertionError(f"Found an ONNX op in the graph: {node}")
 
 
+def assert_all_onnx_ops(graph: torch.fx.Graph) -> None:
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if node.target._namespace != "onnx":
+            raise AssertionError(f"Found a non-ONNX op in the graph: {node}")
+
+
 def create_args_repr(inputs) -> str:
     return repr(
         [
@@ -63,6 +71,7 @@ class OpTest(common_utils.TestCase):
                 ep = torch.export.export(
                     Model(), args, kwargs=sample.kwargs, strict=False
                 )
+                assert_all_onnx_ops(ep.graph)
                 torch.testing.assert_close(
                     ep.module()(*args, **sample.kwargs),
                     expected,

@@ -52,9 +52,10 @@ class OpTest(common_utils.TestCase):
             )
         ):
             args = (sample.input, *sample.args)
+            expected = op.op(*args, **sample.kwargs)
             # Provide the repr to subtest because tensors are not serializable in parallel test runs
             with self.subTest(
-                subtest="exported_program",
+                subtest="torch_export",
                 sample_num=i,
                 args=create_args_repr(args),
                 kwargs=repr(sample.kwargs),
@@ -64,7 +65,7 @@ class OpTest(common_utils.TestCase):
                 )
                 torch.testing.assert_close(
                     ep.module()(*args, **sample.kwargs),
-                    op.op(*args, **sample.kwargs),
+                    expected,
                     equal_nan=True,
                 )
 
@@ -80,15 +81,24 @@ class OpTest(common_utils.TestCase):
                 assert_no_onnx_ops(decomped.graph)
                 torch.testing.assert_close(
                     decomped.module()(*args, **sample.kwargs),
-                    op.op(*args, **sample.kwargs),
+                    expected,
                     equal_nan=True,
                 )
 
-    def test_op_can_be_exported_to_onnx(self):
-        pass
-
-    def test_op_results_matches_onnx_runtime(self):
-        pass
+            with self.subTest(
+                subtest="onnx_export",
+                sample_num=i,
+                args=create_args_repr(args),
+                kwargs=repr(sample.kwargs),
+            ):
+                onnx_program = torch.onnx.export(
+                    Model(),
+                    args,
+                    kwargs=sample.kwargs,
+                    dynamo=True,
+                )
+                assert onnx_program is not None
+                torch_onnx.testing.assert_onnx_program(onnx_program)
 
 
 common_device_type.instantiate_device_type_tests(OpTest, globals(), only_for=["cpu"])

@@ -7,7 +7,7 @@ Experimental torch ONNX exporter. Compatible with torch>=2.1,<2.6.
 > [!WARNING]
 > This is an experimental project and is not designed for production use.
 > Use `torch.onnx.export(..., dynamo=True)` for these purposes.
-> The main logic from this project has been merged into PyTorch.
+> **The main logic from this project has been merged into PyTorch.**
 
 ## Installation
 

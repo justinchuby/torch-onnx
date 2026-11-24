@@ -11,6 +11,7 @@ import ast
 from pathlib import Path
 
 import onnx
+import onnx_ir as ir
 import torch
 import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
@@ -19,7 +20,88 @@ from torch.testing._internal import common_utils
 import torch_onnx
 
 
+def _custom_gelu(
+    op: torch_onnx.TranslationContext, value: ir.Value, approximate: str = "none"
+) -> ir.Value:
+    if approximate != "none":
+        raise ValueError("This custom Gelu is exact. Use approximate='none'.")
+    return op.builder.node(
+        "Gelu", [value], domain="com.microsoft", version=1, output_types=[value.type]
+    )[0]
+
+
+def _custom_inverse(op: torch_onnx.TranslationContext, value: ir.Value) -> ir.Value:
+    return op.builder.node(
+        "Inverse", [value], domain="com.microsoft", version=1, output_types=[value.type]
+    )[0]
+
+
 class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
+    def _check_custom_domain(self, model, args, opname):
+        for opset in [None, 18, 24]:
+            program = torch_onnx.export(model, args, opset_version=opset, verbose=False)
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            if opset is not None:
+                self.assertEqual(program.model.opset_imports[""], opset)
+            self.assertEqual(program.model.opset_imports["com.microsoft"], 1)
+            self.assertTrue(
+                any(
+                    node.op_type == opname and node.domain == "com.microsoft"
+                    for node in program.model.graph
+                )
+            )
+            torch_onnx.testing.assert_onnx_program(program, strategy=None)
+            with common_utils.TemporaryDirectoryName() as directory:
+                path = Path(directory) / "custom-domain.onnx"
+                program.save(path, external_data=False)
+                loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            torch_onnx.testing.assert_onnx_program(loaded, strategy=None)
+
+    def test_custom_opsets_gelu(self):
+        target = torch.ops.aten.gelu.default
+        torch_onnx.register_custom_translation(target)(_custom_gelu)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        self._check_custom_domain(
+            torch.nn.GELU(approximate="none").eval(), (torch.randn(3, 3),), "Gelu"
+        )
+
+    def test_register_aten_custom_op_symbolic(self):
+        target = torch.ops.aten.gelu.default
+        torch_onnx.register_custom_translation(target, _custom_gelu)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        self._check_custom_domain(
+            torch.nn.GELU(approximate="none").eval(), (torch.randn(3, 3),), "Gelu"
+        )
+
+    def test_custom_opsets_inverse(self):
+        class CustomInverse(torch.nn.Module):
+            def forward(self, x):
+                return torch.inverse(x) + x
+
+        target = torch.ops.aten.linalg_inv.default
+        torch_onnx.register_custom_translation(target, _custom_inverse)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        x = torch.randn(2, 3, 3)
+        x = x @ x.mT + torch.eye(3)
+        self._check_custom_domain(CustomInverse().eval(), (x,), "Inverse")
+
+    def test_bad_symbolic_registration(self):
+        def bad_cat(op):
+            return op.Identity(0)
+
+        class CatModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat((x, x, x), 0)
+
+        target = torch.ops.aten.cat.default
+        torch_onnx.register_custom_translation(target, bad_cat)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        with self.assertRaisesRegex(
+            torch_onnx.errors.ConversionError,
+            "Native translation.*bad_cat.*failed",
+        ):
+            torch_onnx.export(CatModel().eval(), (torch.randn(2, 3),), verbose=False)
+
     @staticmethod
     def _module_scope(node):
         return ast.literal_eval(node.metadata_props["pkg.torch.onnx.name_scopes"])[-2]

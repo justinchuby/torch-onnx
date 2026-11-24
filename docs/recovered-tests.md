@@ -10,13 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 601 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 40
-optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
-numerical results including shape/dtype; private JIT graphs and old symbolic
+regressions, 37 model methods, seven autograd forward-inlining methods and 44
+optimizer/utility methods were ported to the modern standalone exporter. Numerical
+cases export real models and compare values including shape/dtype; error-contract
+cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 131, 'inapplicable': 55, 'migrated': 689}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 127, 'inapplicable': 55, 'migrated': 693}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -60,6 +61,14 @@ bodies and changed values. Scripted `return list.append(...)` is spelled as
 append followed by return for Python modules: independent original scripted
 probes confirmed the list-return semantics, and direct matmul oracles check the
 pop/delete outputs. These recovered cases do not depend on scripting.
+
+Four utility cases now exercise public native registration instead of legacy
+symbolic hooks: decorator/direct GELU overrides, a batched inverse override,
+and an invalid translation signature. Custom-domain versions and numerical
+outputs are checked at explicit opsets 18/24 and the public default, including
+serialization and actual ONNX Runtime `com.microsoft` kernels. The inverse uses
+well-conditioned matrices of the original 2x3x3 size. Legacy spelling aliases
+and descriptor parsing are not restored; malformed native calls must fail.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -1129,9 +1138,9 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:1190::test_scope_of_nodes_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared Add owned by first layer and three distinct Mul owners, plus real runtime/save/reload |
 | `test_utility_funs.py:1250::test_aten_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1268::test_custom_op_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1308::test_custom_opsets_gelu` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1335::test_register_aten_custom_op_symbolic` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1354::test_custom_opsets_inverse` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1308::test_custom_opsets_gelu` | migrated | tests/recovered/test_export_utility_regressions.py; original exact GELU model/3x3 input with native decorator registration, com.microsoft::Gelu domain/version plus default/18/24 numerical and serialization checks; legacy spelling replaced by callable overload |
+| `test_utility_funs.py:1335::test_register_aten_custom_op_symbolic` | migrated | tests/recovered/test_export_utility_regressions.py; native direct aten.gelu overload registration overrides builtins at default/18/24, exact custom domain/version and actual runtime/serialization checked; obsolete symbolic API not reinstated |
+| `test_utility_funs.py:1354::test_custom_opsets_inverse` | migrated | tests/recovered/test_export_utility_regressions.py; original inverse-plus-input model and 2x3x3 shapes, conditioned matrices, native override/com.microsoft::Inverse version1 at default/18/24 with actual runtime and serialization checks |
 | `test_utility_funs.py:1383::test_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1402::test_prim_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1426::test_custom_layer_tuple` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
@@ -1149,4 +1158,4 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:1801::test_deduplicate_initializers_diff_devices` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1824::test_duplicated_output_node` | migrated | test_export_utility_regressions.py; five distinct requested output names, two independently valued inputs, original dimensions and additional dynamic batch |
 | `test_utility_funs.py:1875::test_deduplicate_ignore_upsample_scale` | migrated | test_export_utility_regressions.py; original two-upsample model and dimensions, numerical/save/reload checks; allows valid resize CSE while verifying constant scales/sizes |
-| `test_utility_funs.py:1901::test_bad_symbolic_registration` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1901::test_bad_symbolic_registration` | migrated | tests/recovered/test_export_utility_regressions.py; original cat model/input with malformed native translation, explicit conversion error identifies failing callback; obsolete parse_args descriptor mismatch replaced by current API's signature validation |

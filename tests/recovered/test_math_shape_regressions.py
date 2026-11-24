@@ -30,6 +30,38 @@ class _Norm(torch.nn.Module):
 
 
 class TestRecoveredMathShapes(RecoveredRuntimeHarness):
+    def test_celu(self):
+        self.run_test(torch.nn.CELU(alpha=1.0), torch.randn(2))
+
+    def test_celu_default(self):
+        self.run_test(torch.nn.CELU(), torch.randn(2))
+
+    def test_celu_alpha(self):
+        self.run_test(torch.nn.CELU(alpha=2.0), torch.randn(2))
+
+    def test_celu_cast(self):
+        self.run_test(torch.nn.CELU(), torch.randn(2, 5, 7, dtype=torch.float64))
+
+    def test_shape_constant_fold(self):
+        class ShapeModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = torch.nn.Buffer(torch.ones(5))
+
+            def forward(self, x):
+                shape = self.weight.shape[0]
+                return x + shape
+
+        program = self.run_test(ShapeModule(), torch.randn(2, 5), rtol=1e-3, atol=1e-5)
+        self.assertNotIn("Shape", {node.op_type for node in program.model.graph})
+
+    def test_logit(self):
+        class Logit(torch.nn.Module):
+            def forward(self, x):
+                return x.logit(1e-6)
+
+        self.run_test(Logit(), torch.randn(1, 3, 640, 640))
+
     def test_linalg_norm(self):
         x = torch.randn(2, 3, 5, 5)
         vector_orders = [None, 2, float("inf"), -float("inf"), -4, 1.5]

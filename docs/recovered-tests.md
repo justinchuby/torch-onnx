@@ -9,13 +9,13 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 411 original runtime test bodies/comments, four control-flow
-regressions and 25 model methods were ported to the modern standalone exporter. Each exports real models and compares
+retired frontend. 446 original runtime test bodies/comments, four control-flow
+regressions and 28 model methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 380, 'inapplicable': 55, 'migrated': 440}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 342, 'inapplicable': 55, 'migrated': 478}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -106,6 +106,24 @@ silently loosen every operator's tolerances. Inception additionally retains the
 source's explicit 1% unstable-element allowance. Other vision models retain their
 original elementwise tolerances.
 
+Thirty-five additional capture regressions retain the original arithmetic,
+dtype/device/rank queries, scalar broadcasting, factories, embeddings, casts,
+mutation and dynamic-shape computations, replacing ScriptModule/script/trace
+capture wrappers with ordinary Modules and the standalone exporter. Requested
+output names are checked, and the explicit embedding training-forward case
+keeps its requested model mode. Dynamic unbound-sequence length is expressed as
+the equivalent leading tensor dimension so torch.export does not specialize a
+Python tuple length; this is shape coverage, not a claim of variable-arity
+Python sequence capture. Runtime Tensor indexing into a heterogeneous Python
+list and dynamic-length output lists remain explicitly blocked by observed
+torch.export errors rather than replaced with fixed examples.
+
+Three more runtime-model methods cover the original three-layer Transformer
+encoder, unconverted quantization-ready MobileNetV3 and dynamic ShuffleNet.
+The latter captures at batch3 to avoid frontend zero/one specialization but
+still executes both original batches1/3 against the same graph. This does not
+claim converted quantized-model or CUDA coverage.
+
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
 | `test_autograd_funs.py:19::test_single_output` | blocked | Custom autograd symbolic test needs an explicit torch.export/native translation rewrite |
@@ -154,9 +172,9 @@ original elementwise tolerances.
 | `test_models_onnxruntime.py:252::test_mask_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models_onnxruntime.py:310::test_keypoint_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models_onnxruntime.py:349::test_roi_heads` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models_onnxruntime.py:400::test_transformer_encoder` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models_onnxruntime.py:416::test_mobilenet_v3` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models_onnxruntime.py:423::test_shufflenet_v2_dynamic_axes` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models_onnxruntime.py:400::test_transformer_encoder` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_transformer_encoder`; original three-layer 512-dimensional encoder, full checker/save/reload/runtime |
+| `test_models_onnxruntime.py:416::test_mobilenet_v3` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_mobilenet_v3`; original unconverted quantization-ready architecture, no downloaded weights |
+| `test_models_onnxruntime.py:423::test_shufflenet_v2_dynamic_axes` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_shufflenet_v2_dynamic_axes`; one dynamic graph executed at original batches1/3 |
 | `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
 | `test_models_quantized_onnxruntime.py:69::test_inception_v3` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
 | `test_models_quantized_onnxruntime.py:76::test_googlenet` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
@@ -208,7 +226,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:438::test_index_2d_sliceint` | migrated | `test_runtime_regressions.py::test_index_2d_sliceint`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:446::test_index_2d_neg_slice` | migrated | `test_runtime_regressions.py::test_index_2d_neg_slice`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:455::test_index_mask` | migrated | `test_runtime_regressions.py::test_index_mask`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:471::test_data` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:471::test_data` | migrated | `tests/recovered/test_capture_regressions.py::test_data`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:482::test_index_mask_nd` | migrated | `test_runtime_regressions.py::test_index_mask_nd`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:491::test_dict` | blocked | ExportedProgram rejects the recovered Tensor-key dictionary input TreeSpec, even when printed key values match |
 | `test_pytorch_onnx_onnxruntime.py:505::test_dict_str` | migrated | tests/recovered/test_additional_regressions.py::test_dict_str |
@@ -233,14 +251,14 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:878::test_tuple_of_optional_default_tensor_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:914::test_primitive_input_integer` | migrated | tests/recovered/test_additional_regressions.py::test_primitive_input_integer |
 | `test_pytorch_onnx_onnxruntime.py:924::test_primitive_input_floating` | migrated | tests/recovered/test_additional_regressions.py::test_primitive_input_floating |
-| `test_pytorch_onnx_onnxruntime.py:933::test_primitive_input_bool` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:947::test_cste_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:933::test_primitive_input_bool` | migrated | `tests/recovered/test_capture_regressions.py::test_primitive_input_bool`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:947::test_cste_script` | migrated | `tests/recovered/test_capture_regressions.py::test_cste_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:959::test_scalar_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_scalar_tensor |
-| `test_pytorch_onnx_onnxruntime.py:977::test_tensor` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:977::test_tensor` | migrated | `tests/recovered/test_capture_regressions.py::test_tensor`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1027::test_hardtanh` | migrated | `test_runtime_regressions.py::test_hardtanh`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:1032::test_hardtanh_script_with_default_values` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1032::test_hardtanh_script_with_default_values` | migrated | `tests/recovered/test_capture_regressions.py::test_hardtanh_script_with_default_values`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1041::test_hardswish` | migrated | `test_runtime_regressions.py::test_hardswish`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:1053::test_hardswish_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1053::test_hardswish_script` | migrated | `tests/recovered/test_capture_regressions.py::test_hardswish_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1062::test_hardsigmoid` | migrated | `test_runtime_regressions.py::test_hardsigmoid`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1074::test_tanhshrink` | migrated | `test_runtime_regressions.py::test_tanhshrink`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1081::test_hardshrink` | migrated | `test_runtime_regressions.py::test_hardshrink`; original numerical body, modern standalone harness |
@@ -248,9 +266,9 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:1099::test_softshrink` | migrated | `test_runtime_regressions.py::test_softshrink`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1112::test_softshrink_dtype` | migrated | tests/recovered/test_additional_regressions.py::test_softshrink_dtype |
 | `test_pytorch_onnx_onnxruntime.py:1116::test_clamp` | migrated | `test_runtime_regressions.py::test_clamp`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:1139::test_clamp_dyn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1139::test_clamp_dyn` | migrated | `tests/recovered/test_capture_regressions.py::test_clamp_dyn`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1186::test_full_trace` | migrated | tests/recovered/test_additional_regressions.py::test_full_trace |
-| `test_pytorch_onnx_onnxruntime.py:1195::test_full_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1195::test_full_script` | migrated | `tests/recovered/test_capture_regressions.py::test_full_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1204::test_fuse_addmm` | migrated | tests/recovered/test_additional_regressions.py::test_fuse_addmm |
 | `test_pytorch_onnx_onnxruntime.py:1212::test_maxpool` | migrated | `test_runtime_regressions.py::test_maxpool`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1217::test_conv` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -291,22 +309,22 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:1609::test_avgpool_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_avgpool_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:1625::test_avgpool_3d_ceil` | migrated | tests/recovered/test_additional_regressions.py::test_avgpool_3d_ceil |
 | `test_pytorch_onnx_onnxruntime.py:1638::test_avgpool_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:1665::test_floating_point` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:1694::test_floating_point_infer_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:1725::test_prim_min` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1665::test_floating_point` | migrated | `tests/recovered/test_capture_regressions.py::test_floating_point`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:1694::test_floating_point_infer_dtype` | migrated | `tests/recovered/test_capture_regressions.py::test_floating_point_infer_dtype`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:1725::test_prim_min` | migrated | `tests/recovered/test_capture_regressions.py::test_prim_min`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1752::test_arithmetic` | migrated | `test_runtime_regressions.py::test_arithmetic`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1764::test_arithmetic_prim_long` | migrated | tests/recovered/test_additional_regressions.py::test_arithmetic_prim_long |
 | `test_pytorch_onnx_onnxruntime.py:1787::test_arithmetic_prim_float` | migrated | tests/recovered/test_additional_regressions.py::test_arithmetic_prim_float |
 | `test_pytorch_onnx_onnxruntime.py:1810::test_arithmetic_prim_bool` | migrated | tests/recovered/test_additional_regressions.py::test_arithmetic_prim_bool |
 | `test_pytorch_onnx_onnxruntime.py:1840::test_tuple_with_none_outputs` | migrated | tests/recovered/test_additional_regressions.py::test_tuple_with_none_outputs |
-| `test_pytorch_onnx_onnxruntime.py:1850::test_arithmetic_infer_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1850::test_arithmetic_infer_dtype` | migrated | `tests/recovered/test_capture_regressions.py::test_arithmetic_infer_dtype`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1865::test_floor_div` | migrated | `test_runtime_regressions.py::test_floor_div`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:1888::test_floor_div_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1888::test_floor_div_script` | migrated | `tests/recovered/test_capture_regressions.py::test_floor_div_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:1900::test_floordiv` | migrated | `test_runtime_regressions.py::test_floordiv`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1911::test_div` | migrated | tests/recovered/test_additional_regressions.py::test_div |
-| `test_pytorch_onnx_onnxruntime.py:1925::test_div_promotion_trace` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:1941::test_div_promotion_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:1972::test_div_rounding_mode` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1925::test_div_promotion_trace` | migrated | `tests/recovered/test_capture_regressions.py::test_div_promotion_trace`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:1941::test_div_promotion_script` | migrated | `tests/recovered/test_capture_regressions.py::test_div_promotion_script`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:1972::test_div_rounding_mode` | migrated | `tests/recovered/test_capture_regressions.py::test_div_rounding_mode`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:2012::test_slice_trace` | migrated | tests/recovered/test_additional_regressions.py::test_slice_trace |
 | `test_pytorch_onnx_onnxruntime.py:2020::test_slice_neg` | migrated | `test_runtime_regressions.py::test_slice_neg`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:2028::test_slice_neg_large` | migrated | `test_runtime_regressions.py::test_slice_neg_large`; original numerical body, modern standalone harness |
@@ -414,7 +432,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:3889::test_topk` | migrated | `test_runtime_regressions.py::test_topk`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3898::test_topk_int32_k` | migrated | tests/recovered/test_additional_regressions.py::test_topk_int32_k |
 | `test_pytorch_onnx_onnxruntime.py:3908::test_topk_smallest_unsorted` | migrated | tests/recovered/test_additional_regressions.py::test_topk_smallest_unsorted |
-| `test_pytorch_onnx_onnxruntime.py:3922::test_topk_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:3922::test_topk_script` | migrated | `tests/recovered/test_capture_regressions.py::test_topk_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:3934::test_auto_grad` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:3977::test_clip_int` | migrated | `test_runtime_regressions.py::test_clip_int`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3984::test_relu_int` | migrated | `test_runtime_regressions.py::test_relu_int`; original numerical body, modern standalone harness |
@@ -523,13 +541,13 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:5734::test_flatten` | migrated | `test_runtime_regressions.py::test_flatten`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5753::test_flatten2d` | migrated | `test_runtime_regressions.py::test_flatten2d`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5761::test_flatten2d_neg` | migrated | `test_runtime_regressions.py::test_flatten2d_neg`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:5774::test_flatten_dynamic_axes` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:5793::test_getitem` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:5774::test_flatten_dynamic_axes` | migrated | `tests/recovered/test_capture_regressions.py::test_flatten_dynamic_axes`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5793::test_getitem` | blocked | torch.export cannot extract the runtime Tensor index for a Python list of differently shaped tensors (GuardOnDataDependentSymNode); no specialized-index substitute is counted as restored |
 | `test_pytorch_onnx_onnxruntime.py:5811::test_item` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:5823::test_nonzero` | migrated | tests/recovered/test_additional_regressions.py::test_nonzero |
 | `test_pytorch_onnx_onnxruntime.py:5831::test_unbind` | migrated | `test_runtime_regressions.py::test_unbind`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:5857::test_len` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:5873::test_len_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:5857::test_len` | migrated | `tests/recovered/test_capture_regressions.py::test_len`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5873::test_len_list` | migrated | `tests/recovered/test_capture_regressions.py::test_len_list`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:5883::test_unbind_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:5901::test_split` | migrated | `test_runtime_regressions.py::test_split`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5924::test_split_script` | migrated | tests/recovered/test_additional_regressions.py::test_split_script |
@@ -548,7 +566,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:6151::test_loop_with_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6174::test_loop_transpose` | migrated | tests/recovered/test_control_flow_regressions.py::test_loop_transpose; torch.while_loop/torch.cond adaptation |
 | `test_pytorch_onnx_onnxruntime.py:6187::test_loop_multi_dim` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6201::test_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6201::test_list` | migrated | `tests/recovered/test_capture_regressions.py::test_list`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6222::test_list_append` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6236::test_list_append_nested` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6251::test_list_append_nested_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -559,9 +577,9 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:6334::test_list_del_nested` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6351::test_list_set` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6366::test_list_idx_sum` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6381::test_tensor_factories` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6393::test_tensor_factories_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6408::test_tensor_like_factories_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6381::test_tensor_factories` | migrated | `tests/recovered/test_capture_regressions.py::test_tensor_factories`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:6393::test_tensor_factories_script` | migrated | `tests/recovered/test_capture_regressions.py::test_tensor_factories_script`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:6408::test_tensor_like_factories_script` | migrated | `tests/recovered/test_capture_regressions.py::test_tensor_like_factories_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6433::test_tensor_split` | migrated | tests/recovered/test_additional_regressions.py::test_tensor_split |
 | `test_pytorch_onnx_onnxruntime.py:6451::test_tensor_split_scalar` | migrated | tests/recovered/test_additional_regressions.py::test_tensor_split_scalar |
 | `test_pytorch_onnx_onnxruntime.py:6459::test_tensor_split_dynamic_axes` | migrated | tests/recovered/test_additional_regressions.py::test_tensor_split_dynamic_axes |
@@ -579,7 +597,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:6742::test_new_full` | migrated | `test_runtime_regressions.py::test_new_full`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:6754::test_inplace_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6771::test_inplace_fill` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_fill |
-| `test_pytorch_onnx_onnxruntime.py:6780::test_inplace_arithmetic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6780::test_inplace_arithmetic` | migrated | `tests/recovered/test_capture_regressions.py::test_inplace_arithmetic`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6792::test_inplace_arithmetic_half` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_arithmetic_half |
 | `test_pytorch_onnx_onnxruntime.py:6807::test_inplace_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6828::test_inplace_with_loop_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -590,7 +608,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:6992::test_sort_ascending` | migrated | `test_runtime_regressions.py::test_sort_ascending`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7004::test_argsort` | migrated | `test_runtime_regressions.py::test_argsort`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7013::test_masked_fill` | migrated | `test_runtime_regressions.py::test_masked_fill`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:7030::test_masked_fill_inplace` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:7030::test_masked_fill_inplace` | migrated | `tests/recovered/test_capture_regressions.py::test_masked_fill_inplace`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:7051::test_masked_scatter` | migrated | `test_runtime_regressions.py::test_masked_scatter`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7060::test_masked_select` | migrated | `test_runtime_regressions.py::test_masked_select`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7069::test_index_put_to_masked_fill` | migrated | tests/recovered/test_additional_regressions.py::test_index_put_to_masked_fill |
@@ -650,9 +668,9 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:7868::test_baddbmm_dynamic` | migrated | tests/recovered/test_additional_regressions.py::test_baddbmm_dynamic |
 | `test_pytorch_onnx_onnxruntime.py:7881::test_numel` | migrated | tests/recovered/test_additional_regressions.py::test_numel |
 | `test_pytorch_onnx_onnxruntime.py:7897::test_numel_empty` | migrated | tests/recovered/test_additional_regressions.py::test_numel_empty |
-| `test_pytorch_onnx_onnxruntime.py:7913::test_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:7923::test_dtype_eq` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:7935::test_cast_to` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:7913::test_dtype` | migrated | `tests/recovered/test_capture_regressions.py::test_dtype`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:7923::test_dtype_eq` | migrated | `tests/recovered/test_capture_regressions.py::test_dtype_eq`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:7935::test_cast_to` | migrated | `tests/recovered/test_capture_regressions.py::test_cast_to`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:7946::test_cast_to_bool` | migrated | tests/recovered/test_additional_regressions.py::test_cast_to_bool |
 | `test_pytorch_onnx_onnxruntime.py:7958::test_cast_type_as_with_bfloat16` | migrated | tests/recovered/test_additional_regressions.py::test_cast_type_as_with_bfloat16 |
 | `test_pytorch_onnx_onnxruntime.py:7970::test_type_as` | migrated | tests/recovered/test_additional_regressions.py::test_type_as |
@@ -700,10 +718,10 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:8741::test_linalg_vector_norm` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:8760::test_linalg_matrix_norm` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:8781::test_linalg_cross` | migrated | tests/recovered/test_additional_regressions.py::test_linalg_cross |
-| `test_pytorch_onnx_onnxruntime.py:8793::test_trace_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8793::test_trace_script` | migrated | `tests/recovered/test_capture_regressions.py::test_trace_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:8807::test_logdet` | migrated | tests/recovered/test_additional_regressions.py::test_logdet |
-| `test_pytorch_onnx_onnxruntime.py:8815::test_dim` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:8829::test_dim_1` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8815::test_dim` | migrated | `tests/recovered/test_capture_regressions.py::test_dim`; modern Module capture, schema/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:8829::test_dim_1` | blocked | torch.export specializes the Python output-list length to batch size2 and rejects the requested dynamic batch dimension; no static-only replacement is counted as restored |
 | `test_pytorch_onnx_onnxruntime.py:8845::test_outer` | migrated | tests/recovered/test_additional_regressions.py::test_outer |
 | `test_pytorch_onnx_onnxruntime.py:8867::test_movedim` | migrated | tests/recovered/test_additional_regressions.py::test_movedim |
 | `test_pytorch_onnx_onnxruntime.py:8884::test_moveaxis` | migrated | tests/recovered/test_additional_regressions.py::test_moveaxis |
@@ -715,7 +733,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:8970::test_cdist_euclid_dist` | migrated | tests/recovered/test_additional_regressions.py::test_cdist_euclid_dist |
 | `test_pytorch_onnx_onnxruntime.py:8980::test_cdist_euclid_dist_if_necessary` | migrated | tests/recovered/test_additional_regressions.py::test_cdist_euclid_dist_if_necessary |
 | `test_pytorch_onnx_onnxruntime.py:8992::test_cdist_no_euclid_dist` | migrated | tests/recovered/test_additional_regressions.py::test_cdist_no_euclid_dist |
-| `test_pytorch_onnx_onnxruntime.py:9004::test_cdist_dynamic_axes_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:9004::test_cdist_dynamic_axes_script` | migrated | `tests/recovered/test_capture_regressions.py::test_cdist_dynamic_axes_script`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:9021::test_crossentropyloss` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:9137::test_MSELoss` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:9157::test_kldiv_loss` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -761,7 +779,7 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:10064::test_if_view` | migrated | tests/recovered/test_control_flow_regressions.py::test_if_view; torch.while_loop/torch.cond adaptation |
 | `test_pytorch_onnx_onnxruntime.py:10087::test_split_tensor_scalar` | migrated | tests/recovered/test_additional_regressions.py::test_split_tensor_scalar |
 | `test_pytorch_onnx_onnxruntime.py:10095::test_split_tensor_multi` | migrated | tests/recovered/test_additional_regressions.py::test_split_tensor_multi |
-| `test_pytorch_onnx_onnxruntime.py:10108::test_embedding` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10108::test_embedding` | migrated | `tests/recovered/test_capture_regressions.py::test_embedding`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:10136::test_embedding_module` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10171::test_embedding_renorm` | migrated | tests/recovered/test_additional_regressions.py::test_embedding_renorm |
 | `test_pytorch_onnx_onnxruntime.py:10525::test_fake_quantize_per_tensor` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -879,14 +897,14 @@ original elementwise tolerances.
 | `test_pytorch_onnx_onnxruntime.py:13431::test_qat_maxpool2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13456::test_qat_avg_pool2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13469::test_qat_upsample_nearest2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13481::test_0d_tensor_broadcast` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13481::test_0d_tensor_broadcast` | migrated | `tests/recovered/test_capture_regressions.py::test_0d_tensor_broadcast`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13493::test_convolution_allow_tf32` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_3d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | migrated | tests/recovered/test_parameterized_regressions.py::test_grid_sample; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | migrated | `tests/recovered/test_capture_regressions.py::test_device_eq`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13846::test_lerp` | migrated | tests/recovered/test_additional_regressions.py::test_lerp |
 | `test_pytorch_onnx_onnxruntime.py:13863::test_print_tensor_within_torch_nn_module` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13894::test_sage_conv` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |

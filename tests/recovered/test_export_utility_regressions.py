@@ -324,6 +324,82 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                 for target in targets:
                     torch_onnx.unregister_custom_translation(target)
 
+    def test_custom_op_fallthrough(self):
+        # Test custom op. Explicit native registration replaces JIT fallthrough.
+        class FooModel(torch.nn.Module):
+            def forward(self, input, other):
+                return torch.ops.custom_namespace.custom_op(input, other)
+
+        def custom_add(x, y):
+            return x + y
+
+        left, right = (
+            ir.Value(name=name, type=ir.TensorType(ir.DataType.FLOAT))
+            for name in ("input", "other")
+        )
+        body = ir.Graph(
+            [left, right], [], nodes=[], name="custom_add", opset_imports={"": 20}
+        )
+        builder = torch_onnx.GraphBuilder(body, opset=20)
+        body.outputs.append(builder.call("Add", left, right)[0])
+        function = ir.Function(
+            "custom_namespace", "custom_op", "", graph=body, attributes=[]
+        )
+
+        def translation(
+            op: torch_onnx.TranslationContext, x: ir.Value, y: ir.Value
+        ) -> ir.Value:
+            return op.builder.call_function(function, x, y, version=1)[0]
+
+        with torch.library._scoped_library("custom_namespace", "FRAGMENT") as library:
+            torch.library.define(
+                "custom_namespace::custom_op",
+                "(Tensor input, Tensor other) -> Tensor",
+                lib=library,
+            )
+            torch.library.impl(
+                "custom_namespace::custom_op",
+                "CompositeExplicitAutograd",
+                lib=library,
+            )(custom_add)
+            torch.library.register_fake("custom_namespace::custom_op", lib=library)(
+                custom_add
+            )
+            target = torch.ops.custom_namespace.custom_op.default
+            torch_onnx.register_custom_translation(target, translation)
+            try:
+                inputs = (torch.randn(2, 3, 4), torch.randn(2, 3, 4))
+                dimensions = {
+                    axis: torch.export.Dim(name)
+                    for axis, name in enumerate(("batch", "height", "width"))
+                }
+                program = torch_onnx.export(
+                    FooModel().eval(),
+                    inputs,
+                    dynamic_shapes=(dimensions, dimensions),
+                    input_names=["x", "y"],
+                    optimize=False,
+                    verbose=False,
+                )
+                node = program.model_proto.graph.node[0]
+                self.assertEqual(
+                    (node.domain, node.op_type), ("custom_namespace", "custom_op")
+                )
+                examples = [
+                    inputs,
+                    (torch.randn(3, 2, 5), torch.randn(3, 2, 5)),
+                ]
+                self.assert_program_roundtrip(
+                    program, examples=examples, reference=custom_add
+                )
+                program.optimize()
+                program.release()
+                for example in examples:
+                    self.assert_program_outputs(program, example, reference=custom_add)
+                program.release()
+            finally:
+                torch_onnx.unregister_custom_translation(target)
+
     def test_custom_layer_tuple(self):
         class CustomFunction(torch.autograd.Function):
             @staticmethod

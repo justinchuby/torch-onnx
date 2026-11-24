@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 672 original runtime test bodies/comments, four control-flow
-regressions, 43 model methods, seven autograd forward-inlining methods and 53
+regressions, 43 model methods, seven autograd forward-inlining methods and 54
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 39, 'inapplicable': 57, 'migrated': 779}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 33, 'inapplicable': 62, 'migrated': 780}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -28,6 +28,15 @@ flattens Python list outputs, so an explicitly registered native translation
 preserves SequenceConstruct inside a real export rather than requiring the
 retired scripted-list output convention. Independent list-output oracles cover
 original and changed widths, serialization and subsequent optimization.
+
+The custom-operator fallthrough fixture retains the original
+`custom_namespace::custom_op` addition and dynamic three-axis inputs. Explicit
+native registration and an executable ONNX local function replace the retired
+C++/JIT fallthrough harness; the original domain/operator assertion is retained,
+with independent addition oracles before/after save/reload and optimization.
+Raw `aten::`/`prim::PythonOp` fallthrough-node assertions and frozen ScriptModule
+input compatibility are separately inapplicable to this frontend, not counted
+as restored by these modern custom-operator tests.
 
 The GraphSAGE regression uses the original PyG `SAGEConv(2, 512, normalize=True)`
 forward and six-node, two-neighbor self-loop fixture, plus four/eight-node
@@ -1441,7 +1450,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:677::test_error_on_data_parallel` | migrated | test_export_utility_regressions.py; modern CPU wrapper now succeeds; corrected originally invalid reflection-pad input height; no GPU claim |
 | `test_utility_funs.py:692::test_sequence_dim` | migrated | `test_export_utility_regressions.py::test_sequence_dim`; original static/dynamic merged sequence-element dtype/rank/dimensions checked through native SequenceConstruct in a real export; modern list outputs flatten, with independent original/changed-width numerical and save/reload/optimize contracts |
 | `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |
-| `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | inapplicable | Specifically exports a torch.jit.freeze ScriptModule with its training attribute removed; restoring ScriptModule-input compatibility would resurrect the retired frontend, not exercise this eager/ExportedProgram exporter |
 | `test_utility_funs.py:801::test_local_function` | migrated | `test_function_selection_regressions.py`; complete original three-LayerNorm/two-CELU/eval-dropout model, all four selectors, exact function sets/domains/three attributes/call counts, actual RefAttr alpha/epsilon, dynamic rows and independent save/reload/normal-optimizer numerical checks |
 | `test_utility_funs.py:921::test_local_function_overloads` | migrated | Original optional-argument model, three source-named functions and one/two-output signatures mapped to explicit native registration; original/negative inputs, structure/save-reload and ordinary optimized fresh-session execution in test_export_utility_regressions.py; no automatic module extraction claim |
 | `test_utility_funs.py:963::test_local_function_infer_scopes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_infer_scopes; original4x5 shape concatenation/view, explicit M function with owned constants, symbolic rows/columns, changed7x3 input, save/reload and normal optimization; not automatic module extraction |
@@ -1450,16 +1459,16 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:1082::test_node_scope` | migrated | test_export_utility_regressions.py; original GELU/LayerNorm/nested ReLU model; exact native module-scope set |
 | `test_utility_funs.py:1142::test_scope_of_constants_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared native initializer and valid source-module ownership after CSE, rather than three JIT Constants |
 | `test_utility_funs.py:1190::test_scope_of_nodes_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared Add owned by first layer and three distinct Mul owners, plus real runtime/save/reload |
-| `test_utility_funs.py:1250::test_aten_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1268::test_custom_op_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1250::test_aten_fallthrough` | inapplicable | Sole assertion is a raw aten::erfc JIT node under ONNX_FALLTHROUGH; that export mode/raw-ATen graph contract is not part of this native ONNX frontend (erfc itself has a builtin translation) |
+| `test_utility_funs.py:1268::test_custom_op_fallthrough` | migrated | `test_export_utility_regressions.py::test_custom_op_fallthrough`; original custom_namespace::custom_op addition and domain/operator assertion, modern explicit registration/local function instead of C++ JIT fallthrough, independent numerical dynamic-shape and save/reload/optimize contracts |
 | `test_utility_funs.py:1308::test_custom_opsets_gelu` | migrated | tests/recovered/test_export_utility_regressions.py; original exact GELU model/3x3 input with native decorator registration, com.microsoft::Gelu domain/version plus default/18/24 numerical and serialization checks; legacy spelling replaced by callable overload |
 | `test_utility_funs.py:1335::test_register_aten_custom_op_symbolic` | migrated | tests/recovered/test_export_utility_regressions.py; native direct aten.gelu overload registration overrides builtins at default/18/24, exact custom domain/version and actual runtime/serialization checked; obsolete symbolic API not reinstated |
 | `test_utility_funs.py:1354::test_custom_opsets_inverse` | migrated | tests/recovered/test_export_utility_regressions.py; original inverse-plus-input model and 2x3x3 shapes, conditioned matrices, native override/com.microsoft::Inverse version1 at default/18/24 with actual runtime and serialization checks |
-| `test_utility_funs.py:1383::test_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1383::test_onnx_fallthrough` | inapplicable | Asserts that digamma remains an aten::digamma node in a JIT ONNX_FALLTHROUGH graph rather than executing an ONNX model; raw-ATen fallthrough is a retired frontend contract |
 | `test_utility_funs.py:1402::test_prim_fallthrough` | inapplicable | Original explicitly restricted to opset<=10 because SequenceConstruct replaces prim::ListConstruct from11; retired JIT fallthrough contract is outside supported>=18, not a restored regression |
 | `test_utility_funs.py:1426::test_custom_layer_tuple` | migrated | test_export_utility_regressions.py public native registration preserves CustomNamespace::Custom with two outputs/local function under optimize=False; original singleton and changed shapes execute against original autograd forward before/after serialization |
-| `test_utility_funs.py:1449::test_autograd_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1480::test_autograd_module_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1449::test_autograd_onnx_fallthrough` | inapplicable | Sole assertion preserves prim::PythonOp under ONNX_FALLTHROUGH instead of inlining the clamp forward body; native export intentionally inlines autograd inference bodies and has no PythonOp fallback mode |
+| `test_utility_funs.py:1480::test_autograd_module_name` | inapplicable | Requires two prim::PythonOp JIT nodes with distinct module string attributes under ONNX_FALLTHROUGH; this removed PythonOp metadata contract is not native ONNX local-function naming |
 | `test_utility_funs.py:1515::test_unused_initializers` | migrated | test_export_utility_regressions.py; unused linear weights absent, exactly two live transpose-convolution parameters remain; actual runtime/save/reload |
 | `test_utility_funs.py:1542::test_scripting_param` | migrated | test_export_utility_regressions.py; original training Conv/BN model via native capture; named parameters survive unoptimized save as graph inputs; actual runtime |
 | `test_utility_funs.py:1578::test_fuse_conv_bn` | migrated | test_export_utility_regressions.py; original model becomes exactly one Conv; actual runtime/save/reload |

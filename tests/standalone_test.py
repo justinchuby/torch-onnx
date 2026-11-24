@@ -64,3 +64,13 @@ def test_torch_export_state_is_visible_without_patching():
     assert [node.op_type for node in program.model.graph] == ["Sin"]
     assert not torch_onnx.is_in_onnx_export()
     assert not torch.onnx.is_in_onnx_export()
+
+
+def test_program_is_exact_pytorch_type():
+    program = torch_onnx.export(torch.nn.Linear(3, 2).eval(), (torch.randn(4, 3),))
+    assert torch_onnx.ONNXProgram is torch.onnx.ONNXProgram
+    assert type(program) is torch.onnx.ONNXProgram
+    assert torch.onnx.ONNXProgram.__module__ == "torch.onnx"
+    torch_onnx.testing.assert_onnx_program(program)
+    program.release()
+    torch_onnx.testing.assert_onnx_program(program)

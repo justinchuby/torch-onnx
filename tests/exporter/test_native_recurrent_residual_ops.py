@@ -563,13 +563,13 @@ _SOURCE_TARGETS = (
     (residual.aten_bincount, False, (torch.ops.aten.bincount.default,)),
     (residual.aten_complex, False, (torch.ops.aten.complex.default,)),
     (residual.aten_constant_pad_nd, False, (torch.ops.aten.constant_pad_nd.default,)),
+    (residual.aten_cross, False, (torch.ops.aten.linalg_cross.default,)),
+    (residual.aten_cross_default_dim, False, (torch.ops.aten.cross.default,)),
+    (residual.aten_cdist_forward, False, (torch.ops.aten._cdist_forward.default,)),
     (
-        residual.aten_cross,
+        residual.aten_rrelu_with_noise_functional,
         False,
-        (
-            torch.ops.aten.cross.default,
-            torch.ops.aten.linalg_cross.default,
-        ),
+        (torch.ops.aten.rrelu_with_noise_functional.default,),
     ),
     (residual.aten_dropout, False, (torch.ops.aten.dropout.default,)),
     (residual.aten_equal, False, (torch.ops.aten.equal.default,)),

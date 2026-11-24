@@ -1102,7 +1102,10 @@ class TestNativeCutover(common_utils.TestCase):
         with (
             native_only(),
             mock.patch.object(
-                onnxscript_apis, "optimize", wraps=onnxscript_apis.optimize
+                torch.onnx.ONNXProgram,
+                "optimize",
+                autospec=True,
+                side_effect=torch.onnx.ONNXProgram.optimize,
             ) as optimizer,
         ):
             program = torch_onnx.export(

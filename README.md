@@ -47,6 +47,16 @@ translations, optimization, verification, profiling and reports. `ONNXProgram`,
 `torch_onnx.ops` exposes PyTorch's symbolic operators without duplicate dispatcher
 registration.
 
+Exports return the exact `torch.onnx.ONNXProgram` class, also exposed as
+`torch_onnx.ONNXProgram`, for downstream compatibility. See the
+[opset 24–29 support matrix](docs/opsets.md) for native newer operators,
+development-schema requirements, and runtime limits, and the
+[recovered regression inventory](docs/recovered-tests.md) for historical coverage.
+
+Python scalar arguments remain in ONNX input order for compatibility with the
+upstream program's callable interface. Their values and control flow are still
+specialized by `torch.export`; retaining an input does not make it dynamic.
+
 ## Native translations
 
 Native implementations receive an explicit `TranslationContext` and create

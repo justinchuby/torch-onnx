@@ -852,7 +852,8 @@ class TestInputObserver(common_utils.TestCase):
         torch.testing.assert_close(model(**kwargs), ep.module()(**kwargs))
         epo = torch_onnx.export(model, (), kwargs=kwargs, dynamic_shapes=shapes)
         proto = epo.model_proto
-        self.assertEqual(["x", "y"], [i.name for i in proto.graph.input])
+        self.assertEqual(["x", "y", "option"], [i.name for i in proto.graph.input])
+        torch_onnx.testing.assert_onnx_program(epo, args=(), kwargs=kwargs)
 
     def test_io_mixed_args_kwargs_as_dict_2(self):
         class Model(torch.nn.Module):

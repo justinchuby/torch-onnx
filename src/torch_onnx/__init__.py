@@ -52,7 +52,6 @@ for _public_class in (
     ExportableModule,
     GraphBuilder,
     InputObserver,
-    ONNXProgram,
     OnnxExporterError,
     TranslationContext,
 ):

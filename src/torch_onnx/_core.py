@@ -285,7 +285,9 @@ def _set_shape_type(
         )
         # aten::sym_size output is an int, not a tensor, which stands
         # for the size of one dim. We treat it as a scalar.
-        value.dtype = ir.DataType.INT64
+        value.dtype = (
+            ir.DataType.BOOL if isinstance(meta_val, bool) else ir.DataType.INT64
+        )
         value.shape = ir.Shape([])
     elif isinstance(meta_val, bool | torch.SymBool):
         value.meta["torch.onnx.original_type"] = bool
@@ -875,6 +877,7 @@ def _handle_output_node(
     node: torch.fx.Node,
     node_name_to_values: dict[str, ir.Value | Sequence[ir.Value]],
     graph_like: ir.Graph | ir.Function,
+    builder: _ir_builder.GraphBuilder,
 ) -> None:
     """Handle an output node by adding the output to the graph's outputs.
 
@@ -895,6 +898,16 @@ def _handle_output_node(
                 "Output node %s has None output. The output is ignored in the exported graph. Please ensure the graph output order is expected",
                 node.name,
             )
+            continue
+        if isinstance(output, bool | int | float):
+            dtype = (
+                ir.DataType.BOOL
+                if isinstance(output, bool)
+                else ir.DataType.INT64
+                if isinstance(output, int)
+                else ir.DataType.FLOAT
+            )
+            graph_like.outputs.append(builder.constant(output, dtype=dtype))
             continue
         output_value_name = output.name  # type: ignore[union-attr]
         if not isinstance(output_value_name, str):
@@ -1027,6 +1040,7 @@ def _translate_fx_graph(
                     node,
                     node_name_to_values,
                     graph_like=graph_like,
+                    builder=native_builder,
                 )
         except Exception as e:
             raise _errors.ConversionError(
@@ -1353,7 +1367,10 @@ def _exported_program_to_onnx_program(
 
     for spec in itertools.chain(user_inputs, non_user_inputs):
         # Put the user inputs first and then the parameters/buffers
-        if isinstance(spec.arg, graph_signature.ConstantArgument):
+        if (
+            isinstance(spec.arg, graph_signature.ConstantArgument)
+            and spec.arg.value is None
+        ):
             logger.debug("Skipping constant argument %s", spec.arg)
             continue
         value_name = spec.arg.name
@@ -1391,9 +1408,34 @@ def _exported_program_to_onnx_program(
         for spec in exported_program.graph_signature.output_specs
         if spec.kind != graph_signature.OutputKind.USER_OUTPUT
     ]
+    used_names = {value.name for value in _ir_passes._all_values(model)}
+    used_names.update(spec.target for spec in non_user_inputs)
     for spec in itertools.chain(user_outputs, non_user_outputs):
         if isinstance(spec.arg, graph_signature.ConstantArgument):
-            logger.warning("Skipping constant argument %s", spec.arg)
+            if isinstance(spec.arg.value, bool | int | float):
+                literal = spec.arg.value
+                dtype = (
+                    ir.DataType.BOOL
+                    if isinstance(literal, bool)
+                    else ir.DataType.INT64
+                    if isinstance(literal, int)
+                    else ir.DataType.FLOAT
+                )
+                tensor = ir.tensor(literal, dtype=dtype)
+                name = f"constant_output_{len(model.graph.outputs)}"
+                while name in used_names:
+                    name += "_1"
+                used_names.add(name)
+                value = ir.Value(
+                    name=name,
+                    type=ir.TensorType(dtype),
+                    shape=ir.Shape([]),
+                    const_value=tensor,
+                )
+                model.graph.initializers[name] = value
+                model.graph.outputs.append(value)
+            else:
+                logger.warning("Skipping constant argument %s", spec.arg)
             continue
         value_name = spec.arg.name
         output_kind = spec.kind

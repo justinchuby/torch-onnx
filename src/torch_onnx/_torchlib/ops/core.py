@@ -476,11 +476,19 @@ def aten_bitwise_right_shift(
     # Compute the arithmetic shifted value assuming the sign bit was set
     negative_shifted = op.BitwiseOr(shifted, mask)
     # Choose the shifted value based on the sign bit
-    return op.Where(
-        negative,
-        op.Cast(negative_shifted, to=signed_dtype),
-        op.Cast(shifted, to=signed_dtype),
-    )
+    negative_result = op.Cast(negative_shifted, to=signed_dtype)
+    positive_result = op.Cast(shifted, to=signed_dtype)
+    if signed_dtype == ir.DataType.INT16:
+        # Sign-extend before selection: ORT has no int16 Where kernel.
+        return op.Cast(
+            op.Where(
+                negative,
+                op.Cast(negative_result, to=ir.DataType.INT32),
+                op.Cast(positive_result, to=ir.DataType.INT32),
+            ),
+            to=signed_dtype,
+        )
+    return op.Where(negative, negative_result, positive_result)
 
 
 @onnx_impl((aten.bitwise_right_shift.Tensor_Scalar, aten.__rshift__.Scalar))
@@ -1473,8 +1481,22 @@ def aten_neg_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_pow(op: TranslationContext, self: ir.Value, exponent: ir.Value) -> ir.Value:
     """pow(Tensor self, Tensor exponent) -> Tensor"""
     self, exponent = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    # TODO(justinchuby): Add type promotion
-    return op.Pow(self, exponent)
+    return _pow_with_integer_cast(op, self, exponent)
+
+
+def _pow_with_integer_cast(
+    op: TranslationContext, base: ir.Value, exponent: ir.Value
+) -> ir.Value:
+    dtype = common_ops.require_dtype(op, base)
+    if dtype.is_integer() and dtype not in (ir.DataType.INT32, ir.DataType.INT64):
+        return op.Cast(
+            op.Pow(
+                op.Cast(base, to=ir.DataType.INT64),
+                op.Cast(exponent, to=ir.DataType.INT64),
+            ),
+            to=dtype,
+        )
+    return op.Pow(base, exponent)
 
 
 @onnx_impl(aten.pow.Tensor_Scalar)
@@ -1483,7 +1505,7 @@ def aten_pow_tensor_scalar(
 ) -> ir.Value:
     """pow(Tensor self, Scalar exponent) -> Tensor"""
     self, exponent_tensor = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    return op.Pow(self, exponent_tensor)
+    return _pow_with_integer_cast(op, self, exponent_tensor)
 
 
 @onnx_impl(aten.pow.Scalar)
@@ -1492,7 +1514,7 @@ def aten_pow_scalar(
 ) -> ir.Value:
     """pow.Scalar(Scalar self, Tensor exponent) -> Tensor"""
     self_tensor, exponent = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    return op.Pow(self_tensor, exponent)
+    return _pow_with_integer_cast(op, self_tensor, exponent)
 
 
 @onnx_impl(aten.rad2deg.default)
@@ -1589,6 +1611,8 @@ def operator_mod(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.
 def aten_round(op: TranslationContext, self: ir.Value) -> ir.Value:
     """round(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self).is_integer():
+        return op.Identity(self)
     return op.Round(self)
 
 
@@ -2142,10 +2166,10 @@ def aten_expand(
     """expand(Tensor(a) self, SymInt[] size, *, bool implicit=False) -> Tensor(a)"""
     # NOTE: PyTorch supports `not changing dim` by -1, but ONNX supports `not changing dim` by 1.
     # To support -1 dim, we need to convert -1 to 1.
-    # Even though in theory a dynamic dim can still be -1, in practice it is very unlikely
-    # and isn't expected to appear from correct usages of SymInt.
     size = [1 if isinstance(s, int) and s == -1 else s for s in size]
-    return op.Expand(self, common_ops.merge_dims(op, size))
+    shape = common_ops.merge_dims(op, size)
+    shape = op.Where(op.Equal(shape, -1), 1, shape)
+    return op.Expand(self, shape)
 
 
 @onnx_impl(aten.expand_as.default)
@@ -2154,6 +2178,45 @@ def aten_expand_as(op: TranslationContext, self: ir.Value, other: ir.Value) -> i
 
     shape = op.Shape(other)
     result = op.Expand(self, shape)
+    return result
+
+
+@onnx_impl(aten.cumprod.default, opset_introduced=26)
+def aten_cumprod_opset26(
+    op: TranslationContext, self: ir.Value, dim: int, dtype: int = -1
+) -> ir.Value:
+    """cumprod(Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor"""
+    compute_dtype, result_dtype = _promotion.reduction_dtypes(
+        op, self, dtype, integral_to_long=True
+    )
+    value = op.Cast(self, to=compute_dtype) if self.dtype != compute_dtype else self
+    if len(common_ops.require_shape(op, self)) == 0:
+        return _promotion.reduction_result(op, value, result_dtype)
+    return _promotion.reduction_result(op, op.CumProd(value, dim), result_dtype)
+
+
+@onnx_impl(aten.log1p.default, opset_introduced=29)
+def aten_log1p_opset29(op: TranslationContext, self: ir.Value) -> ir.Value:
+    """Use the precision-preserving operator instead of log(1 + x)."""
+    (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
+    return op.Log1p(self)
+
+
+@onnx_impl(aten.view.dtype, opset_introduced=26)
+def aten_view_dtype_opset26(
+    op: TranslationContext, self: ir.Value, dtype: int
+) -> ir.Value:
+    """Reinterpret equal-width elements without a numerical conversion."""
+    target = ir.DataType(dtype)
+    source = common_ops.require_dtype(op, self)
+    if source.bitwidth != target.bitwidth:
+        raise ValueError(
+            f"view(dtype) cannot reinterpret {source} as {target} with ONNX BitCast: "
+            "element bit widths differ. Reshape/repack the elements explicitly "
+            "before export, or use an equal-width dtype."
+        )
+    result = op.BitCast(self, to=target)
+    result.shape = self.shape
     return result
 
 
@@ -2908,8 +2971,21 @@ def aten_scatter_add(
 ) -> ir.Value:
     """scatter_add(Tensor self, int dim, Tensor index, Tensor src) -> Tensor"""
 
-    # if rank(self) == 0 will lead ORT failed, skipped
+    # PyTorch consumes only src's prefix bounded by index; ONNX requires equal shapes.
+    rank = len(common_ops.require_shape(op, index))
+    src = op.Slice(src, [0] * rank, op.Shape(index))
     return op.ScatterElements(self, index, src, axis=dim, reduction="add")
+
+
+@onnx_impl(aten.masked_select.default)
+def aten_masked_select(
+    op: TranslationContext, self: ir.Value, mask: ir.Value
+) -> ir.Value:
+    """masked_select(Tensor self, Tensor mask) -> Tensor"""
+    broadcast_shape = op.Shape(op.Where(mask, self, self))
+    values = op.Reshape(op.Expand(self, broadcast_shape), [-1])
+    condition = op.Reshape(op.Expand(mask, broadcast_shape), [-1])
+    return op.Compress(values, condition, axis=0)
 
 
 @onnx_impl(aten.scatter_reduce.two)
@@ -2952,6 +3028,14 @@ def aten_scatter_reduce(
         src = op.Reshape(src, neg_1)
 
     src = op.Slice(src, [0] * index_rank, op.Shape(index))
+    if (
+        reduce == "mean"
+        and include_self
+        and builder.opset >= 29
+        and dtype.is_floating_point()
+    ):
+        result = op.ScatterElements(self, index, src, axis=dim, reduction="mean")
+        return op.Squeeze(result) if self_is_scalar else result
     if reduce == "mean":
         original = self
         zeros = op.ConstantOfShape(
@@ -3374,7 +3458,7 @@ def aten_t_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_topk(
     op: TranslationContext,
     self: ir.Value,
-    k: int,
+    k: int | ir.Value,
     dim: int = -1,
     largest: bool = True,
     sorted: bool = True,
@@ -3382,7 +3466,12 @@ def aten_topk(
     """topk(Tensor self, int k, int dim=-1, bool largest=True, bool sorted=True) -> (Tensor values, Tensor indices)"""
 
     # We do not handle scalar inputs for topk
-    values, indices = op.TopK(self, [k], axis=dim, largest=largest, sorted=sorted)
+    k_value = (
+        op.Reshape(op.Cast(k, to=ir.DataType.INT64), [1])
+        if isinstance(k, ir.Value)
+        else [k]
+    )
+    values, indices = op.TopK(self, k_value, axis=dim, largest=largest, sorted=sorted)
     return values, indices
 
 

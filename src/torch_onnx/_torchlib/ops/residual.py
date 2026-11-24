@@ -246,7 +246,7 @@ def aten_constant_pad_nd(
     return op.Pad(self, common_ops.merge_dims(op, paddings), constant_value)
 
 
-@onnx_impl((aten.cross.default, aten.linalg_cross.default))
+@onnx_impl(aten.linalg_cross.default)
 def aten_cross(
     op: TranslationContext, self: ir.Value, other: ir.Value, dim: int = -1
 ) -> ir.Value:
@@ -261,6 +261,56 @@ def aten_cross(
     c3 = op.Sub(op.Mul(a1, b2), op.Mul(a2, b1))
 
     return op.Concat(c1, c2, c3, axis=dim)
+
+
+@onnx_impl(aten.cross.default)
+def aten_cross_default_dim(
+    op: TranslationContext, self: ir.Value, other: ir.Value, dim: int | None = None
+) -> ir.Value:
+    if dim is None:
+        shape = common_ops.require_shape(op, self)
+        dim = next((i for i, size in enumerate(shape) if size == 3), None)
+        if dim is None:
+            raise ValueError("cross needs a dimension of size 3; pass dim explicitly.")
+    return aten_cross(op, self, other, dim)
+
+
+@onnx_impl(aten._cdist_forward.default)
+def aten_cdist_forward(
+    op: TranslationContext,
+    x1: ir.Value,
+    x2: ir.Value,
+    p: float,
+    compute_mode: int | None = None,
+) -> ir.Value:
+    difference = op.Abs(op.Sub(op.Unsqueeze(x1, [-2]), op.Unsqueeze(x2, [-3])))
+    if p == 0:
+        return op.ReduceSum(
+            op.CastLike(op.Not(op.Equal(difference, 0)), difference),
+            [-1],
+            keepdims=False,
+        )
+    if p == float("inf"):
+        maxima = op.ReduceMax(difference, [-1], keepdims=False)
+        return op.Max(maxima, op.CastLike(0, maxima))
+    return op.Pow(op.ReduceSum(op.Pow(difference, p), [-1], keepdims=False), 1.0 / p)
+
+
+@onnx_impl(aten.rrelu_with_noise_functional.default)
+def aten_rrelu_with_noise_functional(
+    op: TranslationContext,
+    self: ir.Value,
+    noise: ir.Value,
+    lower: float = 0.125,
+    upper: float = 1.0 / 3.0,
+    training: bool = False,
+    generator: torch.Generator | None = None,
+) -> tuple[ir.Value, ir.Value]:
+    if training:
+        raise NotImplementedError(
+            "RReLU training needs stochastic noise; export model.eval() for inference."
+        )
+    return op.LeakyRelu(self, alpha=(lower + upper) / 2), op.Identity(noise)
 
 
 @onnx_impl(aten.dropout.default)
@@ -675,6 +725,16 @@ def aten_logcumsumexp(op: TranslationContext, self: ir.Value, dim: int) -> ir.Va
             self_max,
         )
     return result
+
+
+@onnx_impl(aten.logcumsumexp.default, opset_introduced=29)
+def aten_logcumsumexp_opset29(
+    op: TranslationContext, self: ir.Value, dim: int
+) -> ir.Value:
+    """Use stable per-prefix accumulation, including infinities and empty axes."""
+    if len(common_ops.require_shape(op, self)) == 0:
+        return op.Identity(self)
+    return op.LogCumSumExp(self, axis=dim)
 
 
 @onnx_impl(aten.logdet.default)

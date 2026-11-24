@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 658 original runtime test bodies/comments, four control-flow
+retired frontend. 661 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 47
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 65, 'inapplicable': 57, 'migrated': 753}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 62, 'inapplicable': 57, 'migrated': 756}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -45,6 +45,26 @@ counts 0/1/2/3, changed spatial/batch sizes, serialization and static-input
 elimination are checked against the unchanged source body. This explicit adapter
 does not fix torch.export's narrower 0/1 capture guards or automatically capture
 the original Python branches.
+
+The original mask-pasting and heatmap/keypoint fixtures now exercise native ONNX
+GridSample rather than only comparing eager execution with JIT tracing. Batched
+bilinear mask pasting retains padding, expanded integer boxes and image-boundary
+clipping; a shape-only canvas tensor carries changing output dimensions.
+ROI-dependent bicubic sampling and masked ArgMax retain variable resize sizes,
+not just the original one-pixel ROIs. Both original 10/20-instance fixtures,
+one/two keypoint channels, 26/21-pixel heatmaps and 100/200-pixel canvases remain.
+Additional nonsquare images, clipped boxes and nondegenerate ROIs compare against
+untouched TorchVision before and after serialization. The explicit vectorized
+adapters do not claim automatic capture of TorchVision's data-dependent Python
+loops. Capturing nonsingleton keypoint channels leaves ExportedProgram guards
+narrower than the separately checked ONNX single-keypoint execution.
+
+The original in-place state arithmetic keeps its singleton initialization,
+indexed updates and division by the zero first-loop index (including infinity
+results). An explicit functional If/Loop adapter retains a real Div in the loop
+body, rather than substituting the final constant result. Original 1x5x30x30,
+changed batch/channel/spatial sizes, empty batches and static input elimination
+execute against the unchanged source body before and after serialization.
 
 Fixed-arity list mutation and prefix-sum indexing retain the original 12x4
 fixtures and independent imperative oracles. Tensorized list storage replaces
@@ -536,8 +556,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:220::test_fuse_conv_in_block` | migrated | Original Conv1d/BatchNorm1d and imperative oracle preserved with real torch.cond/ONNX If; both predicates and changed batch/sequence sizes execute on one graph, retaining unequal output lengths and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:257::test_conv_tbc` | migrated | test_convolution_shape_regressions.py; fixed missing native conv_tbc translation; separate direct tests cover negative/zero/positive padding |
 | `test_pytorch_onnx_onnxruntime.py:293::test_reshape_constant_fold` | migrated | test_convolution_shape_regressions.py; original buffered weight reshape/broadcast/runtime/save/reload |
-| `test_pytorch_onnx_onnxruntime.py:348::test_paste_mask_in_image` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:383::test_heatmaps_to_keypoints` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:348::test_paste_mask_in_image` | migrated | Original 10/20 masks, 26x26 maps, expanded boxes and100/200 canvases; dynamic batched bilinear GridSample adapter, extra nonsquare/clipped cases and untouched TorchVision oracle before/after serialization in test_detection_postprocessing_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:383::test_heatmaps_to_keypoints` | migrated | Original10x1x26x26 and20x2x21x21 fixtures plus nondegenerate ROI-dependent resize sizes; bicubic GridSample/masked ArgMax, dynamic counts/channels/spatial sizes and live/reloaded untouched TorchVision oracle in test_detection_postprocessing_regressions.py; narrower EP capture guards disclosed |
 | `test_pytorch_onnx_onnxruntime.py:409::test_word_language_model_RNN_TANH` | migrated | test_language_model_regressions.py; original five-layer fixture, runtime/save/reload and alternate tokens/nonzero hidden |
 | `test_pytorch_onnx_onnxruntime.py:412::test_word_language_model_RNN_RELU` | migrated | test_language_model_regressions.py; original five-layer fixture, runtime/save/reload and alternate tokens/nonzero hidden |
 | `test_pytorch_onnx_onnxruntime.py:416::test_word_language_model_LSTM` | migrated | test_language_model_regressions.py; original five-layer tuple-hidden fixture; runtime/save/reload and nonzero alternate hidden tuple |
@@ -1147,7 +1167,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11838::test_list_pop_in_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original pop/reappend loops with scripted append-return semantics preserved as explicit Python return, changed inputs and independent final-matmul oracle, serialization/runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:11858::test_list_del_in_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original delete/reappend loops with scripted append-return semantics preserved as explicit Python return, changed inputs and independent first-matmul oracle, serialization/runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:11878::test_list_unpack` | migrated | tests/recovered/test_list_mutation_regressions.py; original three-element matmul-list unpack and two outputs, changed inputs, serialization/runtime checks; unused original calculations retained with private variable names |
-| `test_pytorch_onnx_onnxruntime.py:11894::test_index_put_inplace_ops` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11894::test_index_put_inplace_ops` | migrated | Original indexed arithmetic and divide-by-zero/infinity behavior; explicit native If/Loop with Div body, original30x30 singleton/changed shapes/empty batches/static input elimination and live/reloaded original-body oracle in test_branch_alias_regressions.py; no constant-result shortcut |
 | `test_pytorch_onnx_onnxruntime.py:11942::test_input_mask_model` | migrated | `tests/recovered/test_runtime_regressions.py::test_input_mask_model`; both original boolean-index mutation models and fixtures, including unequal 1/3 nonzero counts, full ONNX checks and serialization; native index_put broadcasting repaired |
 | `test_pytorch_onnx_onnxruntime.py:11998::test_unsafe_chunk` | migrated | tests/recovered/test_additional_regressions.py::test_unsafe_chunk |
 | `test_pytorch_onnx_onnxruntime.py:12008::test_symbolic_shape_inference` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference |

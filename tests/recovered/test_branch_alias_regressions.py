@@ -744,6 +744,101 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
                         list(candidate(random_data, adapted_state)), list(expected)
                     )
 
+    def test_index_put_inplace_ops(self):
+        def check_init(input_data: Tensor, hidden_size: int) -> Tensor:
+            batch_size = input_data.size(0)
+            spatial_size_0 = input_data.size(2)
+            spatial_size_1 = input_data.size(3)
+            # generate empty prev_state, if None is provided
+            state_size = (2, batch_size, hidden_size, spatial_size_0, spatial_size_1)
+            state = torch.zeros(state_size, device=input_data.device)
+            if input_data.size(0) == 1:
+                state[1] += (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 2
+                )
+                state[1] /= (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 3
+                )
+            for i in range(input_data.size(0)):
+                state[1] += torch.ones(
+                    batch_size, hidden_size, spatial_size_0, spatial_size_1
+                )
+                state[1] /= (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * i
+                )
+            return state
+
+        class Example(torch.nn.Module):
+            def forward(self, input_data):
+                return check_init(input_data, 10)
+
+        class FunctionalExample(torch.nn.Module):
+            def forward(self, data):
+                state = torch.zeros(
+                    (2, data.shape[0], 10, data.shape[2], data.shape[3]),
+                    device=data.device,
+                )
+
+                def initial(value):
+                    result = value.clone()
+                    result[1] += torch.ones_like(result[1]) * 2
+                    result[1] /= torch.ones_like(result[1]) * 3
+                    return result
+
+                count = torch.scalar_tensor(data.shape[0], dtype=torch.int64)
+                state = torch.cond(
+                    count == 1, initial, lambda value: value.clone(), (state,)
+                )
+
+                def condition(index, value):
+                    return index < count
+
+                def body(index, value):
+                    result = value.clone()
+                    result[1] += torch.ones_like(result[1])
+                    result[1] /= torch.ones_like(result[1]) * index
+                    return index + 1, result
+
+                _, state = torch.while_loop(condition, body, (torch.tensor(0), state))
+                return state
+
+        data = torch.rand(3, 5, 4, 5)
+        program = self.run_test(
+            FunctionalExample(),
+            data,
+            dynamic_shapes=(
+                {
+                    0: torch.export.Dim("state_batch", min=2),
+                    1: torch.export.Dim("data_channels", min=2),
+                    2: torch.export.Dim("state_height", min=2),
+                    3: torch.export.Dim("state_width", min=2),
+                },
+            ),
+        )
+        self.assertIn("If", {node.op_type for node in program.model.graph})
+        loop = next(
+            node for node in program.model_proto.graph.node if node.op_type == "Loop"
+        )
+        loop_body = next(attr.g for attr in loop.attribute if attr.name == "body")
+        self.assertIn("Div", {node.op_type for node in loop_body.node})
+        original_data = torch.rand(1, 5, 30, 30)
+        self.run_test(Example(), original_data, remained_onnx_input_idx=[])
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "inplace-state-loop.onnx"
+            program.save(path, external_data=False)
+            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            for candidate in (program, reloaded):
+                for values in (
+                    data,
+                    original_data,
+                    torch.rand(2, 7, 9, 11),
+                    torch.empty(0, 5, 4, 5),
+                ):
+                    self.assertEqual(list(candidate(values)), [Example()(values)])
+
     def test_index_put_if_3(self):
         def check_init(
             input_data: Tensor, hidden_size: int, prev_state: Tensor

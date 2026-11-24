@@ -313,6 +313,10 @@ def _load_pretrained_model(name, weights):
     [
         ("resnet18", quantization.ResNet18_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
         ("resnet50", quantization.ResNet50_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
+        (
+            "resnext101_32x8d",
+            quantization.ResNeXt101_32X8D_QuantizedWeights.IMAGENET1K_FBGEMM_V1,
+        ),
         ("googlenet", quantization.GoogLeNet_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
         (
             "inception_v3",

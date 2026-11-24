@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 675 original runtime test bodies/comments, four control-flow
-regressions, 43 model methods, seven autograd forward-inlining methods and 54
+regressions, 44 model methods, seven autograd forward-inlining methods and 54
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 30, 'inapplicable': 62, 'migrated': 783}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 29, 'inapplicable': 62, 'migrated': 784}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -80,10 +80,17 @@ rounding. Both original and horizontally flipped images compare against the
 independent, unchanged quantized network, and use the shared standalone
 export/check/save/reload harness. Linux uses FBGEMM; Windows packs the same
 checkpoint with oneDNN and the same observer configuration. This does not claim
-automatic QTensor module capture or restored coverage for the remaining
-pretrained quantized ResNeXt101 model. Its V1 probe already
-disagrees before ONNX export (source top-one 834 versus Q/DQ adapter 652);
-changing the top-one contract or substituting newer V2 weights is not accepted.
+automatic QTensor module capture.
+
+The original pretrained ResNeXt101 V1 fixture is also restored with its unchanged
+photo/top-one oracle, flipped input and save/reload. Pointwise convolutions now
+accumulate integer-storage products exactly before float32 requantization;
+dequantizing before accumulation introduced rounding differences that changed
+the original top-one result. The adapter uses native MatMul for these pointwise
+products and retains native Conv for other convolutions. No tolerance relaxation,
+backend substitution on Linux or newer V2-weight substitution is used. Windows
+oneDNN execution is verified; current-head Linux FBGEMM verification remains a
+landing requirement.
 
 The original pretrained ShuffleNetV2 x0.5 fixture retains its V1 checkpoint and
 the same independent photo/flipped-photo top-one and serialization contracts.
@@ -681,7 +688,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | migrated | `tests/recovered/test_pretrained_quantized_model_regressions.py::test_pretrained_quantized_model[shufflenet_v2_x0_5]`; original V1 checkpoint/photo/top-one oracle, explicit quantized concatenation/mean rounding, native channel shuffle and flipped-image save/reload; source skip removed |
 | `test_models_quantized_onnxruntime.py:89::test_resnet18` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights/image/preprocessing/top-one oracle, explicit native Q/DQ whole-network adaptation, flipped input and shared serialization/runtime harness |
 | `test_models_quantized_onnxruntime.py:93::test_resnet50` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights (not newer DEFAULT/V2), source image/top-one oracle, native Q/DQ residual/average-pool contracts and shared serialization/runtime harness |
-| `test_models_quantized_onnxruntime.py:97::test_resnext101_32x8d` | blocked | Original pretrained V1/image probe on oneDNN disagrees before ONNX export: unchanged quantized oracle predicts 834, explicit Q/DQ adapter predicts 652; no relaxed top-one contract or V2-weight substitution |
+| `test_models_quantized_onnxruntime.py:97::test_resnext101_32x8d` | migrated | test_pretrained_quantized_model_regressions.py; original V1 checkpoint/photo/top-one and flipped-image oracle, exact pointwise integer accumulation before requantization, actual-wheel export/native MatMul+Conv and shared serialization; Windows oneDNN verified, Linux FBGEMM verification required before landing |
 | `test_onnx_opset.py:95::test_opset_fallback` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |
 | `test_onnx_opset.py:105::test_topk` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |
 | `test_onnx_opset.py:144::test_maxpool` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |
@@ -1498,7 +1505,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:1684::test_onnx_node_naming` | migrated | test_export_utility_regressions.py; original four-linear model has nonempty unique native names and four correct module owners; requested output name/save/reload |
 | `test_utility_funs.py:1794::test_deduplicate_initializers` | migrated | test_export_utility_regressions.py; original shared layers/parameters; raw parameter identity in train/eval and value dedup only after explicit eval optimization |
 | `test_utility_funs.py:1797::test_deduplicate_initializers_torchscript` | migrated | test_export_utility_regressions.py; original fixture via precaptured ExportedProgram instead of retired ScriptModule; train/eval identity and optimized eval dedup |
-| `test_utility_funs.py:1801::test_deduplicate_initializers_diff_devices` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1801::test_deduplicate_initializers_diff_devices` | blocked | Modern mixed CPU/CUDA FakeTensor capture aborts this CPU-only Windows Torch2.15 subprocess, including inference-only capture; requires a CUDA-capable validation build/host for the original cross-device initializer-dedup contract, not replaced by ordinary CPU-only dedup |
 | `test_utility_funs.py:1824::test_duplicated_output_node` | migrated | test_export_utility_regressions.py; five distinct requested output names, two independently valued inputs, original dimensions and additional dynamic batch |
 | `test_utility_funs.py:1875::test_deduplicate_ignore_upsample_scale` | migrated | test_export_utility_regressions.py; original two-upsample model and dimensions, numerical/save/reload checks; allows valid resize CSE while verifying constant scales/sizes |
 | `test_utility_funs.py:1901::test_bad_symbolic_registration` | migrated | tests/recovered/test_export_utility_regressions.py; original cat model/input with malformed native translation, explicit conversion error identifies failing callback; obsolete parse_args descriptor mismatch replaced by current API's signature validation |

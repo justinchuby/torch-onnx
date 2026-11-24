@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 __all__ = ["assert_onnx_program"]
 
 from typing import TYPE_CHECKING, Any, Literal
@@ -64,7 +66,13 @@ def assert_onnx_program(
     if kwargs is None:
         kwargs = {}
     torch_module = exported_program.module()
-    torch_outputs, _ = _pytree.tree_flatten(torch_module(*args, **kwargs))
+    memo: dict[int, object] = {}
+    reference_args, reference_kwargs = _pytree.tree_map(
+        lambda value: copy.deepcopy(value, memo), (args, kwargs)
+    )
+    torch_outputs, _ = _pytree.tree_flatten(
+        torch_module(*reference_args, **reference_kwargs)
+    )
     # ONNX outputs are always real, so we need to convert torch complex outputs to real representations
     torch_outputs_adapted = []
     for output in torch_outputs:

@@ -752,6 +752,40 @@ def aten_max_pool2d(
     )
 
 
+def _static_ceil_pool_padding(
+    op: TranslationContext,
+    value: ir.Value,
+    kernel: Sequence[int],
+    stride: Sequence[int],
+    pads: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+) -> tuple[Sequence[int], bool]:
+    if not ceil_mode:
+        return pads, ceil_mode
+    sizes = common_ops.require_shape(op, value)[-len(kernel) :]
+    if not all(isinstance(size, int) for size in sizes):
+        return pads, ceil_mode
+    adjusted = list(pads)
+    for axis, size in enumerate(sizes):
+        if not isinstance(size, int):
+            raise AssertionError("Expected static pooling dimension")
+        step, left = stride[axis], pads[axis]
+        effective = dilation[axis] * (kernel[axis] - 1) + 1
+        count = (
+            size + left + pads[axis + len(kernel)] - effective + step - 1
+        ) // step + 1
+        if (count - 1) * step >= size + left:
+            count -= 1
+        right = max(0, (count - 1) * step + effective - size - left)
+        if right >= kernel[axis]:
+            return pads, ceil_mode
+        adjusted[axis + len(kernel)] = right
+    # Explicit floor-mode padding avoids ONNX ceil shape inference counting a
+    # final window that starts entirely in the right padding.
+    return adjusted, False
+
+
 def _aten_max_pool_onnx(
     op: TranslationContext,
     self: ir.Value,
@@ -762,6 +796,9 @@ def _aten_max_pool_onnx(
     ceil_mode: bool,
     unbatched_rank: int,
 ) -> ir.Value:
+    pads, ceil_mode = _static_ceil_pool_padding(
+        op, self, kernel_shape, strides, pads, dilations, ceil_mode
+    )
     self_rank_is_unbatched_rank = (
         len(common_ops.require_shape(op, self)) == unbatched_rank
     )
@@ -893,6 +930,9 @@ def _aten_max_pool_with_indices_onnx(
     n_dims_axes: Sequence[int],
 ) -> tuple[ir.Value, ir.Value]:
     builder = op.builder
+    padding, ceil_mode = _static_ceil_pool_padding(
+        op, self, kernel_size, stride, padding, dilation, ceil_mode
+    )
     self_rank_is_unbatched_rank = (
         len(common_ops.require_shape(op, self)) == unbatched_rank
     )

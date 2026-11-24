@@ -1473,8 +1473,22 @@ def aten_neg_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_pow(op: TranslationContext, self: ir.Value, exponent: ir.Value) -> ir.Value:
     """pow(Tensor self, Tensor exponent) -> Tensor"""
     self, exponent = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    # TODO(justinchuby): Add type promotion
-    return op.Pow(self, exponent)
+    return _pow_with_integer_cast(op, self, exponent)
+
+
+def _pow_with_integer_cast(
+    op: TranslationContext, base: ir.Value, exponent: ir.Value
+) -> ir.Value:
+    dtype = common_ops.require_dtype(op, base)
+    if dtype.is_integer() and dtype not in (ir.DataType.INT32, ir.DataType.INT64):
+        return op.Cast(
+            op.Pow(
+                op.Cast(base, to=ir.DataType.INT64),
+                op.Cast(exponent, to=ir.DataType.INT64),
+            ),
+            to=dtype,
+        )
+    return op.Pow(base, exponent)
 
 
 @onnx_impl(aten.pow.Tensor_Scalar)
@@ -1483,7 +1497,7 @@ def aten_pow_tensor_scalar(
 ) -> ir.Value:
     """pow(Tensor self, Scalar exponent) -> Tensor"""
     self, exponent_tensor = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    return op.Pow(self, exponent_tensor)
+    return _pow_with_integer_cast(op, self, exponent_tensor)
 
 
 @onnx_impl(aten.pow.Scalar)
@@ -1492,7 +1506,7 @@ def aten_pow_scalar(
 ) -> ir.Value:
     """pow.Scalar(Scalar self, Tensor exponent) -> Tensor"""
     self_tensor, exponent = _promotion.promote(op, self, exponent, kind="BOOL_TO_LONG")
-    return op.Pow(self_tensor, exponent)
+    return _pow_with_integer_cast(op, self_tensor, exponent)
 
 
 @onnx_impl(aten.rad2deg.default)
@@ -1589,6 +1603,8 @@ def operator_mod(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.
 def aten_round(op: TranslationContext, self: ir.Value) -> ir.Value:
     """round(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self).is_integer():
+        return op.Identity(self)
     return op.Round(self)
 
 
@@ -3434,7 +3450,7 @@ def aten_t_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_topk(
     op: TranslationContext,
     self: ir.Value,
-    k: int,
+    k: int | ir.Value,
     dim: int = -1,
     largest: bool = True,
     sorted: bool = True,
@@ -3442,7 +3458,12 @@ def aten_topk(
     """topk(Tensor self, int k, int dim=-1, bool largest=True, bool sorted=True) -> (Tensor values, Tensor indices)"""
 
     # We do not handle scalar inputs for topk
-    values, indices = op.TopK(self, [k], axis=dim, largest=largest, sorted=sorted)
+    k_value = (
+        op.Reshape(op.Cast(k, to=ir.DataType.INT64), [1])
+        if isinstance(k, ir.Value)
+        else [k]
+    )
+    values, indices = op.TopK(self, k_value, axis=dim, largest=largest, sorted=sorted)
     return values, indices
 
 

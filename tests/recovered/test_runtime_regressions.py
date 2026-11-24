@@ -48,30 +48,43 @@ def test_masked_select_broadcast_and_empty(dtype, empty):
     torch_onnx.testing.assert_onnx_program(program)
 
 
-class TestRecoveredRuntime(common_utils.TestCase):
+class RecoveredRuntimeHarness(common_utils.TestCase):
+    @torch.no_grad()
     def run_test(
         self,
         model,
         input_args=None,
+        input_kwargs=None,
         *,
         rtol=1e-3,
         atol=1e-7,
         additional_test_inputs=None,
         input_names=None,
         dynamic_axes=None,
+        dynamic_shapes=None,
         remained_onnx_input_idx=None,
     ):
         args = input_args if isinstance(input_args, tuple) else (input_args,)
+        # A trailing dictionary is legacy kwargs syntax unless followed by {}.
+        export_args = (
+            (*args, {})
+            if args and isinstance(args[-1], dict) and input_kwargs is None
+            else args
+        )
         program = torch_onnx.export(
             model.eval(),
-            args,
+            export_args,
             optimize=True,
             verbose=False,
+            kwargs={} if input_kwargs is None else input_kwargs,
             input_names=input_names,
             dynamic_axes=dynamic_axes,
+            dynamic_shapes=dynamic_shapes,
         )
         onnx.checker.check_model(program.model_proto, full_check=True)
-        torch_onnx.testing.assert_onnx_program(program, rtol=rtol, atol=atol)
+        torch_onnx.testing.assert_onnx_program(
+            program, strategy=None, rtol=rtol, atol=atol
+        )
         if remained_onnx_input_idx is not None:
             # Modern export preserves the call signature, even for constant outputs.
             self.assertEqual(
@@ -94,10 +107,13 @@ class TestRecoveredRuntime(common_utils.TestCase):
                     program,
                     args=other_args,
                     kwargs={},
+                    strategy=None,
                     rtol=rtol,
                     atol=atol,
                 )
 
+
+class TestRecoveredRuntime(RecoveredRuntimeHarness):
     def test_index_1d(self):
         class MyModel(torch.nn.Module):
             def forward(self, input):

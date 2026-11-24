@@ -231,6 +231,14 @@ def aten_einsum(
     """einsum(str equation, Tensor[] tensors, *, int[]? path=None) -> Tensor"""
 
     # Unpack the explicit tensor list into ONNX's variadic inputs.
+    if common_ops.require_dtype(op, tensors[0]) == ir.DataType.BOOL:
+        return op.Cast(
+            op.Einsum(
+                *(op.Cast(tensor, to=ir.DataType.INT64) for tensor in tensors),
+                equation=equation,
+            ),
+            to=ir.DataType.BOOL,
+        )
     return op.Einsum(*tensors, equation=equation)
 
 
@@ -255,7 +263,7 @@ def aten_copy(
 ) -> ir.Value:
     """copy(Tensor self, Tensor src, bool non_blocking=False) -> Tensor"""
 
-    return op.CastLike(src, self)
+    return op.Expand(op.CastLike(src, self), op.Shape(self))
 
 
 @onnx_impl(aten.detach.default)

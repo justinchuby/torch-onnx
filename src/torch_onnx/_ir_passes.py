@@ -32,6 +32,7 @@ def rename_inputs(model: ir.Model, new_names: Sequence[str]) -> None:
     for input, new_name in zip(model.graph.inputs, new_names, strict=False):
         input.metadata_props["pkg.torch.onnx.original_node_name"] = str(input.name)
         input.name = new_name
+    ir.passes.common.NameFixPass()(model)
 
 
 def rename_outputs(model: ir.Model, new_names: Sequence[str]) -> None:

@@ -157,7 +157,7 @@ class TestExportAPIDynamo(common_utils.TestCase):
             logger.removeHandler(log_handler)
             logger.setLevel(original_level)
 
-    def test_constant_argument_user_input_is_omitted_in_onnx_graph(self):
+    def test_scalar_argument_retains_onnx_program_call_binding(self):
         class constant_plus_tensor_inputs(torch.nn.Module):
             def forward(self, a, x):
                 return a + torch.tensor(1) + x
@@ -175,7 +175,11 @@ class TestExportAPIDynamo(common_utils.TestCase):
             dynamo=True,
         )
 
-        self.assertEqual(len(onnx_program.model.graph.inputs), 1)
+        self.assertEqual(len(onnx_program.model.graph.inputs), 2)
+        torch_onnx.testing.assert_onnx_program(onnx_program)
+        torch_onnx.testing.assert_onnx_program(
+            onnx_program, args=(1, torch.ones(4)), kwargs={}
+        )
 
     def test_dynamic_axes_enable_dynamic_shapes_with_fully_specified_axes(self):
         self.assert_export(

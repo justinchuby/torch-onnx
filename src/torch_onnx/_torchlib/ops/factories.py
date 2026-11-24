@@ -370,7 +370,7 @@ def aten_linspace(
     op: TranslationContext,
     start: ir.Value,
     end: ir.Value,
-    steps: int,
+    steps: int | ir.Value,
     dtype: int = -1,
     layout: str = "",
     device: str = "",

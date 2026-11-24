@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 664 original runtime test bodies/comments, four control-flow
+retired frontend. 671 original runtime test bodies/comments, four control-flow
 regressions, 39 model methods, seven autograd forward-inlining methods and 51
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 53, 'inapplicable': 57, 'migrated': 765}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 46, 'inapplicable': 57, 'migrated': 772}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -39,6 +39,23 @@ automatic QTensor module capture or restored coverage for the other five
 pretrained quantized models. In particular, the ResNeXt101 V1 probe already
 disagrees before ONNX export (source top-one 834 versus Q/DQ adapter 652);
 changing the top-one contract or substituting newer V2 weights is not accepted.
+
+Seven additional data-scalar/factory methods retain their original numerical
+oracles. Floating `arange(out=...)` uses functional allocation because its output
+buffer is local, with fractional bounds, zero-length results, dynamic input
+dimensions and static-input elimination checked against the unchanged source
+bodies. This does not claim capture of the original floating `out=` operation or
+caller-owned output-buffer mutation. Tensor-valued positive slice steps use
+functional row/column masks, including negative/empty ends and changed spatial
+dimensions; original in-place execution on a cloned input remains the oracle.
+The complete one-hot method includes its ordinary fixed-class export and
+Tensor-valued class count, represented by native Range/Equal/Cast with changing
+depth and index values. Linspace retains both original start/end/count fixtures;
+a scoped capture boundary runs the unchanged eager body and invokes the
+package's existing native linspace builder, not a test-specific ONNX formula.
+Changing bounds and counts 0/1/2/17, symbolic output dimensions and independent
+save/reload inference are checked. Python Tensor-to-integer capture, invalid
+count/step error contracts and caller-input mutation are not claimed restored.
 
 Seven tensor-field assignment regressions retain the original bodies, optional
 checks, nested fixed loops and 30-element list. Cloned tensor buffers make the
@@ -732,7 +749,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:2036::test_slice_neg_large_negone` | migrated | `test_runtime_regressions.py::test_slice_neg_large_negone`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:2045::test_slice_with_input_index` | migrated | tests/recovered/test_additional_regressions.py::test_slice_with_input_index |
 | `test_pytorch_onnx_onnxruntime.py:2057::test_slice_with_1d_input_index` | migrated | tests/recovered/test_additional_regressions.py::test_slice_with_1d_input_index |
-| `test_pytorch_onnx_onnxruntime.py:2068::test_slice_with_input_step_size` | blocked | torch.export cannot specialize the data-dependent tensor-valued slice step |
+| `test_pytorch_onnx_onnxruntime.py:2068::test_slice_with_input_step_size` | migrated | `test_data_scalar_operator_regressions.py`; original 56x6x256 in-place oracle, functional native modulo masks for Tensor-valued positive steps, changed shapes/negative or empty ends, exact output and independent save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:2081::test_slice_dynamic` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_dynamic_operator_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:2101::test_slice_dynamic_script` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_dynamic_operator_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:2111::test_slice_dynamic_shape_script` | migrated | tests/recovered/test_additional_regressions.py::test_slice_dynamic_shape_script |
@@ -741,13 +758,13 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:2148::test_arange_dynamic` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_dynamic_operator_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:2177::test_dynamic_arange_out` | migrated | Original resized INT64 out= buffer and tensor end; explicit output-count>=2 capture domain, original example and changed bounds 11/2, strict runtime values/shapes/dtypes and save/reload; no zero/singleton-domain claim |
 | `test_pytorch_onnx_onnxruntime.py:2187::test_dynamic_arange_start_out` | migrated | Original resized INT64 out= buffer, tensor end and shape-derived start; bind symbolic output count>=2, independent original arange oracle, changed shapes/bounds and unused-input check in tests/recovered/test_factory_embedding_regressions.py; no zero/singleton-domain claim |
-| `test_pytorch_onnx_onnxruntime.py:2204::test_linspace` | blocked | Actual torch.export integer-specialization failure for tensor-valued step count; explicit steps>=0 and steps>=2 domains both fail before ONNX lowering |
-| `test_pytorch_onnx_onnxruntime.py:2215::test_linspace_negative_start` | blocked | Actual torch.export integer-specialization failure for tensor-valued step count; explicit positive-size domain still fails before ONNX lowering |
-| `test_pytorch_onnx_onnxruntime.py:2226::test_arange_with_floats_out` | blocked | Exact original probe fails torch.export on data-derived floating bound zuf0 before ONNX lowering; integer out= cases restored separately, not substituted for this float contract |
+| `test_pytorch_onnx_onnxruntime.py:2204::test_linspace` | migrated | `test_data_scalar_operator_regressions.py`; original (3,10,Tensor(5)) fixture/eager kernel through scoped capture boundary and actual builtin native linspace, changing bounds and counts 0/1/2/17, symbolic length and independent serialization/runtime oracle |
+| `test_pytorch_onnx_onnxruntime.py:2215::test_linspace_negative_start` | migrated | `test_data_scalar_operator_regressions.py`; original (-1,1,Tensor(6)) fixture and unchanged eager oracle, actual native linspace builder, runtime Tensor counts including zero/one and save/reload; no automatic Python integer-capture claim |
+| `test_pytorch_onnx_onnxruntime.py:2226::test_arange_with_floats_out` | migrated | `test_float_out_range_regressions.py`; unchanged floating out= end/step oracles, functional local allocation, original 8.5 bound/1.5 step, dynamic shape-driven starts, empty ranges and static input elimination |
 | `test_pytorch_onnx_onnxruntime.py:2251::test_arange_with_floats` | migrated | tests/recovered/test_additional_regressions.py::test_arange_with_floats |
 | `test_pytorch_onnx_onnxruntime.py:2302::test_arange_with_floats_override` | migrated | tests/recovered/test_additional_regressions.py::test_arange_with_floats_override |
-| `test_pytorch_onnx_onnxruntime.py:2325::test_arange_out` | blocked | Exact original float-bound out= probe fails torch.export guarding data-derived zuf0 before ONNX lowering |
-| `test_pytorch_onnx_onnxruntime.py:2335::test_arange_start_out` | blocked | Exact original float-bound out= probe fails torch.export guarding data-derived CeilToInt output count before ONNX lowering |
+| `test_pytorch_onnx_onnxruntime.py:2325::test_arange_out` | migrated | `test_float_out_range_regressions.py`; original float-bound/local out= body is independent oracle for functional native Range export, bounds 8.5/0/0.5/13.25, exact dtype/shape/value and serialization |
+| `test_pytorch_onnx_onnxruntime.py:2335::test_arange_start_out` | migrated | `test_float_out_range_regressions.py`; original shape-derived start/local floating out= oracle, dynamic 2x3x4/4x5x6/3x4x5 inputs, empty range and static unused-input contract, shared save/reload harness |
 | `test_pytorch_onnx_onnxruntime.py:2352::test_arange_no_type` | migrated | tests/recovered/test_additional_regressions.py::test_arange_no_type |
 | `test_pytorch_onnx_onnxruntime.py:2361::test_size` | migrated | tests/recovered/test_additional_regressions.py::test_size |
 | `test_pytorch_onnx_onnxruntime.py:2376::test_as_strided` | migrated | tests/recovered/test_additional_regressions.py::test_as_strided |
@@ -867,7 +884,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:4301::test_scatter_reduce` | migrated | tests/recovered/test_additional_regressions.py::test_scatter_reduce |
 | `test_pytorch_onnx_onnxruntime.py:4323::test_scatter_reduce_self_rank_zero` | migrated | tests/recovered/test_additional_regressions.py::test_scatter_reduce_self_rank_zero |
 | `test_pytorch_onnx_onnxruntime.py:4344::test_bucketize` | migrated | `test_runtime_regressions.py::test_bucketize`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:4356::test_one_hot` | blocked | torch.export rejects data-dependent num_classes as an integer specialization (GuardOnDataDependentSymNode), even with explicit item() and a valid-size constraint; static one-hot alone does not restore the full method |
+| `test_pytorch_onnx_onnxruntime.py:4356::test_one_hot` | migrated | `test_data_scalar_operator_regressions.py`; both original fixed 15-class export and unchanged Tensor-to-int32 class-count oracle, native functional Range/Equal/Cast, depths 10/15/21, reordered index data, symbolic class dimension and independent saved-model runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:4378::test_gather` | migrated | `test_runtime_regressions.py::test_gather`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:4388::test_gather_constant_fold` | migrated | Original models/examples/axis matrices and comments in tests/recovered/test_factory_embedding_regressions.py; regular modules replace scripted frontend, strict runtime values/shapes/dtypes and save/reload |
 | `test_pytorch_onnx_onnxruntime.py:4446::test_expand` | migrated | `test_runtime_regressions.py::test_expand`; original numerical body, modern standalone harness |

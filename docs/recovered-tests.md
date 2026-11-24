@@ -10,17 +10,35 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 664 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 51
+regressions, 39 model methods, seven autograd forward-inlining methods and 51
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 55, 'inapplicable': 57, 'migrated': 763}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 53, 'inapplicable': 57, 'migrated': 765}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
+
+Two complete quantized ResNet fixtures retain the original pretrained V1
+checkpoints, source image, Resize/CenterCrop/ImageNet normalization and exact
+top-one prediction oracle. Checkpoints use TorchVision's checksum-checked URLs
+and torch.hub cache; the first execution requires network access. The original
+image is preserved byte-for-byte (source Git blob
+`d2a427810f679db537236c5430873a81a62ef412`, SHA256
+`e1f57e98cf38076c0f9a058d74ffddf90f20453e436033784606b63c8ed2e49a`).
+Native integer-storage Q/DQ adapters retain every learned convolution/linear
+weight, bias and activation qparam, quantized residual addition and average-pool
+rounding. Both original and horizontally flipped images compare against the
+independent, unchanged quantized network, and use the shared standalone
+export/check/save/reload harness. Linux uses FBGEMM; Windows packs the same
+checkpoint with oneDNN and the same observer configuration. This does not claim
+automatic QTensor module capture or restored coverage for the other five
+pretrained quantized models. In particular, the ResNeXt101 V1 probe already
+disagrees before ONNX export (source top-one 834 versus Q/DQ adapter 652);
+changing the top-one contract or substituting newer V2 weights is not accepted.
 
 Seven tensor-field assignment regressions retain the original bodies, optional
 checks, nested fixed loops and 30-element list. Cloned tensor buffers make the
@@ -558,13 +576,13 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models_onnxruntime.py:400::test_transformer_encoder` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_transformer_encoder`; original three-layer 512-dimensional encoder, full checker/save/reload/runtime |
 | `test_models_onnxruntime.py:416::test_mobilenet_v3` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_mobilenet_v3`; original unconverted quantization-ready architecture, no downloaded weights |
 | `test_models_onnxruntime.py:423::test_shufflenet_v2_dynamic_axes` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_shufflenet_v2_dynamic_axes`; one dynamic graph executed at original batches1/3 |
-| `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:69::test_inception_v3` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:76::test_googlenet` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:89::test_resnet18` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:93::test_resnet50` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:97::test_resnext101_32x8d` | blocked | Legacy quantized model conversion requires explicit PT2E/torchao model rewrite; native quantization coverage does not claim model equivalence |
+| `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | blocked | Original pretrained MobileNetV3/photo/top-one contract still needs whole-network Q/DQ adaptation, including hard activations and squeeze/excitation multiplication; isolated layer coverage does not claim model equivalence |
+| `test_models_quantized_onnxruntime.py:69::test_inception_v3` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native branch concatenation/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
+| `test_models_quantized_onnxruntime.py:76::test_googlenet` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native branch concatenation/pooling/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
+| `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native channel-shuffle/concatenation/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
+| `test_models_quantized_onnxruntime.py:89::test_resnet18` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights/image/preprocessing/top-one oracle, explicit native Q/DQ whole-network adaptation, flipped input and shared serialization/runtime harness |
+| `test_models_quantized_onnxruntime.py:93::test_resnet50` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights (not newer DEFAULT/V2), source image/top-one oracle, native Q/DQ residual/average-pool contracts and shared serialization/runtime harness |
+| `test_models_quantized_onnxruntime.py:97::test_resnext101_32x8d` | blocked | Original pretrained V1/image probe on oneDNN disagrees before ONNX export: unchanged quantized oracle predicts 834, explicit Q/DQ adapter predicts 652; no relaxed top-one contract or V2-weight substitution |
 | `test_onnx_opset.py:95::test_opset_fallback` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |
 | `test_onnx_opset.py:105::test_topk` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |
 | `test_onnx_opset.py:144::test_maxpool` | inapplicable | Asserts legacy symbolic graph/operator selection across old opsets rather than standalone modern export semantics |

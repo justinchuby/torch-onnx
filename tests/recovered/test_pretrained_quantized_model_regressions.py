@@ -1,5 +1,5 @@
 # Copyright: PyTorch contributors. See LICENSE-PYTORCH.
-"""Recover the pretrained ResNet cases from test_models_quantized_onnxruntime.py.
+"""Recover pretrained network cases from test_models_quantized_onnxruntime.py.
 
 Source: e2c2673d00500d268fcb1cc63fa7cc3173876505, removed by
 6dca9f63bc4975ac323044a440c2c7e5f8512408. Preserve pretrained=True's
@@ -66,7 +66,20 @@ class _ConvertedAddRelu(torch.nn.Module):
         )
 
 
-def _adapt_resnet(model):
+class _ConvertedCat(torch.nn.Module):
+    def __init__(self, dim, scale, zero_point):
+        super().__init__()
+        self.dim, self.scale, self.zero_point = dim, scale, zero_point
+
+    def forward(self, values):
+        return _dequantize(
+            _quantize(torch.cat(values, dim=self.dim), self.scale, self.zero_point),
+            self.scale,
+            self.zero_point,
+        )
+
+
+def _adapt_model(model):
     adapted = torch.fx.symbolic_trace(model)
     parameters: dict[torch.fx.Node, tuple[float, int] | None] = {}
     for node in adapted.graph.nodes:
@@ -105,9 +118,14 @@ def _adapt_resnet(model):
                 replacement = _ConvertedOperation(module, *incoming)
             else:
                 assert isinstance(
-                    module, torch.nn.MaxPool2d | torch.nn.Identity
+                    module, torch.nn.MaxPool2d | torch.nn.Identity | torch.nn.Dropout
                 ), f"Add an explicit Q/DQ adaptation for {node}: {type(module)}"
-                replacement = module
+                assert not module.training, f"Expected an evaluation module: {node}"
+                replacement = (
+                    torch.nn.Identity()
+                    if isinstance(module, torch.nn.Dropout)
+                    else module
+                )
             adapted.set_submodule(node.target, replacement)
         elif node.op == "call_function":
             if node.target == torch.ops.quantized.add_relu:
@@ -118,11 +136,57 @@ def _adapt_resnet(model):
                 name = f"adapted_{node.name}"
                 adapted.add_submodule(name, _ConvertedAddRelu(*outgoing))
                 node.op, node.target, node.kwargs = "call_module", name, {}
+            elif node.target == torch.ops.quantized.cat:
+                assert all(
+                    parameters[value] is not None for value in node.args[0]
+                ), f"Missing concatenation input qparams for {node}"
+                outgoing = (
+                    float(node.kwargs["scale"]),
+                    int(node.kwargs["zero_point"]),
+                )
+                name = f"adapted_{node.name}"
+                adapted.add_submodule(
+                    name, _ConvertedCat(node.kwargs["dim"], *outgoing)
+                )
+                node.op, node.target, node.kwargs = "call_module", name, {}
+            elif node.target in {
+                torch.nn.functional.avg_pool2d,
+                torch.nn.functional.adaptive_avg_pool2d,
+            }:
+                assert incoming is not None, f"Missing pooling qparams for {node}"
+                pool_type = (
+                    torch.nn.AvgPool2d
+                    if node.target == torch.nn.functional.avg_pool2d
+                    else torch.nn.AdaptiveAvgPool2d
+                )
+                name = f"adapted_{node.name}"
+                adapted.add_submodule(
+                    name,
+                    _ConvertedOperation(
+                        pool_type(*node.args[1:], **node.kwargs), *incoming
+                    ),
+                )
+                node.op, node.target, node.args, node.kwargs = (
+                    "call_module",
+                    name,
+                    (node.args[0],),
+                    {},
+                )
+            elif node.target in {
+                torch.cat,
+                torch.unsqueeze,
+                operator.add,
+                operator.mul,
+            }:
+                assert (
+                    incoming is None
+                ), f"Expected an unquantized input-transform operation: {node}"
             else:
                 assert node.target in {
                     torch.flatten,
                     torch.topk,
                     operator.getitem,
+                    torch.nn.functional.max_pool2d,
                 }, f"Add an explicit quantization contract for {node}"
         parameters[node] = outgoing
     adapted.graph.lint()
@@ -132,16 +196,21 @@ def _adapt_resnet(model):
 
 def _load_pretrained_model(name, weights):
     factory = getattr(quantization, name)
+    kwargs = {"transform_input": True} if name in {"googlenet", "inception_v3"} else {}
+    if name == "inception_v3":
+        kwargs["aux_logits"] = False
     if "fbgemm" in torch.backends.quantized.supported_engines:
-        model = factory(weights=None, quantize=True, backend="fbgemm", progress=False)
+        model = factory(
+            weights=None, quantize=True, backend="fbgemm", progress=False, **kwargs
+        )
     else:
         assert (
             "onednn" in torch.backends.quantized.supported_engines
-        ), "These pretrained quantized ResNet fixtures require fbgemm or oneDNN."
+        ), "These pretrained quantized model fixtures require fbgemm or oneDNN."
         # Windows lacks fbgemm. Pack the same serialized weights with oneDNN,
         # retaining torchvision's fbgemm observer/weight configuration.
         torch.backends.quantized.engine = "onednn"
-        model = factory(weights=None, quantize=False).eval()
+        model = factory(weights=None, quantize=False, **kwargs).eval()
         model.fuse_model()
         config = torch.ao.quantization.QConfig(
             activation=torch.ao.quantization.default_observer,
@@ -154,6 +223,9 @@ def _load_pretrained_model(name, weights):
     model.load_state_dict(
         weights.get_state_dict(progress=False, check_hash=True, weights_only=True)
     )
+    if name == "googlenet":
+        model.aux_logits = False
+        model.aux1 = model.aux2 = None
     return model.eval()
 
 
@@ -162,6 +234,11 @@ def _load_pretrained_model(name, weights):
     [
         ("resnet18", quantization.ResNet18_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
         ("resnet50", quantization.ResNet50_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
+        ("googlenet", quantization.GoogLeNet_QuantizedWeights.IMAGENET1K_FBGEMM_V1),
+        (
+            "inception_v3",
+            quantization.Inception_V3_QuantizedWeights.IMAGENET1K_FBGEMM_V1,
+        ),
     ],
 )
 @torch.no_grad()
@@ -174,7 +251,7 @@ def test_pretrained_quantized_model(name, weights):
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(0)
             original = _TopPredictor(_load_pretrained_model(name, weights)).eval()
-            adapted = _adapt_resnet(original)
+            adapted = _adapt_model(original)
             image = _get_test_image_tensor()
             flipped = image.flip(-1)
             for value in (image, flipped):
@@ -195,6 +272,8 @@ def test_pretrained_quantized_model(name, weights):
                 "DequantizeLinear",
                 "TopK",
             }
+            if name in {"googlenet", "inception_v3"}:
+                assert any(node.op_type == "Concat" for node in program.model.graph)
             harness.assert_program_roundtrip(
                 program,
                 examples=[image, flipped],

@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 671 original runtime test bodies/comments, four control-flow
-regressions, 39 model methods, seven autograd forward-inlining methods and 52
+regressions, 42 model methods, seven autograd forward-inlining methods and 52
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 45, 'inapplicable': 57, 'migrated': 773}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 42, 'inapplicable': 57, 'migrated': 776}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -35,10 +35,30 @@ rounding. Both original and horizontally flipped images compare against the
 independent, unchanged quantized network, and use the shared standalone
 export/check/save/reload harness. Linux uses FBGEMM; Windows packs the same
 checkpoint with oneDNN and the same observer configuration. This does not claim
-automatic QTensor module capture or restored coverage for the other five
+automatic QTensor module capture or restored coverage for the other two
 pretrained quantized models. In particular, the ResNeXt101 V1 probe already
 disagrees before ONNX export (source top-one 834 versus Q/DQ adapter 652);
 changing the top-one contract or substituting newer V2 weights is not accepted.
+
+The original pretrained MobileNetV3 fixture also retains its V1 checkpoint,
+photo/top-one oracle and flipped-image roundtrip. Following TorchVision's
+model-specific loading contract, its QAT checkpoint loads before conversion,
+not into an independently calibrated PTQ model. Its integer-storage adapters
+retain hard-swish/hard-sigmoid, squeeze/excitation multiplication, residual
+addition, pooling and per-tensor convolution/linear quantization. Graph assertions
+require native HardSwish/HardSigmoid alongside Q/DQ and TopK. The oracle uses
+QNNPACK when available; Windows packs the unchanged checkpoint with oneDNN and
+the original QNNPACK QAT configuration. This is explicit adaptation, not automatic
+capture of quantized modules or a claim that oneDNN and QNNPACK are bit-identical.
+
+Pretrained GoogLeNet and InceptionV3 now retain their original V1 checkpoints,
+internal pretrained input transforms, inference auxiliary-output policies and
+photo/top-one comparisons. Explicit per-branch Q/DQ concatenation and quantized
+average-pool rounding replace the old `quantized::cat` skips. Original and
+flipped images compare against unchanged quantized networks before export and
+after save/reload; native Concat/Q/DQ/Conv/TopK remain in the graph. The original
+disabled test methods are executed, not retained as blanket skips. These
+adapters do not claim automatic capture of the original QTensor modules.
 
 Seven additional data-scalar/factory methods retain their original numerical
 oracles. Floating `arange(out=...)` uses functional allocation because its output
@@ -585,8 +605,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models.py:172::test_dcgan_netD` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[False] |
 | `test_models.py:179::test_dcgan_netG` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[True] |
 | `test_models.py:186::test_fake_quant` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[FakeQuantNet], frozen-observer inference variant checked against original |
-| `test_models.py:191::test_qat_resnet_pertensor` | blocked | Original calibrated ResNet50 with 161 frozen fake-quant modules matches eager Torch; after rounding repair ONNX still mismatches 1122/2000 elements, max abs 0.079, even with both model/runtime optimization disabled; further isolation needed |
-| `test_models.py:214::test_qat_resnet_per_channel` | blocked | Original calibrated ResNet50 with frozen per-channel weights matches eager Torch; rounding repair reduces mismatches 1404 to144/2000, max abs 0.0267; still fails with both optimization layers disabled; not claimed restored |
+| `test_models.py:191::test_qat_resnet_pertensor` | blocked | Verified historical ExportTestCase seed0 and original input-before-model RNG ordering; all161 frozen fake-quant modules match the unchanged calibrated eager ResNet50, but actual-wheel ONNX output differs in56/2000 elements, max abs0.02686, including with both model/runtime optimization disabled; original rtol1e-2/atol1e-7 retained |
+| `test_models.py:214::test_qat_resnet_per_channel` | blocked | Verified source seed0/input-before-model fixture; frozen per-channel weights match the unchanged calibrated eager ResNet50, but actual-wheel ONNX output differs in138/2000 elements, max abs0.02627, with both optimization layers disabled; original tolerances retained, not counted restored |
 | `test_models.py:236::test_googlenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (googlenet); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:240::test_mnasnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mnasnet1_0); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:244::test_mobilenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mobilenet_v2); original architecture/shape, full schema check and CPU numerical execution |
@@ -603,9 +623,9 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models_onnxruntime.py:400::test_transformer_encoder` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_transformer_encoder`; original three-layer 512-dimensional encoder, full checker/save/reload/runtime |
 | `test_models_onnxruntime.py:416::test_mobilenet_v3` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_mobilenet_v3`; original unconverted quantization-ready architecture, no downloaded weights |
 | `test_models_onnxruntime.py:423::test_shufflenet_v2_dynamic_axes` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_shufflenet_v2_dynamic_axes`; one dynamic graph executed at original batches1/3 |
-| `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | blocked | Original pretrained MobileNetV3/photo/top-one contract still needs whole-network Q/DQ adaptation, including hard activations and squeeze/excitation multiplication; isolated layer coverage does not claim model equivalence |
-| `test_models_quantized_onnxruntime.py:69::test_inception_v3` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native branch concatenation/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
-| `test_models_quantized_onnxruntime.py:76::test_googlenet` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native branch concatenation/pooling/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
+| `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | migrated | test_mobilenet_quantized_regressions.py; exact V1 QAT checkpoint loaded before conversion, original photo/preprocessing/top-one oracle and flipped image; complete integer-storage Q/DQ including native HardSwish/HardSigmoid, squeeze/excitation multiplication and residual addition; independent oracle/export/check/save/reload |
+| `test_models_quantized_onnxruntime.py:69::test_inception_v3` | migrated | test_pretrained_quantized_model_regressions.py; exact V1 checkpoint, pretrained input transform and no-aux inference policy; original photo/top-one and flipped image, quantized branch concatenation/pooling via explicit Q/DQ, independent original oracle/export/check/save/reload; old quantized::cat skip removed |
+| `test_models_quantized_onnxruntime.py:76::test_googlenet` | migrated | test_pretrained_quantized_model_regressions.py; exact V1 checkpoint and internal pretrained input transform, original image/top-one and flipped image, complete Q/DQ branches/concatenation/pooling, original quantized oracle and serialization; no retained quantized::cat skip |
 | `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native channel-shuffle/concatenation/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
 | `test_models_quantized_onnxruntime.py:89::test_resnet18` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights/image/preprocessing/top-one oracle, explicit native Q/DQ whole-network adaptation, flipped input and shared serialization/runtime harness |
 | `test_models_quantized_onnxruntime.py:93::test_resnet50` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights (not newer DEFAULT/V2), source image/top-one oracle, native Q/DQ residual/average-pool contracts and shared serialization/runtime harness |

@@ -60,9 +60,11 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
         atol=1e-7,
         additional_test_inputs=None,
         input_names=None,
+        output_names=None,
         dynamic_axes=None,
         dynamic_shapes=None,
         remained_onnx_input_idx=None,
+        training=False,
     ):
         args = input_args if isinstance(input_args, tuple) else (input_args,)
         # A trailing dictionary is legacy kwargs syntax unless followed by {}.
@@ -72,16 +74,24 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
             else args
         )
         program = torch_onnx.export(
-            model.eval(),
+            model.train(training),
             export_args,
             optimize=True,
             verbose=False,
             kwargs={} if input_kwargs is None else input_kwargs,
             input_names=input_names,
+            output_names=output_names,
             dynamic_axes=dynamic_axes,
             dynamic_shapes=dynamic_shapes,
         )
         onnx.checker.check_model(program.model_proto, full_check=True)
+        if output_names is not None:
+            self.assertEqual(
+                [value.name for value in program.model.graph.outputs][
+                    : len(output_names)
+                ],
+                list(output_names),
+            )
         torch_onnx.testing.assert_onnx_program(
             program, strategy=None, rtol=rtol, atol=atol
         )
@@ -111,6 +121,7 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
                     rtol=rtol,
                     atol=atol,
                 )
+        return program
 
 
 class TestRecoveredRuntime(RecoveredRuntimeHarness):

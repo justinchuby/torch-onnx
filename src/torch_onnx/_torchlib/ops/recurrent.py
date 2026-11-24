@@ -76,7 +76,9 @@ def aten_gru(
         # Extract hidden state for this layer
         layer_start = layer_idx * num_directions
         layer_end = (layer_idx + 1) * num_directions
-        layer_h = op.Slice(hx, [layer_start], [layer_end], [0])
+        layer_h = (
+            hx if num_layers == 1 else op.Slice(hx, [layer_start], [layer_end], [0])
+        )
 
         # Extract parameters for this layer
         # Parameter layout: [W_ih, W_hh, b_ih, b_hh] for each direction

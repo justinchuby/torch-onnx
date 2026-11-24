@@ -445,6 +445,57 @@ class TestNativeRecurrentResidualOps(common_utils.TestCase):
             expected,
         )
 
+    @common_utils.parametrize("runtime", [False, True])
+    @common_utils.parametrize("zero_point", [0, 63])
+    def test_fake_quantization_halfway_rounding(self, device, runtime, zero_point):
+        scale = torch.tensor(0.137, device=device)
+        x = (torch.arange(-127, 127, device=device) + 0.5) * scale
+        zero = torch.tensor(zero_point, dtype=torch.int32, device=device)
+        expected = torch.fake_quantize_per_tensor_affine(
+            x, float(scale), zero_point, 0, 127
+        )
+        for implementation, inputs in (
+            (
+                lambda op, x: residual.aten_fake_quantize_per_tensor_affine(
+                    op, x, float(scale), zero_point, 0, 127
+                ),
+                [x],
+            ),
+            (
+                lambda op, x, s, z: (
+                    residual.aten_fake_quantize_per_tensor_affine_tensor_qparams(
+                        op, x, s, z, 0, 127
+                    )
+                ),
+                [x, scale, zero],
+            ),
+        ):
+            actual = _evaluate(
+                implementation,
+                inputs,
+                expected,
+                runtime=runtime,
+                opset=18 if runtime else 19,
+            )
+            self.assertEqual(actual, expected, atol=0, rtol=0)
+
+        scales = torch.tensor([0.137, 0.03], device=device)
+        x = (torch.arange(-127, 127, device=device) + 0.5).unsqueeze(0) * scales[
+            :, None
+        ]
+        zeros = torch.full((2,), zero_point, dtype=torch.int32, device=device)
+        expected = torch.fake_quantize_per_channel_affine(x, scales, zeros, 0, 0, 127)
+        actual = _evaluate(
+            lambda op, x, s, z: residual.aten_fake_quantize_per_channel_affine(
+                op, x, s, z, 0, 0, 127
+            ),
+            [x, scales, zeros],
+            expected,
+            runtime=runtime,
+            opset=18 if runtime else 19,
+        )
+        self.assertEqual(actual, expected, atol=0, rtol=0)
+
     def test_miscellaneous(self, device):
         a = torch.tensor([-1.0, 0.0, 1.0], device=device)
         b = torch.tensor([2.0, 3.0, 4.0], device=device)

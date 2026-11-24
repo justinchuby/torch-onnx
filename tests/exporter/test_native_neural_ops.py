@@ -26,6 +26,22 @@ from torch_onnx._torchlib.ops import neural, nn, normalization
 class TestNativeNeuralOps(common_utils.TestCase):
     hw_classification = HardwareClassification.CPU
 
+    @common_utils.parametrize("padding", [-1, 0, 2])
+    def test_conv_tbc(self, device, padding):
+        x = torch.randn(7, 3, 2, device=device)
+        weight = torch.randn(3, 2, 4, device=device)
+        bias = torch.randn(4, device=device)
+        expected = torch.conv_tbc(x, weight, bias, padding)
+        actual = _evaluate(
+            lambda op, x, weight, bias: normalization.aten_conv_tbc(
+                op, x, weight, bias, padding
+            ),
+            [x, weight, bias],
+            expected,
+            runtime=True,
+        )
+        self.assertEqual(actual, expected, atol=3e-6, rtol=3e-5)
+
     def test_attention_requires_shape_metadata(self, device):
         from torch_onnx._ir_builder import GraphBuilder, TranslationContext
 
@@ -324,7 +340,7 @@ class TestNativeNeuralOps(common_utils.TestCase):
             in (neural.__name__, normalization.__name__)
             and meta.opset_introduced <= opset
         ]
-        self.assertEqual(len(entries), 75 + int(opset >= 24))
+        self.assertEqual(len(entries), 76 + int(opset >= 24))
         newer = {
             torch.ops.aten.silu.default: (24, neural.aten_silu_opset24),
             torch.ops.aten.gelu.default: (20, nn.aten_gelu_opset20),

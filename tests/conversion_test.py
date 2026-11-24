@@ -6,13 +6,11 @@ from __future__ import annotations
 import unittest
 
 import torch
-from functorch.experimental.control_flow import cond
 
 import torch_onnx
 
 
 class ConversionTest(unittest.TestCase):
-    @unittest.skip("Conditionals are not supported yet")
     def test_conditional(self):
         class MySubModule(torch.nn.Module):
             def foo(self, x):
@@ -44,11 +42,19 @@ class ConversionTest(unittest.TestCase):
                 return x.sin()
 
             def forward(self, x):
-                return cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
+                return torch.cond(x.shape[0] <= 2, self.subm.forward, self.bar, [x])
 
         input = torch.randn(5)
-        onnx_program = torch_onnx.export(CondBranchClassMethod(), (input,))
-        torch_onnx.testing.assert_onnx_program(onnx_program)
+        onnx_program = torch_onnx.export(
+            CondBranchClassMethod().eval(),
+            (input,),
+            dynamic_shapes=({0: torch.export.Dim("batch", min=1)},),
+        )
+        self.assertTrue(any(node.op_type == "If" for node in onnx_program.model.graph))
+        for batch in (2, 5, 8):
+            torch_onnx.testing.assert_onnx_program(
+                onnx_program, args=(torch.randn(batch),), kwargs={}
+            )
 
     def test_list_as_empty_input(self):
         class GraphModule(torch.nn.Module):

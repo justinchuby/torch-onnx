@@ -96,6 +96,27 @@ def aten_conv1d_complex(
     )
 
 
+@onnx_impl(aten.conv_tbc.default)
+def aten_conv_tbc(
+    op: TranslationContext,
+    self: ir.Value,
+    weight: ir.Value,
+    bias: ir.Value,
+    pad: int = 0,
+) -> ir.Value:
+    """Convert time/batch/channel convolution to ONNX's batch/channel/time layout."""
+    if pad < 0:
+        self = op.Slice(self, [-pad], [pad], [0])
+        pad = 0
+    result = op.Conv(
+        op.Transpose(self, perm=[1, 2, 0]),
+        op.Transpose(weight, perm=[2, 1, 0]),
+        bias,
+        pads=[pad, pad],
+    )
+    return op.Transpose(result, perm=[2, 0, 1])
+
+
 @onnx_impl(aten.conv2d.default)
 def aten_conv2d(
     op: TranslationContext,

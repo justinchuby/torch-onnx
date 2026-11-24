@@ -1,0 +1,168 @@
+# Copyright: PyTorch contributors. See LICENSE-PYTORCH.
+"""Scalar/sequence cases from PyTorch e2c2673d00500d268fcb1cc63fa7cc3173876505.
+
+Removed in 6dca9f63bc4975ac323044a440c2c7e5f8512408. Ordinary Modules
+replace ScriptModules; original examples and scalar/dtype contracts remain.
+"""
+
+import torch
+from test_runtime_regressions import RecoveredRuntimeHarness
+
+
+class _Arange(torch.nn.Module):
+    def __init__(self, variant):
+        super().__init__()
+        self.variant = variant
+
+    def forward(self, a):
+        if self.variant == "end":
+            return torch.arange(a.size(0), dtype=torch.float).view(-1, 1) + a
+        if self.variant == "end_notype":
+            return torch.arange(a.size(0))
+        if self.variant == "start_end":
+            return torch.arange(2, a.size(0) + 2, dtype=torch.float).view(-1, 1) + a
+        if self.variant == "start_end_notype":
+            return torch.arange(2.7, a.size(0) + 2).view(-1, 1) + a
+        if self.variant == "start_end_step":
+            return (
+                torch.arange(
+                    2, a.size(0) * a.size(1) + 2, a.size(1), dtype=torch.float
+                ).view(-1, 1)
+                + a
+            )
+        return torch.arange(2.7, a.size(0) * a.size(1) + 2, a.size(1)).view(-1, 1) + a
+
+
+class TestRecoveredScalarSequences(RecoveredRuntimeHarness):
+    def _arange_test(self, variant):
+        self.run_test(_Arange(variant), torch.randn(3, 4, requires_grad=True))
+
+    def test_arange_end(self):
+        self._arange_test("end")
+
+    def test_arange_end_notype(self):
+        x = torch.randn(3, 4, requires_grad=True)
+        self.run_test(
+            _Arange("end_notype"),
+            x,
+            input_names=["x"],
+            dynamic_axes={"x": [0, 1]},
+            additional_test_inputs=[torch.randn(5, 7)],
+        )
+        self.run_test(_Arange("end_notype"), x, remained_onnx_input_idx=[])
+
+    def test_arange_start_end(self):
+        self._arange_test("start_end")
+
+    def test_arange_start_end_notype(self):
+        self._arange_test("start_end_notype")
+
+    def test_arange_start_end_step(self):
+        self._arange_test("start_end_step")
+
+    def test_arange_start_end_step_notype(self):
+        self._arange_test("start_end_step_notype")
+
+    def test__dim_arange(self):
+        class DimArange(torch.nn.Module):
+            def forward(self, input):
+                return torch.arange(input.shape[1])
+
+        x = torch.ones(5, 6)
+        self.run_test(
+            DimArange(),
+            x,
+            input_names=["x"],
+            dynamic_axes={"x": [0, 1]},
+            additional_test_inputs=[torch.ones(7, 9)],
+        )
+        self.run_test(DimArange(), x, remained_onnx_input_idx=[])
+
+    def test_gt_primitive(self):
+        class GreaterModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.y: int = 2
+
+            def forward(self, x: int):
+                return self.y > x
+
+        self.run_test(GreaterModel(), (3,))
+
+    def test_item(self):
+        class M(torch.nn.Module):
+            def forward(self, x, y, i: int):
+                # Materialize the same truncating conversion as an ONNX scalar.
+                return torch.scalar_tensor(x[y[i]].item(), dtype=torch.int64)
+
+        x = torch.arange(6, dtype=torch.float)
+        y = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
+        original = (x, y, 3)
+        alternate = (-x - 0.75, torch.tensor([0, 1, 2, 4, 5]), 3)
+        model = M()
+        for values, indices, offset in [original, alternate]:
+            expected = int(values[indices[offset]].item())
+            self.assertEqual(model(values, indices, offset).item(), expected)
+        self.run_test(model, original, additional_test_inputs=[alternate])
+
+    def test_unbind_dynamic(self):
+        class UnbindModel(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, input):
+                return input.unbind(self.dim)[1]
+
+        for dim, axes, alternate in [(0, [1, 2], (3, 6, 7)), (-1, [0, 1], (5, 6, 5))]:
+            self.run_test(
+                UnbindModel(dim),
+                torch.randn(3, 4, 5),
+                input_names=["input"],
+                dynamic_axes={"input": axes},
+                additional_test_inputs=[torch.randn(alternate)],
+            )
+
+    def test_split_dynamic(self):
+        class SplitModel(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, input):
+                return input.split(2, self.dim)[1]
+
+        for dim in [0, -3]:
+            self.run_test(
+                SplitModel(dim),
+                torch.randn(5, 4, 3),
+                input_names=["input"],
+                dynamic_axes={"input": [1, 2]},
+                additional_test_inputs=[torch.randn(5, 6, 7)],
+            )
+
+    def test_concat_dynamic(self):
+        class ConcatDynamicModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat(x.unbind())
+
+        self.run_test(
+            ConcatDynamicModel(),
+            torch.randn(4, 5, 6),
+            input_names=["x"],
+            dynamic_axes={"x": [1, 2]},
+            additional_test_inputs=[torch.randn(4, 7, 8)],
+        )
+
+    def test_stack_dynamic(self):
+        class StackDynamicModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.stack(x.unbind(), 1)
+
+        self.run_test(
+            StackDynamicModel(),
+            torch.randn(4, 5, 6),
+            input_names=["x"],
+            dynamic_axes={"x": [1, 2]},
+            additional_test_inputs=[torch.randn(4, 7, 8)],
+        )

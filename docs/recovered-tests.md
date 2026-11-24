@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 579 original runtime test bodies/comments, four control-flow
+retired frontend. 586 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 153, 'inapplicable': 55, 'migrated': 667}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 146, 'inapplicable': 55, 'migrated': 674}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -31,6 +31,13 @@ Conditional transpose and fixed-arity list outputs execute genuine ONNX If
 graphs with both predicates and changed values/shapes. Empty branches are tested
 at several independently exported ranks; in-place nested loops retain their
 original fixed trip counts and aliasing setup, not dynamic-loop semantics.
+
+Nested-contract recovery covers tensor defaults, None choices and tuple kwargs,
+fixed-arity `tolist`, dynamic in-place concatenation, multiscale ROIAlign, and
+data-dependent box selection with an actual ONNX If (including empty results).
+Retired frontend/harness failures now require successful numerical execution.
+None/default choices are separately exported signatures, not runtime-switchable
+ONNX Optional inputs. The old multiscale ROIAlign opset-16 exclusion is removed.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -357,17 +364,17 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:575::test_nested_tuple_input` | migrated | `test_runtime_regressions.py::test_nested_tuple_input`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:586::test_mixed_optional_default_none` | migrated | tests/recovered/test_additional_regressions.py::test_mixed_optional_default_none |
 | `test_pytorch_onnx_onnxruntime.py:615::test_mixed_optional_default_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_mixed_optional_default_tensor |
-| `test_pytorch_onnx_onnxruntime.py:639::test_mixed_optional_default_tensor_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:639::test_mixed_optional_default_tensor_script` | migrated | tests/recovered/test_nested_contract_regressions.py; original Tensor-default positional/kwargs calls, original formerly rejected None choices and omitted defaults now execute through export/save/reload |
 | `test_pytorch_onnx_onnxruntime.py:677::test_all_optional_default_none` | migrated | tests/recovered/test_additional_regressions.py::test_all_optional_default_none |
 | `test_pytorch_onnx_onnxruntime.py:700::test_all_optional_default_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_all_optional_default_tensor |
-| `test_pytorch_onnx_onnxruntime.py:726::test_all_optional_default_tensor_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:726::test_all_optional_default_tensor_script` | migrated | tests/recovered/test_nested_contract_regressions.py; original calls plus both-None, default-only and omitted-x binding, scalar fallback and default Tensor results verified; no runtime Optional claim |
 | `test_pytorch_onnx_onnxruntime.py:755::test_logit` | migrated | Original examples/configuration matrix, strict runtime values/shapes/dtypes and save/reload in tests/recovered/test_math_shape_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:794::test_atleast_nd_list_input` | migrated | tests/recovered/test_parameterized_regressions.py::test_atleast_nd_list_input; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:819::test_atleast_nd_single_tensor_input` | migrated | tests/recovered/test_parameterized_regressions.py::test_atleast_nd_single_tensor_input; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:826::test_mixed_optional` | migrated | tests/recovered/test_additional_regressions.py::test_mixed_optional |
 | `test_pytorch_onnx_onnxruntime.py:840::test_tuple_of_optional` | migrated | tests/recovered/test_additional_regressions.py::test_tuple_of_optional |
 | `test_pytorch_onnx_onnxruntime.py:855::test_tuple_of_optional_default_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_tuple_of_optional_default_tensor |
-| `test_pytorch_onnx_onnxruntime.py:878::test_tuple_of_optional_default_tensor_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:878::test_tuple_of_optional_default_tensor_script` | migrated | tests/recovered/test_nested_contract_regressions.py; original nested tuple/kwargs/None intent with successful modern serialization/runtime checks, plus omitted tuple and both-None cases |
 | `test_pytorch_onnx_onnxruntime.py:914::test_primitive_input_integer` | migrated | tests/recovered/test_additional_regressions.py::test_primitive_input_integer |
 | `test_pytorch_onnx_onnxruntime.py:924::test_primitive_input_floating` | migrated | tests/recovered/test_additional_regressions.py::test_primitive_input_floating |
 | `test_pytorch_onnx_onnxruntime.py:933::test_primitive_input_bool` | migrated | `tests/recovered/test_capture_regressions.py::test_primitive_input_bool`; modern Module capture, schema/save/reload/runtime |
@@ -710,11 +717,11 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:6619::test_new_zeros_with_dtype` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_math_shape_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:6634::test_new_ones` | migrated | `test_runtime_regressions.py::test_new_ones`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:6647::test_zeros_ones_with_tensor_input` | migrated | tests/recovered/test_additional_regressions.py::test_zeros_ones_with_tensor_input |
-| `test_pytorch_onnx_onnxruntime.py:6657::test_tolist` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6657::test_tolist` | migrated | tests/recovered/test_nested_contract_regressions.py; original fixed-arity integer tolist plus changed zero/negative/positive values on the same graph, strict numerical/shape/dtype and serialization checks |
 | `test_pytorch_onnx_onnxruntime.py:6667::test_list_pass` | migrated | tests/recovered/test_additional_regressions.py::test_list_pass |
 | `test_pytorch_onnx_onnxruntime.py:6729::test_new_empty` | migrated | `tests/recovered/test_factory_regressions.py::test_new_empty`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6742::test_new_full` | migrated | `test_runtime_regressions.py::test_new_full`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:6754::test_inplace_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6754::test_inplace_list` | migrated | tests/recovered/test_nested_contract_regressions.py; original in-place add/fill concatenation, original dynamic axes plus changed unequal row counts/shared column dimension, pruned-input intent and serialization/runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:6771::test_inplace_fill` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_fill |
 | `test_pytorch_onnx_onnxruntime.py:6780::test_inplace_arithmetic` | migrated | `tests/recovered/test_capture_regressions.py::test_inplace_arithmetic`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6792::test_inplace_arithmetic_half` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_arithmetic_half |
@@ -924,7 +931,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11097::test_resize_images` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11118::test_transform_images` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11149::test_rpn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11188::test_multi_scale_roi_align` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11188::test_multi_scale_roi_align` | migrated | tests/recovered/test_nested_contract_regressions.py; original two-level feature-pyramid architecture/shapes and changed features/boxes, nested dict/list inputs, serialization/runtime checks; old opset-16 exclusion retired |
 | `test_pytorch_onnx_onnxruntime.py:11230::test_set_` | blocked | torch.export decomposition rejects set_ on an input together with other mutations |
 | `test_pytorch_onnx_onnxruntime.py:11251::test_set_attr_modules` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11311::test_set_attr_modules_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -951,7 +958,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:12008::test_symbolic_shape_inference` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference |
 | `test_pytorch_onnx_onnxruntime.py:12053::test_symbolic_shape_inference_arange` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_arange |
 | `test_pytorch_onnx_onnxruntime.py:12086::test_symbolic_shape_inference_box` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_box |
-| `test_pytorch_onnx_onnxruntime.py:12110::test_symbolic_shape_inference_box_if` | blocked | Data-dependent Python branching requires an explicit higher-order control-flow rewrite; original source is not yet runnable |
+| `test_pytorch_onnx_onnxruntime.py:12110::test_symbolic_shape_inference_box_if` | migrated | tests/recovered/test_nested_contract_regressions.py; explicit torch.cond and actual ONNX If for data-dependent selected-box count, original examples plus empty/changed selection and independent original imperative oracle |
 | `test_pytorch_onnx_onnxruntime.py:12130::test_symbolic_shape_inference_arange_2` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_arange_2 |
 | `test_pytorch_onnx_onnxruntime.py:12153::test_symbolic_shape_inference_nonzero` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_nonzero |
 | `test_pytorch_onnx_onnxruntime.py:12193::test_symbolic_shape_inference_expand_1` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_expand_1 |

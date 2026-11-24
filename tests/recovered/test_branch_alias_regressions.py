@@ -127,6 +127,101 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
                 for candidate in (program, reloaded):
                     self.assertEqual(candidate(value)[0], expected)
 
+    def test_set_attr_modules(self):
+        class InnerModule2(torch.nn.Module):
+            def __init__(self, embedding_dim):
+                super().__init__()
+                self.weights = InnerModule2.get_embedding(embedding_dim)
+                self._float_tensor = torch.nn.Buffer(torch.FloatTensor(1))
+                self.const = 2
+
+            @staticmethod
+            def get_embedding(embedding_dim: int):
+                emb = 4 / ((embedding_dim // 2) - 1)
+                return torch.exp(
+                    torch.arange((embedding_dim // 2), dtype=torch.float) * -emb
+                )
+
+            def forward(self, input, incremental_state: Tensor | None = None):
+                bsz, seq_len = input.shape[0], input.shape[1]
+                self.const = 3
+                if self.weights is None:
+                    self.weights = InnerModule.get_embedding(self.embedding_dim)
+                self.weights = self.weights.to(self._float_tensor)
+                self.weights = self.weights * self.const
+                if incremental_state is not None:
+                    pos = seq_len
+                    return self.weights[1 + pos, :].expand(bsz, 1, -1)
+                return self.weights.index_select(
+                    0, torch.ones((bsz * seq_len), dtype=torch.int64)
+                ).view(bsz, seq_len, -1)
+
+        class InnerModule(torch.nn.Module):
+            def __init__(self, embedding_dim):
+                super().__init__()
+                self.weights = InnerModule.get_embedding(embedding_dim)
+                self.module = InnerModule2(embedding_dim=8)
+
+            @staticmethod
+            def get_embedding(embedding_dim: int):
+                emb = 4 / ((embedding_dim // 2) - 1)
+                return torch.exp(
+                    torch.arange((embedding_dim // 2), dtype=torch.float) * -emb
+                )
+
+            def forward(self, x):
+                return self.module(x) + self.weights
+
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.module = InnerModule(embedding_dim=8)
+
+            def forward(self, x):
+                return self.module(x)
+
+        class FunctionalModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("outer_weights", InnerModule.get_embedding(8))
+
+            def forward(self, x, weights):
+                bsz, seq_len = x.shape
+                weights = weights.to(self.outer_weights) * 3
+                result = weights.index_select(
+                    0, torch.ones((bsz * seq_len), dtype=torch.int64)
+                ).view(bsz, seq_len, -1)
+                return result + self.outer_weights, weights
+
+        x = torch.randn(3, 256)
+        program = self.run_test(
+            FunctionalModule(),
+            (x, InnerModule2.get_embedding(8)),
+            dynamic_shapes=(
+                {0: torch.export.Dim.AUTO, 1: torch.export.Dim.AUTO},
+                {},
+            ),
+        )
+        fixed = self.run_test(
+            FunctionalModule(),
+            (x, InnerModule2.get_embedding(8)),
+            remained_onnx_input_idx=[1],
+        )
+        self.assertFalse(fixed.model.graph.inputs[0].uses())
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "nested-embedding-state.onnx"
+            program.save(path, external_data=False)
+            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            for candidate in (program, reloaded):
+                reference = Module()
+                state = reference.module.module.weights.clone()
+                # Persistent updates are explicit inputs/outputs, not capture-time writes.
+                for value in (x, torch.randn(4, 17), torch.randn(2, 2)):
+                    expected = reference(value)
+                    actual, state = candidate(value, state)
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(state, reference.module.module.weights)
+
     def test_set_attr_modules_2(self):
         class InnerModule(torch.nn.Module):
             def __init__(self, embedding_dim):

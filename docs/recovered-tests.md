@@ -9,17 +9,18 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 645 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 45
+retired frontend. 647 original runtime test bodies/comments, four control-flow
+regressions, 37 model methods, seven autograd forward-inlining methods and 47
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 80, 'inapplicable': 57, 'migrated': 738}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 76, 'inapplicable': 57, 'migrated': 742}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
-tests are part of the default suite.
+tests belong to the configured suites; the backend-specific FBGEMM cohort runs
+explicitly in Linux CI.
 
 Fixed-arity list mutation and prefix-sum indexing retain the original 12x4
 fixtures and independent imperative oracles. Tensorized list storage replaces
@@ -97,6 +98,28 @@ Formerly rejected area-mode adaptive upsampling now has positive numerical
 coverage for both original forms: sizes 24/[16] and scales 2.0/[2.3] from the
 original 1x2x6 input. Both tuple outputs, changed values and serialization are
 checked instead of preserving the obsolete expected RuntimeError.
+
+The other nested embedding-module case preserves persistent weight multiplication
+across three calls, with explicit state inputs/outputs checked against the
+original mutable module before/after serialization. Dynamic batch/sequence
+shapes and fixed-shape input-data elimination are both exercised. This is
+explicit state threading, not implicit ONNXProgram buffer mutation.
+
+The original recurrent symbolic-time regression covers LSTM, GRU and vanilla
+RNN, changing time/batch 11x2 to 7x4 and tying hidden-state batch dimensions.
+LSTM/GRU export directly. Raw `nn.RNN` currently specializes the time extent;
+its adapter uses a genuine dynamic ONNX Loop with the original weights and
+initial state, checked against the untouched fused RNN before/after saving.
+Both exported time and batch dimensions are asserted symbolic; this does not
+claim automatic dynamic-time capture of raw `nn.RNN`.
+
+The original invalid-dynamic-axis-name fixture now exercises actual public
+export. Invalid entries receive individual actionable warnings instead of
+crashing later with a pytree leaf-count error. The caller's dictionary is
+preserved, and partial `input_names` still allow the remaining inferred names.
+The verbosity regression retains the original Exp model and checks modern
+progress controls for None/False/True plus saved-model execution; it does not
+reintroduce legacy JIT docstring-stripping semantics.
 
 Recovered Normal/Uniform sampling exposed missing BOOL-only `_is_all_true`
 translation. Its native reduction now preserves scalar, mixed and empty-input
@@ -555,7 +578,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:1355::test_squeeze_dynamic` | blocked | Original dynamic-axis probe fails full ONNX shape checking: Squeeze inferred rank 2 disagrees with declared rank 3; changing the selected dimension between 1 and 2 requires correct variable-rank semantics/metadata |
 | `test_pytorch_onnx_onnxruntime.py:1360::test_squeeze_neg_without_no_op` | migrated | test_convolution_shape_regressions.py; original static negative-axis squeeze |
 | `test_pytorch_onnx_onnxruntime.py:1365::test_squeeze_neg` | blocked | Exact original negative-axis probe also fails full ONNX shape checking with inferred rank 2 versus declared rank 3; no static-only substitute counted |
-| `test_pytorch_onnx_onnxruntime.py:1370::test_squeeze_all_dims` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1370::test_squeeze_all_dims` | blocked | Exact original numerical probe passes, but metadata audit finds declared output rank 3 while actual outputs have rank 2/3; not counted as restored with this inconsistent variable-rank contract |
 | `test_pytorch_onnx_onnxruntime.py:1376::test_squeeze_no_op` | blocked | Exact original dynamic no-op/squeeze probe fails full shape checking with inferred rank 2 versus declared rank 3; conditional rank-changing behavior is not restored |
 | `test_pytorch_onnx_onnxruntime.py:1382::test_squeeze_runtime_dim` | blocked | Changing a runtime dimension between one and three changes output rank; full ONNX shape checking rejects inferred rank one versus declared rank two |
 | `test_pytorch_onnx_onnxruntime.py:1394::test_squeeze` | migrated | tests/recovered/test_additional_regressions.py::test_squeeze |
@@ -1081,7 +1104,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11149::test_rpn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11188::test_multi_scale_roi_align` | migrated | tests/recovered/test_nested_contract_regressions.py; original two-level feature-pyramid architecture/shapes and changed features/boxes, nested dict/list inputs, serialization/runtime checks; old opset-16 exclusion retired |
 | `test_pytorch_onnx_onnxruntime.py:11230::test_set_` | blocked | torch.export decomposition rejects set_ on an input together with other mutations |
-| `test_pytorch_onnx_onnxruntime.py:11251::test_set_attr_modules` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11251::test_set_attr_modules` | migrated | `tests/recovered/test_branch_alias_regressions.py::test_set_attr_modules`; original nested mutable embedding oracle, explicit persistent weight state across three calls and shapes, fixed-input elimination and save/reload; no implicit buffer-mutation claim |
 | `test_pytorch_onnx_onnxruntime.py:11311::test_set_attr_modules_2` | migrated | `tests/recovered/test_branch_alias_regressions.py::test_set_attr_modules_2`; original nested embedding/attribute-reset body, dynamic batch/sequence dimensions, 3x256 / 4x17 / 2x2 inputs, input-use elimination and save/reload |
 | `test_pytorch_onnx_onnxruntime.py:11350::test_set_attr` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11373::test_set_attr_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -1113,7 +1136,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:12202::test_symbolic_shape_inference_expand_2` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_expand_2 |
 | `test_pytorch_onnx_onnxruntime.py:12219::test_symbolic_shape_inference_slice` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_slice |
 | `test_pytorch_onnx_onnxruntime.py:12237::test_symbolic_shape_inference_slice_2` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_slice_2 |
-| `test_pytorch_onnx_onnxruntime.py:12248::test_symbolic_shape_inference_time` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:12248::test_symbolic_shape_inference_time` | migrated | `tests/recovered/test_recurrent_model_regressions.py::test_symbolic_shape_inference_time`; all three original recurrent families, symbolic time/batch, changed 11x2 to 7x4 with matching states and serialization; vanilla RNN uses explicit dynamic-Loop adapter against original fused oracle |
 | `test_pytorch_onnx_onnxruntime.py:12274::test_symbolic_shape_inference_dynamic_axes` | migrated | tests/recovered/test_additional_regressions.py::test_symbolic_shape_inference_dynamic_axes |
 | `test_pytorch_onnx_onnxruntime.py:12290::test_hann_window_periodic` | migrated | Original models/examples/axis matrices and comments in tests/recovered/test_factory_embedding_regressions.py; regular modules replace scripted frontend, strict runtime values/shapes/dtypes and save/reload |
 | `test_pytorch_onnx_onnxruntime.py:12312::test_hann_window_not_periodic` | migrated | Original models/examples/axis matrices and comments in tests/recovered/test_factory_embedding_regressions.py; regular modules replace scripted frontend, strict runtime values/shapes/dtypes and save/reload |
@@ -1216,7 +1239,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_shape_inference.py:457::test_setType_maintains_output_shape_for_single_custom_op_with_dynamic_axes` | inapplicable | Targets private TorchScript shape-inference passes; modern native schema/metadata contracts live in exporter/test_ir_builder.py |
 | `test_pytorch_onnx_shape_inference.py:500::test_setType_maintains_output_shape_for_single_custom_op_with_onnx_ops` | inapplicable | Targets private TorchScript shape-inference passes; modern native schema/metadata contracts live in exporter/test_ir_builder.py |
 | `test_utility_funs.py:102::test_is_in_onnx_export` | migrated | test_export_utility_regressions.py; both package and Torch export flags are true during failed capture and restored afterward |
-| `test_utility_funs.py:120::test_validate_dynamic_axes_invalid_input_output_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:120::test_validate_dynamic_axes_invalid_input_output_name` | migrated | `tests/recovered/test_export_utility_regressions.py`; original two invalid keys now exercise public export and individual actionable warnings, empty/named axes, input dictionary preservation and valid partially named dynamic inputs |
 | `test_utility_funs.py:141::test_split_to_slice` | migrated | test_export_utility_regressions.py; no SplitToSequence; actual independent widths/batches and total widths 7/9 execute |
 | `test_utility_funs.py:162::test_constant_fold_transpose` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_transpose`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:182::test_constant_fold_reduceL2` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reduceL2`; native IR invariant and actual numerical/runtime checks |
@@ -1240,7 +1263,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:593::test_constant_fold_sqrt` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_sqrt`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:615::test_constant_fold_shape` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_shape`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:635::test_constant_fold_upsample_scale_fold_as_constant` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_upsample_scale_fold_as_constant`; native IR invariant and actual numerical/runtime checks |
-| `test_utility_funs.py:645::test_verbose` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:645::test_verbose` | migrated | Same suite; original Exp model, modern None/False/True progress controls and actual export/check/save/reload/runtime; does not claim legacy JIT docstring-stripping behavior |
 | `test_utility_funs.py:677::test_error_on_data_parallel` | migrated | test_export_utility_regressions.py; modern CPU wrapper now succeeds; corrected originally invalid reflection-pad input height; no GPU claim |
 | `test_utility_funs.py:692::test_sequence_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |

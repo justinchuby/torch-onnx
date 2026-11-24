@@ -48,6 +48,102 @@ class _LSTMWithInitialState(torch.nn.Module):
 
 
 class TestRecoveredRecurrentModels(RecoveredRuntimeHarness):
+    def test_symbolic_shape_inference_time(self):
+        class DynamicRNN(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, input, initial):
+                steps = torch.scalar_tensor(input.shape[0], dtype=torch.int64)
+                output = input.new_zeros(
+                    (input.shape[0], input.shape[1], RNN_HIDDEN_SIZE)
+                )
+
+                def condition(i, hidden, output):
+                    return i < steps
+
+                def body(i, hidden, output):
+                    row = input.index_select(0, i.reshape(1)).squeeze(0)
+                    hidden = torch.tanh(
+                        torch.nn.functional.linear(row, self.model.weight_ih_l0)
+                        + torch.nn.functional.linear(hidden, self.model.weight_hh_l0)
+                    )
+                    output = output.index_copy(0, i.reshape(1), hidden.unsqueeze(0))
+                    return i + 1, hidden, output
+
+                _, hidden, output = torch.while_loop(
+                    condition,
+                    body,
+                    (torch.tensor(0), initial.squeeze(0), output),
+                )
+                return output, hidden.unsqueeze(0)
+
+        input = torch.randn(RNN_SEQUENCE_LENGTH, BATCH_SIZE, RNN_INPUT_SIZE)
+        h0 = torch.randn(1, BATCH_SIZE, RNN_HIDDEN_SIZE)
+        c0 = torch.randn(1, BATCH_SIZE, RNN_HIDDEN_SIZE)
+        batch = torch.export.Dim("rnn_batch", min=2)
+        time = torch.export.Dim("rnn_time", min=2)
+        for kind in ("lstm", "gru", "rnn"):
+            with self.subTest(kind=kind):
+                cls = {"lstm": torch.nn.LSTM, "gru": torch.nn.GRU, "rnn": torch.nn.RNN}[
+                    kind
+                ]
+                model = cls(
+                    RNN_INPUT_SIZE,
+                    RNN_HIDDEN_SIZE,
+                    1,
+                    bidirectional=False,
+                    bias=kind == "lstm",
+                )
+                initial = (h0, c0) if kind == "lstm" else h0
+                changed_input = torch.randn(7, 4, RNN_INPUT_SIZE)
+                changed_h = torch.randn(1, 4, RNN_HIDDEN_SIZE)
+                changed_initial = (
+                    (changed_h, torch.randn_like(changed_h))
+                    if kind == "lstm"
+                    else changed_h
+                )
+                state_shapes = (
+                    ({1: batch}, {1: batch}) if kind == "lstm" else {1: batch}
+                )
+                exported_model = DynamicRNN(model) if kind == "rnn" else model
+                program = self.run_test(
+                    exported_model,
+                    (input, initial),
+                    input_names=["x", "y"],
+                    dynamic_shapes=({0: time, 1: batch}, state_shapes),
+                    additional_test_inputs=[(changed_input, changed_initial)],
+                )
+                if kind == "rnn":
+                    self.assertIn(
+                        "Loop", {node.op_type for node in program.model.graph}
+                    )
+                    for args in (
+                        (input, initial),
+                        (changed_input, changed_initial),
+                    ):
+                        self.assertEqual(program(*args), model(*args))
+                self.assertNotIsInstance(program.model.graph.inputs[0].shape[0], int)
+                self.assertNotIsInstance(program.model.graph.inputs[0].shape[1], int)
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / f"dynamic-{kind}.onnx"
+                    program.save(path, external_data=False)
+                    reloaded = torch_onnx.ONNXProgram(
+                        ir.load(path), program.exported_program
+                    )
+                    torch_onnx.testing.assert_onnx_program(
+                        reloaded,
+                        args=(changed_input, changed_initial),
+                        kwargs={},
+                        strategy=None,
+                    )
+                    if kind == "rnn":
+                        self.assertEqual(
+                            reloaded(changed_input, changed_initial),
+                            model(changed_input, changed_initial),
+                        )
+
     def test_rnn_no_bias(self):
         class RnnModelWithPackedSequence(torch.nn.Module):
             def __init__(self, model, batch_first):

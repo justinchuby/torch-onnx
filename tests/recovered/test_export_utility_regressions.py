@@ -8,6 +8,9 @@ public ONNXProgram serialization, and modern capture instead of JIT graphs.
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
+import warnings
 from pathlib import Path
 
 import onnx
@@ -37,6 +40,85 @@ def _custom_inverse(op: torch_onnx.TranslationContext, value: ir.Value) -> ir.Va
 
 
 class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
+    def test_validate_dynamic_axes_invalid_input_output_name(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        x, y = torch.randn(3, 4), torch.randn(3, 4)
+        for invalid_axes in ({}, {0: "invalid_batch"}):
+            with self.subTest(invalid_axes=invalid_axes):
+                axes = {
+                    "input1": {},
+                    "output": {},
+                    "invalid_name1": invalid_axes,
+                    "invalid_name2": invalid_axes,
+                }
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    program = torch_onnx.export(
+                        Model().eval(),
+                        (x, y),
+                        input_names=["input1", "input2"],
+                        output_names=["output"],
+                        dynamic_axes=axes,
+                        verbose=False,
+                    )
+                messages = [
+                    str(warning.message)
+                    for warning in caught
+                    if str(warning.message).startswith("Provided key")
+                ]
+                self.assertEqual(len(messages), 2)
+                for name in ("invalid_name1", "invalid_name2"):
+                    self.assertTrue(
+                        any(f"Provided key {name} " in message for message in messages)
+                    )
+                self.assertIn("invalid_name1", axes)
+                self.assertIn("invalid_name2", axes)
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                self.assertEqual(program(x, y)[0], x + y)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            partial_names = torch_onnx.export(
+                Model().eval(),
+                (x, y),
+                input_names=["input1"],
+                dynamic_axes={"input1": {0: "batch"}, "y": {0: "batch"}},
+                verbose=False,
+            )
+        self.assertFalse(any(str(w.message).startswith("Provided key") for w in caught))
+        changed = torch.randn(5, 4)
+        self.assertEqual(partial_names(changed, changed)[0], changed + changed)
+
+    def test_verbose(self):
+        class MyModule(torch.nn.Module):
+            def forward(self, input):
+                return torch.exp(input)
+
+        model = MyModule().eval()
+        x = torch.randn(3, 4)
+        # Modern verbosity controls progress, not the retired JIT docstring stripping.
+        for verbose in (None, False, True):
+            with self.subTest(verbose=verbose):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    program = torch_onnx.export(model, (x,), verbose=verbose)
+                if verbose is False:
+                    self.assertEqual(output.getvalue(), "")
+                else:
+                    self.assertIn("Translate the graph into ONNX", output.getvalue())
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                self.assertEqual(program(x)[0], model(x))
+                with common_utils.TemporaryDirectoryName() as directory:
+                    path = Path(directory) / "verbose.onnx"
+                    program.save(path, external_data=False)
+                    reloaded = torch_onnx.ONNXProgram(
+                        ir.load(path), program.exported_program
+                    )
+                    self.assertEqual(reloaded(x)[0], model(x))
+
     def test_custom_layer_tuple(self):
         class CustomFunction(torch.autograd.Function):
             @staticmethod

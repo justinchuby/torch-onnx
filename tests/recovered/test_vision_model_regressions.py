@@ -1,5 +1,5 @@
 # Copyright: PyTorch contributors. See LICENSE-PYTORCH.
-"""Current torchvision adaptations of the removed test_models.py model cases.
+"""Current vision-model adaptations of the removed test_models.py model cases.
 
 Source: e2c2673d00500d268fcb1cc63fa7cc3173876505, removed by
 6dca9f63bc4975ac323044a440c2c7e5f8512408. Preserve original architectures,
@@ -13,6 +13,7 @@ import onnxruntime as ort
 import pytest
 import torch
 import torchvision.models as models
+from model_defs.srresnet import SRResNet
 
 import torch_onnx
 
@@ -28,6 +29,19 @@ import torch_onnx
         ("mobilenet_v2", (2, 3, 224, 224), {}, 1e-3, 1e-5),
         ("shufflenet_v2_x1_0", (2, 3, 224, 224), {}, 1e-3, 1e-5),
         ("alexnet", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        # VGG 16-layer model (configuration "D"), without/with batch normalization.
+        ("vgg16", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        ("vgg16_bn", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        # VGG 19-layer model (configuration "E"), without/with batch normalization.
+        ("vgg19", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        ("vgg19_bn", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        (
+            "srresnet",
+            (1, 3, 224, 224),
+            {"rescale_factor": 4, "n_filters": 64, "n_blocks": 8},
+            1e-2,
+            1e-7,
+        ),
         (
             "segmentation.fcn_resnet101",
             (2, 3, 224, 224),
@@ -54,10 +68,13 @@ def test_original_vision_model(name, shape, kwargs, rtol, atol):
     try:
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(0)
-            factory = models
-            for component in name.split("."):
-                factory = getattr(factory, component)
-            model = factory(weights=None, **kwargs).eval()
+            if name == "srresnet":
+                model = SRResNet(**kwargs).eval()
+            else:
+                factory = models
+                for component in name.split("."):
+                    factory = getattr(factory, component)
+                model = factory(weights=None, **kwargs).eval()
             x = torch.randn(shape) if name == "inception_v3" else torch.ones(shape)
             program = torch_onnx.export(model, (x,), verbose=False)
             onnx.checker.check_model(program.model_proto, full_check=True)
@@ -74,6 +91,7 @@ def test_original_vision_model(name, shape, kwargs, rtol, atol):
                 "inception_v3",
                 "segmentation.fcn_resnet101",
                 "segmentation.deeplabv3_resnet101",
+                "srresnet",
             }:
                 # Near-zero cancellation makes float32 itself an unstable oracle
                 # for these deep, untrained networks with large output ranges.

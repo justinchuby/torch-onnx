@@ -10,13 +10,13 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 460 original runtime test bodies/comments, four control-flow
-regressions, 32 model methods, seven autograd forward-inlining methods and 40
+regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 277, 'inapplicable': 55, 'migrated': 543}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 272, 'inapplicable': 55, 'migrated': 548}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -99,9 +99,9 @@ branches now execute both paths through a genuine dynamic ONNX If.
 
 Vision models retain their original input dimensions and architectures, use no
 downloaded weights, and execute actual ONNX Runtime inference after full schema
-checking. For untrained Inception and ResNet101 segmentation models, float32
+checking. For untrained Inception, ResNet101 segmentation models and SRResNet, float32
 PyTorch itself exhibits cancellation against a float64 oracle (measured relative
-L2 errors up to 2e-6). These three tests therefore require both relative L2 and
+L2 errors up to 2e-6). These four tests therefore require both relative L2 and
 range-normalized maximum errors at most 1e-5 against float64 PyTorch; they do not
 silently loosen every operator's tolerances. Inception additionally retains the
 source's explicit 1% unstable-element allowance. Other vision models retain their
@@ -185,6 +185,25 @@ retired training-mode override API. CPU DataParallel now exports successfully;
 its original invalid reflection-padding example is given sufficient spatial
 dimensions. This does not claim GPU DataParallel support.
 
+All four originally memory-skipped VGG16/19 (with/without BN) models now run at
+their original batch-two 224x224 dimensions and original elementwise tolerances.
+The originally skipped SRResNet also runs at 224x224 with 64 filters, eight
+residual blocks and four-times upscaling. Only the obsolete orthogonal initializer
+spelling changes to orthogonal_. Its float32 Torch/ONNX relative L2 errors
+against float64 measure 1.95e-6/7.35e-7 respectively; ONNX is more accurate even
+though cancellation fails 85 of 2.4 million near-zero elementwise comparisons.
+The same bounded float64-oracle policy above applies, with strict output
+shape/dtype checks. No memory skips or reduced-size stand-ins are retained.
+
+QAT recovery exposed a separate native fake-quantization rounding bug:
+Torch multiplies by a float32 reciprocal before rounding, whereas direct
+QuantizeLinear division can select another bin at half-way values. Scalar,
+tensor-qparam and per-channel builders now round in Torch's arithmetic order
+before a unit-scale quantizer. Exact tests cover zero/nonzero zero points in
+ONNX reference execution and ONNX Runtime. Converted quantization operators are
+unchanged. The full frozen-QAT ResNet cases remain blocked by additional
+numerical discrepancies, not enabled with relaxed tolerances or skips.
+
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
 | `test_autograd_funs.py:19::test_single_output` | migrated | test_autograd_regressions.py; original autograd forward, alternate values and serialization |
@@ -203,14 +222,14 @@ dimensions. This does not claim GPU DataParallel support.
 | `test_models.py:85::test_permute` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[PermuteNet] |
 | `test_models.py:90::test_embedding_sequential_1` | migrated | tests/recovered/test_model_regressions.py::test_original_embedding_sequence[EmbeddingNetwork1] |
 | `test_models.py:95::test_embedding_sequential_2` | migrated | tests/recovered/test_model_regressions.py::test_original_embedding_sequence[EmbeddingNetwork2] |
-| `test_models.py:100::test_srresnet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:100::test_srresnet` | migrated | test_vision_model_regressions.py; original 224x224/64-filter/eight-block/four-times-upscale fixture; float64 oracle checks; historical memory skip removed |
 | `test_models.py:107::test_super_resolution` | migrated | tests/recovered/test_model_regressions.py::test_super_resolution |
 | `test_models.py:111::test_alexnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (alexnet); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:115::test_mnist` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[MNIST] |
-| `test_models.py:120::test_vgg16` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:126::test_vgg16_bn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:132::test_vgg19` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:138::test_vgg19_bn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:120::test_vgg16` | migrated | test_vision_model_regressions.py; original batch-two 224x224 model and tolerances; actual runtime; historical memory skip removed |
+| `test_models.py:126::test_vgg16_bn` | migrated | test_vision_model_regressions.py; original batch-two 224x224 model and tolerances; actual runtime; historical memory skip removed |
+| `test_models.py:132::test_vgg19` | migrated | test_vision_model_regressions.py; original batch-two 224x224 model and tolerances; actual runtime; historical memory skip removed |
+| `test_models.py:138::test_vgg19_bn` | migrated | test_vision_model_regressions.py; original batch-two 224x224 model and tolerances; actual runtime; historical memory skip removed |
 | `test_models.py:143::test_resnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (resnet50); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:149::test_inception` | migrated | `tests/recovered/test_vision_model_regressions.py` (inception_v3); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:153::test_squeezenet` | migrated | tests/recovered/test_model_regressions.py::test_squeezenet_models |
@@ -218,8 +237,8 @@ dimensions. This does not claim GPU DataParallel support.
 | `test_models.py:172::test_dcgan_netD` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[False] |
 | `test_models.py:179::test_dcgan_netG` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[True] |
 | `test_models.py:186::test_fake_quant` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[FakeQuantNet], frozen-observer inference variant checked against original |
-| `test_models.py:191::test_qat_resnet_pertensor` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:214::test_qat_resnet_per_channel` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:191::test_qat_resnet_pertensor` | blocked | Original calibrated ResNet50 with 161 frozen fake-quant modules matches eager Torch; after rounding repair ONNX still mismatches 1122/2000 elements, max abs 0.079, even with both model/runtime optimization disabled; further isolation needed |
+| `test_models.py:214::test_qat_resnet_per_channel` | blocked | Original calibrated ResNet50 with frozen per-channel weights matches eager Torch; rounding repair reduces mismatches 1404 to144/2000, max abs 0.0267; still fails with both optimization layers disabled; not claimed restored |
 | `test_models.py:236::test_googlenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (googlenet); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:240::test_mnasnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mnasnet1_0); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:244::test_mobilenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mobilenet_v2); original architecture/shape, full schema check and CPU numerical execution |

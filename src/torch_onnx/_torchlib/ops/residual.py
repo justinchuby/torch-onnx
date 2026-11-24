@@ -382,7 +382,18 @@ def aten_fake_quantize_per_channel_affine(
             f"Got {zero_point.dtype}",
         )
 
-    quantized = op.QuantizeLinear(self, scale, zero_point, axis=axis)
+    rank = len(common_ops.require_shape(op, self))
+    if not -rank <= axis < rank:
+        raise ValueError(
+            f"Fake-quantization axis {axis} is invalid for input rank {rank}. "
+            "Choose an axis that selects an existing input dimension."
+        )
+    broadcast_shape = [1] * rank
+    broadcast_shape[axis % rank] = -1
+    inverse_scale = op.Reshape(op.Reciprocal(scale), broadcast_shape)
+    rounded = op.Round(op.Mul(op.CastLike(self, scale), inverse_scale))
+    unit_scale = op.Expand(op.CastLike(1.0, scale), op.Shape(scale))
+    quantized = op.QuantizeLinear(rounded, unit_scale, zero_point, axis=axis)
 
     # See comment about, PyTorch-specific (0, 127) handling
     if (quant_min, quant_max) == (0, 127):
@@ -1351,7 +1362,11 @@ def _aten_fake_quantize_per_tensor_affine(
     ):
         zero_point = op.Cast(zero_point, to=int_dtype)
 
-    quantized = op.QuantizeLinear(self, scale, zero_point)
+    # Torch rounds x * reciprocal(scale); direct QuantizeLinear division can
+    # choose a different bin at half-way values, including constant-folded weights.
+    rounded = op.Round(op.Mul(op.CastLike(self, scale), op.Reciprocal(scale)))
+    unit_scale = op.Expand(op.CastLike(1.0, scale), op.Shape(scale))
+    quantized = op.QuantizeLinear(rounded, unit_scale, zero_point)
 
     # See comment about, PyTorch-specific (0, 127) handling
     if (quant_min, quant_max) == (0, 127):

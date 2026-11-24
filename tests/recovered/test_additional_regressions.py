@@ -8,6 +8,7 @@ Original method bodies and comments use the standalone modern-export harness.
 import copy
 from collections import OrderedDict
 
+import onnx
 import torch
 import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
@@ -3420,6 +3421,63 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         single_roi = torch.tensor([[0, 0, 0, 4, 4]], dtype=torch.float32)
         model = torchvision.ops.RoIAlign((5, 5), 1.0, 2)
         self.run_test(model, (x, single_roi))
+
+    def test_roi_pool(self):
+        x = torch.rand(1, 1, 10, 10, dtype=torch.float32)
+        rois = torch.tensor([[0, 0, 0, 4, 4]], dtype=torch.float32)
+        model = torchvision.ops.RoIPool((5, 5), 2.0)
+        program = self.run_test(model, (x, rois))
+        assert any(node.op_type == "MaxRoiPool" for node in program.model.graph)
+        assert not any(node.op_type == "GatherElements" for node in program.model.graph)
+
+    def test_roi_pool_argmax(self):
+        class Module(torch.nn.Module):
+            def __init__(self, scale):
+                super().__init__()
+                self.scale = scale
+
+            def forward(self, x, rois):
+                return torch.ops.torchvision.roi_pool(x, rois, self.scale, 3, 2)
+
+        # Ties choose the first spatial index, not the last maximum.
+        x = torch.arange(2 * 3 * 6 * 7).reshape(2, 3, 6, 7).float() % 5 - 8
+        rois = torch.tensor(
+            [[0, 0, 0, 6, 5], [1, -0.5, 1.5, 4.5, 5.5], [0, 20, 20, 22, 22]],
+            dtype=torch.float32,
+        )
+        for opset, scale in ((18, 0.5), (18, 1.3), (21, 1.0), (21, 2.0)):
+            with self.subTest(opset=opset, scale=scale):
+                self.run_test(
+                    Module(scale),
+                    (x, rois),
+                    opset_version=opset,
+                    additional_test_inputs=[
+                        (x.flip(-1), rois),
+                        (torch.ones_like(x), rois),
+                        (torch.full_like(x, torch.finfo(x.dtype).min), rois),
+                        (torch.full_like(x, -torch.inf), rois),
+                        (x, rois[:0]),
+                        (
+                            torch.randn(3, 2, 8, 9),
+                            torch.tensor([[2, 0.5, 0.5, 5.5, 6.5]]),
+                        ),
+                    ],
+                    input_names=["x", "rois"],
+                    dynamic_axes={
+                        "x": {0: "batch", 1: "channels", 2: "height", 3: "width"},
+                        "rois": {0: "count"},
+                    },
+                    rtol=0,
+                    atol=0,
+                )
+        # ORT 1.32 lacks a MaxRoiPool-22 kernel; newer schemas are checked directly.
+        for opset in (23, 24, 25, 26, 27, 28):
+            program = torch_onnx.export(
+                Module(1.0), (x, rois), opset_version=opset, verbose=False
+            )
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            assert program.model.opset_imports[""] == opset
+            assert any(node.op_type == "MaxRoiPool" for node in program.model.graph)
 
     def test_roi_align_aligned(self):
         x = torch.rand(1, 1, 10, 10, dtype=torch.float32)

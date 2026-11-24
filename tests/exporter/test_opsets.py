@@ -455,6 +455,25 @@ def test_29_logcumsumexp_edge_cases(x):
 
 
 @pytest.mark.opset29
+def test_29_roi_pool_schema():
+    import torchvision
+
+    class Model(torch.nn.Module):
+        def forward(self, x, rois):
+            return torchvision.ops.roi_pool(x, rois, (3, 2), 1.0)
+
+    program = torch_onnx.export(
+        Model(),
+        (torch.randn(2, 3, 6, 7), torch.tensor([[0.0, 0, 0, 6, 5]])),
+        opset_version=29,
+        verbose=False,
+    )
+    assert program.model.opset_imports[""] == 29
+    assert any(node.op_type == "MaxRoiPool" for node in program.model.graph)
+    onnx.checker.check_model(program.model_proto, full_check=True)
+
+
+@pytest.mark.opset29
 def test_29_scatter_mean_uses_native_reduction():
     class Model(torch.nn.Module):
         def forward(self, x, index, src):

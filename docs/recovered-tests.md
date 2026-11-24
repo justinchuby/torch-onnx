@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 674 original runtime test bodies/comments, four control-flow
+retired frontend. 675 original runtime test bodies/comments, four control-flow
 regressions, 43 model methods, seven autograd forward-inlining methods and 54
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,10 +17,20 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 31, 'inapplicable': 62, 'migrated': 782}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 30, 'inapplicable': 62, 'migrated': 783}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
+
+The original RoIPool fixture now uses native MaxRoiPool with the current
+torchvision operator signature. Its second output contains genuine first-maximum
+spatial indices, including ties, empty/outside bins and extreme negative values,
+not placeholder indices. Independent eager comparisons also cover changing
+batch/channel/spatial dimensions, fractional coordinates, zero ROIs and
+serialization. Unused index construction is removed by ordinary optimization.
+Numerical ROI-pooling execution covers opsets18/21; opsets23-29 have full
+schema checks (29 uses pinned ONNX main). ORT1.32 has no MaxRoiPool-22 kernel,
+so higher-opset ROI-pooling execution is not claimed.
 
 The recovered sequence-dimension utility checks both the original static
 `[2, 3]` and merged dynamic `[2, unknown]` element metadata. Modern capture
@@ -1291,7 +1301,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11029::test_clip_boxes_to_image` | migrated | tests/recovered/test_detection_postprocessing_regressions.py::test_clip_boxes_to_image; original five-box/200x300/300x400 fixtures plus boundary, empty-box and zero-height cases; explicit shape-derived tensor bounds avoid frontend scalar specialization, native Clip and save/reload checked against untouched TorchVision |
 | `test_pytorch_onnx_onnxruntime.py:11053::test_roi_align` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align |
 | `test_pytorch_onnx_onnxruntime.py:11063::test_roi_align_aligned` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align_aligned |
-| `test_pytorch_onnx_onnxruntime.py:11088::test_roi_pool` | blocked | Latest torchvision ROI pool returns pooled values and argmax with a six-argument native signature; current MaxRoiPool lowering lacks the argmax contract |
+| `test_pytorch_onnx_onnxruntime.py:11088::test_roi_pool` | migrated | tests/recovered/test_additional_regressions.py::test_roi_pool; original 1x1x10x10/5x5/spatial_scale2 fixture uses native MaxRoiPool; additional full tuple regression verifies real INT32 first-maximum spatial indices, ties, extreme negatives, empty/outside bins, dynamic sizes/zero ROIs and save/reload |
 | `test_pytorch_onnx_onnxruntime.py:11097::test_resize_images` | migrated | Original transform parameters and 3x10x20 to 3x100x150 dynamic resize fixtures; actual export/schema/numerical/save-reload checks in test_nested_contract_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:11118::test_transform_images` | migrated | Original two-image normalization/resize/padding fixtures and changed values; actual export/schema/numerical/save-reload checks in test_nested_contract_regressions.py; fixed image-list cardinality |
 | `test_pytorch_onnx_onnxruntime.py:11149::test_rpn` | blocked | Exact original two-image/five-level fixture hits torchvision batched_nms data-dependent numel heuristic; fixed-level NMS adapter captures but fails original numerical output-order comparison (two proposal rows differ), so neither adapter nor reduced/static fixture is counted |

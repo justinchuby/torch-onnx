@@ -603,6 +603,17 @@ before a unit-scale quantizer. Exact tests cover zero/nonzero zero points in
 ONNX reference execution and ONNX Runtime. Converted quantization operators are
 unchanged. The full frozen-QAT ResNet cases remain blocked by additional
 numerical discrepancies, not enabled with relaxed tolerances or skips.
+Intermediate-value checks of the actual wheel locate the first activation
+disagreement after convolution, with identical preceding activations and
+fake-quantized weights. For per-tensor weights, `conv2d_48` produces
+1.2079682350 in Torch versus 1.2079677582 in ONNX Runtime: reciprocal-scaled
+values 15.5000019073 and 15.4999961853 select adjacent quantization bins.
+For per-channel weights, `conv2d_41` similarly produces -0.7119808793 versus
+-0.7119819522, scaling to -5.4999952316 versus -5.5000033379. Each first
+quantized discrepancy affects the same spatial location in both batch entries
+before propagating through later layers. This is distinct from the repaired
+fake-quantizer arithmetic-order bug; no convolution replacement, oracle change
+or tolerance relaxation is used to hide these remaining runtime differences.
 
 Thirty-one more runtime methods restore dynamic four-output slicing, symbolic
 arange bounds, dynamic PReLU/ReLU6, scalar index selection, scalar remainder,

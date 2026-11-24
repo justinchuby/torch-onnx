@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 672 original runtime test bodies/comments, four control-flow
+retired frontend. 674 original runtime test bodies/comments, four control-flow
 regressions, 43 model methods, seven autograd forward-inlining methods and 54
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 33, 'inapplicable': 62, 'migrated': 780}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 31, 'inapplicable': 62, 'migrated': 782}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -28,6 +28,16 @@ flattens Python list outputs, so an explicitly registered native translation
 preserves SequenceConstruct inside a real export rather than requiring the
 retired scripted-list output convention. Independent list-output oracles cover
 original and changed widths, serialization and subsequent optimization.
+
+Fixed FX tuples from scalar-int64 splits now use native variadic Split rather
+than boxing a sequence and immediately indexing it. The original positive/
+negative-axis chunk regressions execute widths 18/13/14/15 with optimization
+enabled, without the ONNX Script dynamic SplitToSequence folding crash or an
+optimizer replacement. Empty and single-output splits retain their numerical
+contracts. This does not claim variable output cardinality: the original
+batch-derived chunk fixture always uses batch3, which the modern output tree
+fixes while width remains dynamic. Other sequence producers retain their
+sequence representation.
 
 The custom-operator fallthrough fixture retains the original
 `custom_namespace::custom_op` addition and dynamic three-axis inputs. Explicit
@@ -1035,8 +1045,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:5963::test_split_size_with_slice` | migrated | tests/recovered/test_additional_regressions.py::test_split_size_with_slice |
 | `test_pytorch_onnx_onnxruntime.py:5982::test_split_dynamic` | migrated | Original examples/configuration matrix, strict runtime values/shapes/dtypes and save/reload in tests/recovered/test_scalar_sequence_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:6000::test_split_dynamic_axes` | migrated | tests/recovered/test_additional_regressions.py::test_split_dynamic_axes |
-| `test_pytorch_onnx_onnxruntime.py:6015::test_chunk` | blocked | Dynamic split size exports, but ONNX Script 0.7.2 split_to_sequence constant folding dereferences None.ndim and crashes; no optimizer bypass or new skip |
-| `test_pytorch_onnx_onnxruntime.py:6049::test_dynamic_chunk` | blocked | Same dynamic SplitToSequence optimizer crash for the original batch-derived chunk count; all original additional batches have three outputs, not variable output-arity coverage |
+| `test_pytorch_onnx_onnxruntime.py:6015::test_chunk` | migrated | `test_dynamic_operator_regressions.py::test_chunk`; original width18 and additional13/14/15, signed axes, independent eager and serialization oracles; fixed FX arity uses native Split with dynamic sizes and ordinary optimization |
+| `test_pytorch_onnx_onnxruntime.py:6049::test_dynamic_chunk` | migrated | `test_dynamic_operator_regressions.py::test_dynamic_chunk`; original batch-derived count expression, batch3 and widths18/13/14/15 on both signed axes; native Split and independent eager/save/reload checks; batch3/output arity fixed by modern output tree, no variable-cardinality claim |
 | `test_pytorch_onnx_onnxruntime.py:6082::test_concat` | migrated | `test_runtime_regressions.py::test_concat`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:6093::test_concat_dynamic` | migrated | Original examples/configuration matrix, strict runtime values/shapes/dtypes and save/reload in tests/recovered/test_scalar_sequence_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:6102::test_stack` | migrated | `test_runtime_regressions.py::test_stack`; original numerical body, modern standalone harness |

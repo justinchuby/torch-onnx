@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 661 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 47
+regressions, 37 model methods, seven autograd forward-inlining methods and 48
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 62, 'inapplicable': 57, 'migrated': 756}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 61, 'inapplicable': 57, 'migrated': 757}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -65,6 +65,14 @@ results). An explicit functional If/Loop adapter retains a real Div in the loop
 body, rather than substituting the final constant result. Original 1x5x30x30,
 changed batch/channel/spatial sizes, empty batches and static input elimination
 execute against the unchanged source body before and after serialization.
+
+The original optional-argument local-function overload model retains all three
+signatures and its one/two-output forms. Explicit native translations create the
+three source function names and typed local bodies. Unoptimized serialization
+checks their structure; ordinary ONNXProgram optimization is then exercised with
+a fresh inference session and unchanged numerical outputs. This maps the intent
+to native registration/functions, not automatic `export_modules_as_functions`
+module extraction.
 
 Fixed-arity list mutation and prefix-sum indexing retain the original 12x4
 fixtures and independent imperative oracles. Tensorized list storage replaces
@@ -511,8 +519,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models.py:281::test_r2plus1d_18_video` | migrated | `tests/recovered/test_vision_model_regressions.py` (video.r2plus1d_18); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models_onnxruntime.py:209::test_faster_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models_onnxruntime.py:252::test_mask_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models_onnxruntime.py:310::test_keypoint_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models_onnxruntime.py:349::test_roi_heads` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models_onnxruntime.py:310::test_keypoint_rcnn` | blocked | Original random-weight model and100x100 constant dummy-image fixture fail torch.export in torchvision batched_nms on data-dependent4*u1 >4000; no original skip retained as passing coverage, no weight download or altered small model substituted |
+| `test_models_onnxruntime.py:349::test_roi_heads` | blocked | Exact original helpers/body, two images and five feature levels fail torch.export in torchvision batched_nms on data-dependent4*u1 >4000; full detector not claimed restored from isolated ROIAlign coverage |
 | `test_models_onnxruntime.py:400::test_transformer_encoder` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_transformer_encoder`; original three-layer 512-dimensional encoder, full checker/save/reload/runtime |
 | `test_models_onnxruntime.py:416::test_mobilenet_v3` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_mobilenet_v3`; original unconverted quantization-ready architecture, no downloaded weights |
 | `test_models_onnxruntime.py:423::test_shufflenet_v2_dynamic_axes` | migrated | `tests/recovered/test_runtime_model_regressions.py::test_shufflenet_v2_dynamic_axes`; one dynamic graph executed at original batches1/3 |
@@ -1313,7 +1321,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |
 | `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:801::test_local_function` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:921::test_local_function_overloads` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:921::test_local_function_overloads` | migrated | Original optional-argument model, three source-named functions and one/two-output signatures mapped to explicit native registration; original/negative inputs, structure/save-reload and ordinary optimized fresh-session execution in test_export_utility_regressions.py; no automatic module extraction claim |
 | `test_utility_funs.py:963::test_local_function_infer_scopes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:988::test_local_function_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1049::test_local_function_subset_of_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |

@@ -119,6 +119,135 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                     )
                     self.assertEqual(reloaded(x)[0], model(x))
 
+    def test_local_function_overloads(self):
+        class NWithOverloads(torch.nn.Module):
+            def forward(self, x, y=None, z=None):
+                if y is None:
+                    return x + 1
+                elif z is None:
+                    return x + y
+                else:
+                    return x + y, x + z
+
+        class M(torch.nn.Module):
+            def __init__(self, num_layers):
+                super().__init__()
+                self.n = NWithOverloads()
+
+            def forward(self, x, y, z):
+                return self.n(x), self.n(x, y), self.n(x, y, z)
+
+        class NativeN(NWithOverloads):
+            def forward(self, x, y=None, z=None):
+                if y is None:
+                    return torch.ops.recovered_overloads.unary.default(x)
+                elif z is None:
+                    return torch.ops.recovered_overloads.binary.default(x, y)
+                return torch.ops.recovered_overloads.ternary.default(x, y, z)
+
+        function_names = [
+            "NWithOverloads",
+            "NWithOverloads.1",
+            "NWithOverloads.2",
+        ]
+
+        def translation_for(arity):
+            formals = [
+                ir.Value(name=f"input_{i}", type=ir.TensorType(ir.DataType.FLOAT))
+                for i in range(arity)
+            ]
+            body = ir.Graph(
+                formals, [], nodes=[], name="overload", opset_imports={"": 20}
+            )
+            builder = torch_onnx.GraphBuilder(body, opset=20)
+            if arity == 1:
+                one = builder.call(
+                    "Constant", value=ir.tensor(1.0, dtype=ir.DataType.FLOAT)
+                )[0]
+                body.outputs.append(builder.call("Add", formals[0], one)[0])
+            else:
+                body.outputs.append(builder.call("Add", formals[0], formals[1])[0])
+                if arity == 3:
+                    body.outputs.append(builder.call("Add", formals[0], formals[2])[0])
+            function = ir.Function(
+                "RecoveredFunctions",
+                function_names[arity - 1],
+                "",
+                graph=body,
+                attributes=[],
+            )
+
+            def translation(
+                op: torch_onnx.TranslationContext, *values: ir.Value
+            ) -> ir.Value | tuple[ir.Value, ir.Value]:
+                outputs = op.builder.call_function(function, *values, version=1)
+                if arity == 3:
+                    return outputs[0], outputs[1]
+                return outputs[0]
+
+            return translation
+
+        def implementation(*args):
+            return NWithOverloads()(*args)
+
+        schemas = [
+            ("unary", "(Tensor x) -> Tensor"),
+            ("binary", "(Tensor x, Tensor y) -> Tensor"),
+            ("ternary", "(Tensor x, Tensor y, Tensor z) -> (Tensor, Tensor)"),
+        ]
+        x, y, z = torch.randn(2, 3), torch.randn(2, 3), torch.randn(2, 3)
+        reference = M(3)
+        model = M(3)
+        model.n = NativeN()
+        targets = []
+        with torch.library._scoped_library(
+            "recovered_overloads", "FRAGMENT"
+        ) as library:
+            try:
+                for arity, (name, schema) in enumerate(schemas, start=1):
+                    qualified = f"recovered_overloads::{name}"
+                    torch.library.define(qualified, schema, lib=library)
+                    torch.library.impl(
+                        qualified, "CompositeExplicitAutograd", lib=library
+                    )(implementation)
+                    torch.library.register_fake(qualified, lib=library)(implementation)
+                    target = getattr(torch.ops.recovered_overloads, name).default
+                    torch_onnx.register_custom_translation(
+                        target, translation_for(arity)
+                    )
+                    targets.append(target)
+                program = torch_onnx.export(
+                    model.eval(), (x, y, z), optimize=False, verbose=False
+                )
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                torch_onnx.testing.assert_onnx_program(program, strategy=None)
+                self.assertCountEqual(
+                    [function.name for function in program.model_proto.functions],
+                    function_names,
+                )
+                with common_utils.TemporaryDirectoryName() as directory:
+                    path = Path(directory) / "overloads.onnx"
+                    program.save(path, external_data=False)
+                    reloaded = torch_onnx.ONNXProgram(
+                        ir.load(path), program.exported_program
+                    )
+                    for candidate in (program, reloaded):
+                        for args in ((x, y, z), (-x, -y, -z)):
+                            expected = torch.utils._pytree.tree_flatten(
+                                reference(*args)
+                            )[0]
+                            self.assertEqual(list(candidate(*args)), expected)
+                program.optimize()
+                program.release()
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                self.assertEqual(
+                    list(program(x, y, z)),
+                    torch.utils._pytree.tree_flatten(reference(x, y, z))[0],
+                )
+            finally:
+                for target in targets:
+                    torch_onnx.unregister_custom_translation(target)
+
     def test_custom_layer_tuple(self):
         class CustomFunction(torch.autograd.Function):
             @staticmethod

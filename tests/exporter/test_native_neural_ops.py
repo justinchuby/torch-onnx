@@ -340,7 +340,7 @@ class TestNativeNeuralOps(common_utils.TestCase):
             in (neural.__name__, normalization.__name__)
             and meta.opset_introduced <= opset
         ]
-        self.assertEqual(len(entries), 76 + int(opset >= 24))
+        self.assertEqual(len(entries), 78 + int(opset >= 24))
         newer = {
             torch.ops.aten.silu.default: (24, neural.aten_silu_opset24),
             torch.ops.aten.gelu.default: (20, nn.aten_gelu_opset20),

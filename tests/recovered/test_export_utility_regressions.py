@@ -40,6 +40,99 @@ def _custom_inverse(op: torch_onnx.TranslationContext, value: ir.Value) -> ir.Va
 
 
 class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
+    def test_sequence_dim(self):
+        class Module(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.ops.recovered_sequence_dim.make.default(x, y)
+
+        class Reference(torch.nn.Module):
+            def forward(self, x, y):
+                return [x, y]
+
+        def implementation(x, y):
+            return [x.clone(), y.clone()]
+
+        def sequence(
+            op: torch_onnx.TranslationContext, x: ir.Value, y: ir.Value
+        ) -> ir.Value:
+            return op.SequenceConstruct(x, y, output_types=[ir.SequenceType(x.type)])
+
+        # Modern capture flattens Python list outputs. Keep a real ONNX Sequence
+        # at the native translation boundary to check the original element shape.
+        with torch.library._scoped_library(
+            "recovered_sequence_dim", "FRAGMENT"
+        ) as library:
+            torch.library.define(
+                "recovered_sequence_dim::make",
+                "(Tensor x, Tensor y) -> Tensor[]",
+                lib=library,
+            )
+            torch.library.impl(
+                "recovered_sequence_dim::make",
+                "CompositeExplicitAutograd",
+                lib=library,
+            )(implementation)
+            torch.library.register_fake("recovered_sequence_dim::make", lib=library)(
+                implementation
+            )
+            target = torch.ops.recovered_sequence_dim.make.default
+            torch_onnx.register_custom_translation(target, sequence)
+            try:
+                for dynamic in (True, False):
+                    with self.subTest(dynamic=dynamic):
+                        x, y = torch.randn(2, 3), torch.randn(2, 3)
+                        program = torch_onnx.export(
+                            Module().eval(),
+                            (x, y),
+                            optimize=False,
+                            dynamic_shapes=(
+                                None,
+                                {1: torch.export.Dim("sequence_width")}
+                                if dynamic
+                                else None,
+                            ),
+                            verbose=False,
+                        )
+                        inferred = onnx.shape_inference.infer_shapes(
+                            program.model_proto, strict_mode=True
+                        )
+                        onnx.checker.check_model(inferred, full_check=True)
+                        construct = next(
+                            node
+                            for node in inferred.graph.node
+                            if node.op_type == "SequenceConstruct"
+                        )
+                        value = next(
+                            value
+                            for value in inferred.graph.value_info
+                            if value.name == construct.output[0]
+                        )
+                        element = value.type.sequence_type.elem_type.tensor_type
+                        self.assertEqual(element.elem_type, onnx.TensorProto.FLOAT)
+                        self.assertEqual(len(element.shape.dim), 2)
+                        self.assertEqual(element.shape.dim[0].dim_value, 2)
+                        if dynamic:
+                            self.assertFalse(element.shape.dim[1].HasField("dim_value"))
+                        else:
+                            self.assertEqual(element.shape.dim[1].dim_value, 3)
+                        examples = [(x, y)]
+                        if dynamic:
+                            examples.extend(
+                                (x, torch.randn(2, width)) for width in (1, 5)
+                            )
+                        self.assert_program_roundtrip(
+                            program, examples=examples, reference=Reference()
+                        )
+                        program.optimize()
+                        program.release()
+                        for example in examples:
+                            self.assert_program_outputs(
+                                program, example, reference=Reference()
+                            )
+                        program.release()
+            finally:
+                torch_onnx.unregister_custom_translation(target)
+
     def test_validate_dynamic_axes_invalid_input_output_name(self):
         class Model(torch.nn.Module):
             def forward(self, x, y):

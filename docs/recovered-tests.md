@@ -10,17 +10,24 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 671 original runtime test bodies/comments, four control-flow
-regressions, 43 model methods, seven autograd forward-inlining methods and 52
+regressions, 43 model methods, seven autograd forward-inlining methods and 53
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 41, 'inapplicable': 57, 'migrated': 777}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 40, 'inapplicable': 57, 'migrated': 778}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
+
+The recovered sequence-dimension utility checks both the original static
+`[2, 3]` and merged dynamic `[2, unknown]` element metadata. Modern capture
+flattens Python list outputs, so an explicitly registered native translation
+preserves SequenceConstruct inside a real export rather than requiring the
+retired scripted-list output convention. Independent list-output oracles cover
+original and changed widths, serialization and subsequent optimization.
 
 Two complete quantized ResNet fixtures retain the original pretrained V1
 checkpoints, source image, Resize/CenterCrop/ImageNet normalization and exact
@@ -1423,7 +1430,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:635::test_constant_fold_upsample_scale_fold_as_constant` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_upsample_scale_fold_as_constant`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:645::test_verbose` | migrated | Same suite; original Exp model, modern None/False/True progress controls and actual export/check/save/reload/runtime; does not claim legacy JIT docstring-stripping behavior |
 | `test_utility_funs.py:677::test_error_on_data_parallel` | migrated | test_export_utility_regressions.py; modern CPU wrapper now succeeds; corrected originally invalid reflection-pad input height; no GPU claim |
-| `test_utility_funs.py:692::test_sequence_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:692::test_sequence_dim` | migrated | `test_export_utility_regressions.py::test_sequence_dim`; original static/dynamic merged sequence-element dtype/rank/dimensions checked through native SequenceConstruct in a real export; modern list outputs flatten, with independent original/changed-width numerical and save/reload/optimize contracts |
 | `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |
 | `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:801::test_local_function` | migrated | `test_function_selection_regressions.py`; complete original three-LayerNorm/two-CELU/eval-dropout model, all four selectors, exact function sets/domains/three attributes/call counts, actual RefAttr alpha/epsilon, dynamic rows and independent save/reload/normal-optimizer numerical checks |

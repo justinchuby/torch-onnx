@@ -8,11 +8,98 @@ Original fixed-loop bodies/comments are retained, without claiming dynamic
 trip counts. Original and changed inputs run through serialization checks.
 """
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import onnx
+import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
+from torch import Tensor
+
+import torch_onnx
 
 
 class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
+    def _check_conditional_state(self, original, hidden_size, *, threshold=1):
+        class ConditionalExample(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.original = original
+
+            def forward(self, data, previous):
+                count = torch.scalar_tensor(previous.shape[0], dtype=torch.int64)
+
+                def selected(data):
+                    if threshold == 1:
+                        return self.original(data, data.new_empty((0, 0, 0, 0, 0)))
+                    return torch.cond(
+                        count == 0,
+                        lambda value: self.original(
+                            value, value.new_empty((0, 0, 0, 0, 0))
+                        ),
+                        lambda value: self.original(
+                            value, value.new_empty((1, 0, 0, 0, 0))
+                        ),
+                        (data,),
+                    )
+
+                def other(data):
+                    return self.original(data, data.new_empty((threshold, 0, 0, 0, 0)))
+
+                return torch.cond(count < threshold, selected, other, (data,))
+
+        # These source bodies inspect only previous.shape[0], not its values.
+        # Shape-only sentinels reuse their original mutations and aliasing setup.
+        model = ConditionalExample().eval()
+        data = torch.rand(2, 5, 4, 5)
+        previous = torch.rand(3, 2, hidden_size, 4, 5)
+        dimensions = (
+            {
+                0: torch.export.Dim("data_batch", min=2),
+                1: torch.export.Dim("data_channels", min=2),
+                2: torch.export.Dim("height", min=2),
+                3: torch.export.Dim("width", min=2),
+            },
+            {i: torch.export.Dim(f"previous_{i}", min=2) for i in range(5)},
+        )
+        program = torch_onnx.export(
+            model, (data, previous), dynamic_shapes=dimensions, verbose=False
+        )
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        self.assertIn("If", {node.op_type for node in program.model.graph})
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "states.onnx"
+            program.save(path, external_data=False)
+            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+        original_extent = 30 if hidden_size == 10 else 4
+        examples = [
+            (
+                torch.rand(1, 5, original_extent, original_extent),
+                torch.empty(0, 0, 0, 0, 0),
+            ),
+            (data, previous),
+            (torch.rand(3, 3, 3, 6), torch.rand(1, 3, hidden_size, 3, 6)),
+            (torch.rand(2, 7, 5, 3), torch.rand(2, 2, hidden_size, 5, 3)),
+        ]
+        # Capture uses nonsingleton examples because torch.export specializes 0/1.
+        # Check those original cases against the source module directly: the
+        # attached ExportedProgram's guards remain narrower than ONNX execution.
+        for value, state in examples:
+            expected = original(value, state)
+            expected = expected if isinstance(expected, tuple) else (expected,)
+            for candidate in [program, reloaded]:
+                actual = candidate(value, state)
+                self.assertEqual(len(actual), len(expected))
+                for actual_tensor, expected_tensor in zip(
+                    actual, expected, strict=True
+                ):
+                    torch.testing.assert_close(
+                        actual_tensor, expected_tensor, rtol=0, atol=0
+                    )
+                    self.assertEqual(actual_tensor.shape, expected_tensor.shape)
+                    self.assertEqual(actual_tensor.dtype, expected_tensor.dtype)
+
     def test_if_transpose(self):
         class IfModel(torch.nn.Module):
             def forward(self, x):
@@ -151,3 +238,221 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
             12,
         )
         self.run_test(m, x, additional_test_inputs=[torch.randn(12)])
+
+    def test_index_put_if(self):
+        def check_init(
+            input_data: Tensor, hidden_size: int, prev_state: Tensor
+        ) -> tuple[Tensor, Tensor]:
+            batch_size = input_data.size(0)
+            spatial_size_0 = input_data.size(2)
+            spatial_size_1 = input_data.size(3)
+            # generate empty prev_state, if None is provided
+            state_size = (2, batch_size, hidden_size, spatial_size_0, spatial_size_1)
+            state = torch.zeros(state_size, device=input_data.device)
+            state_copy = torch.zeros(state_size, device=input_data.device)
+            if prev_state.size(0) == 0:
+                state[:] = (
+                    torch.zeros(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    + state[:]
+                )
+                state_copy[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 2
+                )
+                state_copy[:] = (
+                    torch.zeros(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 2
+                )
+            else:
+                state[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 4
+                )
+            return state, state_copy
+
+        class Example(torch.nn.Module):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+
+            def forward(self, input_data, prev_state):
+                prev_state = check_init(input_data, self.hidden_size, prev_state)
+                return prev_state[0], prev_state[1]
+
+        self._check_conditional_state(Example(10), 10, threshold=1)
+
+    def test_index_put_if_3(self):
+        def check_init(
+            input_data: Tensor, hidden_size: int, prev_state: Tensor
+        ) -> Tensor:
+            batch_size = input_data.size(0)
+            spatial_size_0 = input_data.size(2)
+            spatial_size_1 = input_data.size(3)
+            # generate empty prev_state, if None is provided
+            state_size = (2, batch_size, hidden_size, spatial_size_0, spatial_size_1)
+            state = torch.zeros(state_size, device=input_data.device)
+            if prev_state.size(0) < 2:
+                state = state * 3
+                if prev_state.size(0) == 0:
+                    state[:] = (
+                        torch.ones(
+                            batch_size, hidden_size, spatial_size_0, spatial_size_1
+                        )
+                        * 3
+                    )
+                else:
+                    state = state + 2
+
+            return state
+
+        class Example(torch.nn.Module):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+
+            def forward(self, input_data, prev_state):
+                prev_state = check_init(input_data, self.hidden_size, prev_state)
+                return prev_state
+
+        self._check_conditional_state(Example(4), 4, threshold=2)
+
+    def test_index_put_if_4(self):
+        def check_init(
+            input_data: Tensor, hidden_size: int, prev_state: Tensor
+        ) -> Tensor:
+            batch_size = input_data.size(0)
+            spatial_size_0 = input_data.size(2)
+            spatial_size_1 = input_data.size(3)
+            # generate empty prev_state, if None is provided
+            state_size = (2, batch_size, hidden_size, spatial_size_0, spatial_size_1)
+            state = torch.zeros(state_size, device=input_data.device)
+            if prev_state.size(0) == 0:
+                state = state + 3
+                state[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 3
+                )
+                state = state + 3
+                state[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 4
+                )
+            else:
+                state = state + 2
+            return state
+
+        class Example(torch.nn.Module):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+
+            def forward(self, input_data, prev_state):
+                prev_state = check_init(input_data, self.hidden_size, prev_state)
+                return prev_state
+
+        self._check_conditional_state(Example(4), 4, threshold=1)
+
+    def test_index_put_if_5(self):
+        def check_init(
+            input_data: Tensor, hidden_size: int, prev_state: Tensor
+        ) -> tuple[Tensor, Tensor]:
+            batch_size = input_data.size(0)
+            spatial_size_0 = input_data.size(2)
+            spatial_size_1 = input_data.size(3)
+            # generate empty prev_state, if None is provided
+            state_size = (2, batch_size, hidden_size, spatial_size_0, spatial_size_1)
+            state = torch.zeros(state_size, device=input_data.device)
+            state_ref = state
+            if prev_state.size(0) == 0:
+                state[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 3
+                )
+                state = state + 3
+                state[:] = (
+                    torch.ones(batch_size, hidden_size, spatial_size_0, spatial_size_1)
+                    * 4
+                )
+            else:
+                state = state + 2
+            return state, state_ref
+
+        class Example(torch.nn.Module):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+
+            def forward(self, input_data, prev_state):
+                prev_state, state_ref = check_init(
+                    input_data, self.hidden_size, prev_state
+                )
+                return prev_state, state_ref
+
+        self._check_conditional_state(Example(4), 4, threshold=1)
+
+    def test_inplace_attr_with_loop(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("_bias", torch.arange(12))
+
+            def forward(self, x):
+                self._bias = torch.arange(
+                    12,
+                )
+                for i in range(10):
+                    if i == 3:
+                        for _ in range(5):
+                            self._bias += torch.arange(
+                                12,
+                            )
+                return self._bias + x
+
+        m = M()
+        x = torch.zeros(
+            12,
+        )
+        self.run_test(
+            m, x, additional_test_inputs=[torch.randn(12), -torch.arange(12.0)]
+        )
+
+    def test_inplace_attr_copy_with_loop(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("_bias", torch.arange(12))
+
+            def forward(self, x):
+                self._bias = torch.arange(
+                    12,
+                )
+                for i in range(10):
+                    if i == 3:
+                        for _ in range(5):
+                            self._bias.copy_(
+                                torch.arange(
+                                    12,
+                                )
+                            )
+                        self._bias.copy_(
+                            self._bias
+                            + torch.arange(
+                                12,
+                            )
+                        )
+
+                    self._bias.copy_(
+                        self._bias
+                        + torch.arange(
+                            12,
+                        )
+                    )
+                return self._bias + x
+
+        m = M()
+        x = torch.zeros(
+            12,
+        )
+        self.run_test(
+            m, x, additional_test_inputs=[torch.randn(12), -torch.arange(12.0)]
+        )

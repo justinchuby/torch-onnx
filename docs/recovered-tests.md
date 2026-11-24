@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 586 original runtime test bodies/comments, four control-flow
+retired frontend. 592 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 146, 'inapplicable': 55, 'migrated': 674}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 140, 'inapplicable': 55, 'migrated': 680}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -38,6 +38,17 @@ data-dependent box selection with an actual ONNX If (including empty results).
 Retired frontend/harness failures now require successful numerical execution.
 None/default choices are separately exported signatures, not runtime-switchable
 ONNX Optional inputs. The old multiscale ROIAlign opset-16 exclusion is removed.
+
+Four conditional-state mutation/aliasing cases reuse the original branch bodies
+with shape-only prior-state sentinels, selected by genuine ONNX If nodes. Original
+empty/singleton inputs and changed batch/channel/spatial sizes execute before and
+after serialization against the independent original imperative module. Capture
+uses nonsingleton examples to avoid torch.export's 0/1 specialization: the
+attached ExportedProgram guards remain narrower than the checked ONNX execution
+domain. This does not claim that PyTorch's guard limitation has been repaired.
+Two attribute-mutation loops also retain their original per-call reset behavior,
+with buffer registration at initialization and changed runtime inputs. They do
+not claim automatic persistence of arbitrary module mutations across ONNX calls.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -727,8 +738,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:6792::test_inplace_arithmetic_half` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_arithmetic_half |
 | `test_pytorch_onnx_onnxruntime.py:6807::test_inplace_with_loop` | migrated | tests/recovered/test_branch_alias_regressions.py; original fixed-count in-place loop and changed random inputs, serialization/runtime checks; no dynamic-trip-count claim |
 | `test_pytorch_onnx_onnxruntime.py:6828::test_inplace_with_loop_2` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested fixed loops, alias setup/comments and changed random inputs, serialization/runtime checks |
-| `test_pytorch_onnx_onnxruntime.py:6873::test_inplace_attr_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6900::test_inplace_attr_copy_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6873::test_inplace_attr_with_loop` | migrated | tests/recovered/test_branch_alias_regressions.py; original fixed-loop attribute adds and per-call reset retained, current buffer registration, changed inputs on same graph and serialization/runtime checks; no general persistent-state claim |
+| `test_pytorch_onnx_onnxruntime.py:6900::test_inplace_attr_copy_with_loop` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested copy_/add order and per-call reset retained, current buffer registration, changed random/signed inputs and serialization/runtime checks; no general persistent-state claim |
 | `test_pytorch_onnx_onnxruntime.py:6942::test_inplace_sequence_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6979::test_sort` | migrated | `test_runtime_regressions.py::test_sort`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:6992::test_sort_ascending` | migrated | `test_runtime_regressions.py::test_sort_ascending`; original numerical body, modern standalone harness |
@@ -942,11 +953,11 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11457::test_set_attr_5` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11488::test_set_attr_in_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11516::test_set_attr_in_loop_with_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11547::test_index_put_if` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11547::test_index_put_if` | migrated | tests/recovered/test_branch_alias_regressions.py; original state/copy mutation bodies and original empty input, actual If with zero/singleton/nonempty counts and changed dimensions, original imperative oracle plus serialized ORT execution; EP guards retain min2 capture limitation |
 | `test_pytorch_onnx_onnxruntime.py:11600::test_index_put_if_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11667::test_index_put_if_3` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11713::test_index_put_if_4` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11760::test_index_put_if_5` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11667::test_index_put_if_3` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested zero/one/other state mutations, actual nested If semantics, empty and changed-size direct/serialized ORT results checked against original imperative module; EP guards retain min2 capture limitation |
+| `test_pytorch_onnx_onnxruntime.py:11713::test_index_put_if_4` | migrated | tests/recovered/test_branch_alias_regressions.py; original rebinding and in-place assignment order retained, actual If and empty/nonempty changed-size direct/serialized ORT checks against original module; EP guards retain min2 capture limitation |
+| `test_pytorch_onnx_onnxruntime.py:11760::test_index_put_if_5` | migrated | tests/recovered/test_branch_alias_regressions.py; original state_ref alias setup and rebinding retained, actual If across empty/nonempty states, exact direct/serialized ORT values/shapes/dtypes against original module; EP guards retain min2 capture limitation |
 | `test_pytorch_onnx_onnxruntime.py:11809::test_list_append_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11823::test_list_append_in_nested_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11838::test_list_pop_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |

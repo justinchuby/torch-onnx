@@ -127,6 +127,105 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
 
 
 class TestRecoveredRuntime(RecoveredRuntimeHarness):
+    def test_interpolate_adaptive_pooling_error(self):
+        class Model(torch.nn.Module):
+            def __init__(self, use_size):
+                super().__init__()
+                self.use_size = use_size
+                self.size = 24
+                self.size_array = [16]
+                self.scale = 2.0
+                self.scale_array = [2.3]
+
+            def forward(self, x):
+                if self.use_size:
+                    return (
+                        torch.nn.functional.interpolate(x, mode="area", size=self.size),
+                        torch.nn.functional.interpolate(
+                            x, mode="area", size=self.size_array
+                        ),
+                    )
+                return (
+                    torch.nn.functional.interpolate(
+                        x,
+                        mode="area",
+                        scale_factor=self.scale,
+                        recompute_scale_factor=False,
+                    ),
+                    torch.nn.functional.interpolate(
+                        x,
+                        mode="area",
+                        scale_factor=self.scale_array,
+                        recompute_scale_factor=False,
+                    ),
+                )
+
+        # Both formerly unsupported upsampling forms now require positive execution.
+        x = torch.randn(1, 2, 6, requires_grad=True)
+        for use_size in (True, False):
+            with self.subTest(use_size=use_size):
+                self.run_test(
+                    Model(use_size),
+                    x,
+                    atol=1e-6,
+                    additional_test_inputs=[-x],
+                )
+
+    def test_input_mask_model(self):
+        class InputMaskModel(torch.nn.Module):
+            def __init__(self, output_size):
+                super().__init__()
+                self.bias = torch.nn.Parameter(
+                    torch.empty(output_size, dtype=torch.float)
+                )
+                with torch.no_grad():
+                    self.bias.zero_()
+
+            def forward(self, model_input, y):
+                input_mask = (model_input <= 0) | (model_input > 25)
+                y[input_mask, :] = 0.0
+                output = y + self.bias
+                return output
+
+        output_size = 4
+        m = InputMaskModel(output_size)
+        x = torch.tensor([0, 4, 24, 25], dtype=torch.int64)
+        y = torch.tensor(
+            [
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+            ],
+            dtype=torch.float,
+        )
+        self.run_test(m, (x, y))
+
+        class InputMaskModel(torch.nn.Module):
+            def __init__(self, output_size):
+                super().__init__()
+
+            def forward(self, model_input_1, model_input_2, y):
+                input_mask_1 = (model_input_1 <= 0) | (model_input_1 > 25)
+                input_mask_2 = (model_input_2 < 1) | (model_input_2 >= 12)
+                y[input_mask_1, input_mask_2] = 0.0
+                return y
+
+        output_size = 4
+        m = InputMaskModel(output_size)
+        x1 = torch.tensor([0, 4, 24, 25], dtype=torch.int64)
+        x2 = torch.tensor([0, 3, 12, 15], dtype=torch.int64)
+        y = torch.tensor(
+            [
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+                [0.1, 0.2, 0.3, 0.4],
+            ],
+            dtype=torch.float,
+        )
+        self.run_test(m, (x1, x2, y))
+
     def test_index_1d(self):
         class MyModel(torch.nn.Module):
             def forward(self, input):

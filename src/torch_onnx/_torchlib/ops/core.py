@@ -4126,7 +4126,6 @@ def _aten_index_put_bool(
                 "Boolean index_put with multiple indices does not support None indices."
             )
 
-        advanced_indices = []
         selected_positions = []
         minus_one = builder.constant([-1], dtype=ir.DataType.INT64)
         for index in indices:
@@ -4143,10 +4142,14 @@ def _aten_index_put_bool(
                 minus_one,
             )
             selected_positions.append(positions)
-            advanced_indices.append(op.Unsqueeze(positions, minus_one))
+        broadcast_shape = _shape_of_broadcast_tensors(op, *selected_positions)
+        advanced_indices = [
+            op.Unsqueeze(op.Expand(positions, broadcast_shape), minus_one)
+            for positions in selected_positions
+        ]
         onnx_index = op.Concat(*advanced_indices, axis=-1)
         target_shape = op.Concat(
-            op.Shape(selected_positions[0]),
+            broadcast_shape,
             op.Slice(
                 op.Shape(self),
                 [len(indices)],

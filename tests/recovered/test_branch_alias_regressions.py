@@ -21,6 +21,157 @@ import torch_onnx
 
 
 class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
+    def test_index_put_loop(self):
+        def ngram_attention_bias(sequence_length, ngram, device, dtype):
+            bias = torch.ones(
+                (ngram, sequence_length), device=device, dtype=dtype
+            ) * float("-inf")
+            for stream_idx in range(ngram):
+                for i in range(sequence_length):
+                    bias = bias * 2
+                    bias[stream_idx, i] = 5
+                    bias = bias * 5
+                    bias[0, 0] = 5
+            for stream_idx in range(ngram):
+                for i in range(sequence_length):
+                    bias[stream_idx, i] = 5
+                    bias[0, i] = 5
+            return bias
+
+        class Original(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.ngram = 2
+                self.max_target_positions = 512
+
+            def forward(self, hidden_states):
+                seq_length = hidden_states.shape[0]
+                predict_causal_mask = ngram_attention_bias(
+                    self.max_target_positions,
+                    self.ngram,
+                    hidden_states.device,
+                    hidden_states.dtype,
+                )
+                return predict_causal_mask[:, :seq_length]
+
+        class LoopModel(Original):
+            def forward(self, hidden_states):
+                bias = torch.full(
+                    (self.ngram, self.max_target_positions),
+                    -float("inf"),
+                    dtype=hidden_states.dtype,
+                    device=hidden_states.device,
+                )
+                zero = torch.tensor(0)
+                five = torch.tensor(5.0)
+
+                def condition(stream, bias):
+                    return stream < self.ngram
+
+                def first(stream, bias):
+                    def inner_condition(i, value):
+                        return i < self.max_target_positions
+
+                    def body(i, value):
+                        value = value * 2
+                        value = value.index_put(
+                            (stream.unsqueeze(0), i.unsqueeze(0)), five
+                        )
+                        value = value * 5
+                        value = value.index_put(
+                            (zero.unsqueeze(0), zero.unsqueeze(0)), five
+                        )
+                        return i + 1, value
+
+                    return stream + 1, torch.while_loop(
+                        inner_condition, body, (zero.clone(), bias)
+                    )[1]
+
+                def second(stream, bias):
+                    def inner_condition(i, value):
+                        return i < self.max_target_positions
+
+                    def body(i, value):
+                        value = value.index_put(
+                            (stream.unsqueeze(0), i.unsqueeze(0)), five
+                        )
+                        value = value.index_put(
+                            (zero.unsqueeze(0), i.unsqueeze(0)), five
+                        )
+                        return i + 1, value
+
+                    return stream + 1, torch.while_loop(
+                        inner_condition, body, (zero.clone(), bias)
+                    )[1]
+
+                bias = torch.while_loop(condition, first, (zero.clone(), bias))[1]
+                bias = torch.while_loop(condition, second, (zero.clone(), bias))[1]
+                return bias[:, : hidden_states.shape[0]]
+
+        x = torch.randn(6, 2)
+        program = self.run_test(
+            LoopModel(),
+            x,
+            input_names=["x"],
+            dynamic_axes={"x": {0: "seq_length", 1: "batch_size"}},
+        )
+        self.assertEqual(
+            sum(node.op_type == "Loop" for node in program.model.graph.all_nodes()), 4
+        )
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "nested-index-put.onnx"
+            program.save(path, external_data=False)
+            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            for value in (x, torch.randn(4, 1), torch.randn(2, 3), torch.randn(512, 2)):
+                expected = Original()(value)
+                for candidate in (program, reloaded):
+                    self.assertEqual(candidate(value)[0], expected)
+
+    def test_set_attr_modules_2(self):
+        class InnerModule(torch.nn.Module):
+            def __init__(self, embedding_dim):
+                super().__init__()
+                self.embedding_dim = embedding_dim
+                self.const = 2.5
+                self.weights = InnerModule.get_embedding(self.embedding_dim)
+                self._float_tensor = torch.nn.Buffer(torch.FloatTensor(1))
+
+            @staticmethod
+            def get_embedding(embedding_dim: int):
+                emb = 4 / ((embedding_dim // 2) - 1)
+                emb = torch.exp(
+                    torch.arange((embedding_dim // 2), dtype=torch.float) * -emb
+                )
+                return emb
+
+            def forward(self, input, incremental_state: Tensor | None = None):
+                bsz, seq_len = input.shape[0], input.shape[1]
+                self.const = 1.5
+                self.weights = InnerModule.get_embedding(self.embedding_dim)
+                return (
+                    self.weights.index_select(
+                        0, torch.ones((bsz * seq_len), dtype=torch.int64)
+                    ).view(bsz, seq_len, -1)
+                ) * self.const
+
+        class Module(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.module = InnerModule(embedding_dim=8)
+
+            def forward(self, x):
+                return self.module(x)
+
+        x = torch.randn(3, 256)
+        self.run_test(
+            Module(),
+            (x,),
+            input_names=["x"],
+            dynamic_axes={"x": [0, 1]},
+            additional_test_inputs=[torch.randn(4, 17), torch.randn(2, 2)],
+        )
+        self.run_test(Module(), (x,), remained_onnx_input_idx=[])
+
     def test_uninitialized_dynamic(self):
         class UninitializedModel(torch.nn.Module):
             def forward(self, y):

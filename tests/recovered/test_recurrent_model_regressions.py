@@ -6,6 +6,11 @@ the same parent's pytorch_test_common.py. Native optimization replaces the
 retired do_constant_folding flag.
 """
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import numpy as np
+import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
@@ -13,6 +18,7 @@ from torch import Tensor
 import torch_onnx
 
 BATCH_SIZE = 2
+RNN_BATCH_SIZE = 7
 RNN_SEQUENCE_LENGTH = 11
 RNN_INPUT_SIZE = 5
 RNN_HIDDEN_SIZE = 3
@@ -42,6 +48,115 @@ class _LSTMWithInitialState(torch.nn.Module):
 
 
 class TestRecoveredRecurrentModels(RecoveredRuntimeHarness):
+    def test_rnn_no_bias(self):
+        class RnnModelWithPackedSequence(torch.nn.Module):
+            def __init__(self, model, batch_first):
+                super().__init__()
+                self.model, self.batch_first = model, batch_first
+
+            def forward(self, input, *args):
+                args, seq_lengths = args[:-1], args[-1]
+                input = torch.nn.utils.rnn.pack_padded_sequence(
+                    input, seq_lengths, self.batch_first
+                )
+                rets = self.model(input, *args)
+                ret, rets = rets[0], rets[1:]
+                ret, _ = torch.nn.utils.rnn.pad_packed_sequence(ret, self.batch_first)
+                return (ret, *rets)
+
+        class MaskedPackedRNN(torch.nn.Module):
+            def __init__(self, model, batch_first):
+                super().__init__()
+                self.model, self.batch_first = model, batch_first
+
+            def forward(self, input, initial, lengths):
+                values = input.transpose(0, 1) if self.batch_first else input
+                states = []
+                for layer in range(self.model.num_layers):
+                    hidden = initial[layer]
+                    weight_ih = getattr(self.model, f"weight_ih_l{layer}")
+                    weight_hh = getattr(self.model, f"weight_hh_l{layer}")
+                    outputs = []
+                    for step in range(values.shape[0]):
+                        active = (step < lengths).unsqueeze(1)
+                        candidate = torch.tanh(
+                            torch.nn.functional.linear(values[step], weight_ih)
+                            + torch.nn.functional.linear(hidden, weight_hh)
+                        )
+                        hidden = torch.where(active, candidate, hidden)
+                        outputs.append(
+                            torch.where(active, hidden, torch.zeros_like(hidden))
+                        )
+                    values = torch.stack(outputs)
+                    states.append(hidden)
+                output = values.transpose(0, 1) if self.batch_first else values
+                return output, torch.stack(states)
+
+        layers = [1, 3, 1, 3, 1, 3]
+        packed_sequence = [0, 0, 1, 1, 2, 2]
+        for layer_count, packed in zip(layers, packed_sequence, strict=True):
+            with self.subTest(layers=layer_count, packed_sequence=packed):
+                batch_first = packed == 2
+                model = torch.nn.RNN(
+                    RNN_INPUT_SIZE,
+                    RNN_HIDDEN_SIZE,
+                    layer_count,
+                    bidirectional=False,
+                    batch_first=batch_first,
+                    bias=False,
+                )
+                seq_lengths = np.random.randint(
+                    1, RNN_SEQUENCE_LENGTH + 1, size=RNN_BATCH_SIZE
+                )
+                seq_lengths = sorted(map(int, seq_lengths), reverse=True)
+                input = torch.nn.utils.rnn.pad_sequence(
+                    [torch.randn(length, RNN_INPUT_SIZE) for length in seq_lengths],
+                    batch_first=batch_first,
+                )
+                initial = torch.randn(layer_count, RNN_BATCH_SIZE, RNN_HIDDEN_SIZE)
+                if packed == 0:
+                    self.run_test(
+                        model,
+                        (input, initial),
+                        additional_test_inputs=[(-input, -initial)],
+                    )
+                    continue
+                original = RnnModelWithPackedSequence(model, batch_first)
+                adapter = MaskedPackedRNN(model, batch_first)
+                maximum = input.shape[1 if batch_first else 0]
+                changed_lengths = (
+                    torch.linspace(maximum, 1, RNN_BATCH_SIZE).round().to(torch.int32)
+                )
+                changed = torch.randn_like(input)
+                time_major = changed.transpose(0, 1) if batch_first else changed
+                # Packed execution must ignore even NaNs outside each sequence.
+                for batch, length in enumerate(changed_lengths.tolist()):
+                    time_major[length:, batch] = float("nan")
+                examples = [
+                    (input, initial, torch.IntTensor(seq_lengths)),
+                    (changed, -initial, changed_lengths),
+                ]
+                for args in examples:
+                    self.assertEqual(
+                        adapter(*args), original(*args), rtol=1e-3, atol=1e-7
+                    )
+                program = self.run_test(
+                    adapter, examples[0], additional_test_inputs=examples[1:]
+                )
+                self.assertIn("Where", {node.op_type for node in program.model.graph})
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / "packed-rnn.onnx"
+                    program.save(path, external_data=False)
+                    reloaded = torch_onnx.ONNXProgram(
+                        ir.load(path), program.exported_program
+                    )
+                    for args in examples:
+                        expected = original(*args)
+                        for candidate in (program, reloaded):
+                            self.assertEqual(
+                                candidate(*args), expected, rtol=1e-3, atol=1e-7
+                            )
+
     def test_lstm_no_hidden(self):
         self.run_test(torch.nn.LSTM(16, 16), torch.randn(10, 16, 16))
 

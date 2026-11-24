@@ -9,6 +9,12 @@ on:
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      pytest_filter:
+        description: "Optional pytest -k expression for manual diagnostics; empty runs the full suite"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
@@ -29,6 +35,7 @@ jobs:
       - name: Check and execute development operators using ONNX reference runtime
         run: pytest tests/exporter/test_opsets.py -m opset29
   test:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.pytest_filter && 'Targeted Linux diagnostics (not full CI)' || format('test ({0}, {1})', matrix.os, matrix.python-version) }}
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +54,9 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e .
       - name: Run tests
-        run: pytest --cov=torch_onnx --cov-report=xml --cov-append --cov-branch --junitxml=junit.xml
+        env:
+          PYTEST_FILTER: ${{ inputs.pytest_filter || '' }}
+        run: pytest -k "$PYTEST_FILTER" --cov=torch_onnx --cov-report=xml --cov-append --cov-branch --junitxml=junit.xml
       - name: Run FBGEMM reference regressions
         run: pytest tests/recovered/test_quantized_storage_regressions.py -m integration --cov=torch_onnx --cov-report=xml --cov-append --cov-branch --junitxml=junit-fbgemm.xml
       - name: Type check modern exporter and native translations

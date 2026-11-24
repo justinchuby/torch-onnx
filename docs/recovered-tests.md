@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 671 original runtime test bodies/comments, four control-flow
-regressions, 39 model methods, seven autograd forward-inlining methods and 51
+regressions, 39 model methods, seven autograd forward-inlining methods and 52
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 46, 'inapplicable': 57, 'migrated': 772}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 45, 'inapplicable': 57, 'migrated': 773}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -108,6 +108,16 @@ checks their structure; ordinary ONNXProgram optimization is then exercised with
 a fresh inference session and unchanged numerical outputs. This maps the intent
 to native registration/functions, not automatic `export_modules_as_functions`
 module extraction.
+The comprehensive CELU/LayerNorm function fixture retains the original
+three-LayerNorm model (eps 0/1/2), two CELU alphas and nested eval-mode dropout.
+All four selections execute: CELU/Dropout/LayerNorm, CELU alone, no functions,
+and the complete M/CELU/LayerNorm hierarchy. Tests check exact function sets,
+original module domains, three named attributes and two/three call sites, with
+genuine alpha/epsilon references in function bodies. Changed values and dynamic
+rows compare to the original module before/after serialization and normal
+optimization. Dropout/N functions remain absent because inference eliminates
+them; this is explicit native function construction, not automatic extraction.
+
 Three further utility fixtures retain the original shape-building module,
 three-LayerNorm attribute model and frozen-Embedding model that lacks a `freeze`
 attribute. Explicit native functions preserve shape constants inside their
@@ -1389,7 +1399,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:692::test_sequence_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |
 | `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:801::test_local_function` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:801::test_local_function` | migrated | `test_function_selection_regressions.py`; complete original three-LayerNorm/two-CELU/eval-dropout model, all four selectors, exact function sets/domains/three attributes/call counts, actual RefAttr alpha/epsilon, dynamic rows and independent save/reload/normal-optimizer numerical checks |
 | `test_utility_funs.py:921::test_local_function_overloads` | migrated | Original optional-argument model, three source-named functions and one/two-output signatures mapped to explicit native registration; original/negative inputs, structure/save-reload and ordinary optimized fresh-session execution in test_export_utility_regressions.py; no automatic module extraction claim |
 | `test_utility_funs.py:963::test_local_function_infer_scopes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_infer_scopes; original4x5 shape concatenation/view, explicit M function with owned constants, symbolic rows/columns, changed7x3 input, save/reload and normal optimization; not automatic module extraction |
 | `test_utility_funs.py:988::test_local_function_predefined_attributes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_predefined_attributes; original three-LayerNorm model, explicit nested M/LayerNorm functions and exact num_layers/eps/elementwise_affine attributes, epsilon reference, numerical/save/reload/optimization checks |

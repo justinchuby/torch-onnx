@@ -82,6 +82,9 @@ def export_compat(
     custom_translations = _custom_translation.snapshot()
     if opset_version is None:
         opset_version = onnx_constants.ONNX_DEFAULT_OPSET
+    from torch_onnx._ir_builder import validate_opset_version
+
+    validate_opset_version(opset_version)
 
     if isinstance(model, torch.nn.Module) and model.training:
         warnings.warn(

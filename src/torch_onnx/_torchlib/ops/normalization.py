@@ -631,17 +631,6 @@ def _aten_native_batch_norm_training_onnx(
     NOTE: momentum in PyTorch is 1.0-momentum in ONNX.
     When calling this function be sure to pass 1.0-momentum when momentum is obtained from PyTorch.
     """
-    norm, running_mean, _ = op.BatchNormalization(
-        input,
-        weight,
-        bias,
-        running_mean,
-        running_var,
-        epsilon=eps,
-        momentum=momentum,
-        training_mode=True,
-        outputs=3,
-    )
     # Compute mean and rstd
     # Mean, var, and rstd computation and results are expected to be
     # in higher precision when inputs are float16.
@@ -656,6 +645,20 @@ def _aten_native_batch_norm_training_onnx(
     sqr = op.Mul(input_sub_mean, input_sub_mean)
     var = op.ReduceMean(sqr, axes, keepdims=False)
     rstd = op.Div(1.0, op.Sqrt(op.Add(var, eps)))
+    # Explicit normalization also supports inference-only runtimes when batch
+    # statistics are required (eval mode with track_running_stats=False).
+    rank = len(common_ops.require_shape(op, input))
+    channel_shape = [1, -1, *([1] * (rank - 2))]
+    normalized = op.Mul(input_sub_mean, op.Reshape(rstd, channel_shape))
+    norm = op.CastLike(
+        op.Add(
+            op.Mul(
+                normalized, op.Reshape(op.CastLike(weight, normalized), channel_shape)
+            ),
+            op.Reshape(op.CastLike(bias, normalized), channel_shape),
+        ),
+        input,
+    )
     # Get mean again with size = [1, C]
     mean = op.ReduceMean(upcast_input, axes, keepdims=False)
 
@@ -679,8 +682,12 @@ def _aten_native_batch_norm_training_onnx(
         ),
         op.Mul(momentum, running_var),
     )
+    new_running_mean = op.Add(
+        op.Mul(1.0 - momentum, op.CastLike(mean, running_mean)),
+        op.Mul(momentum, running_mean),
+    )
 
-    return norm, mean, rstd, running_mean, new_running_var
+    return norm, mean, rstd, new_running_mean, new_running_var
 
 
 def _aten_native_batch_norm_inference_onnx(
@@ -762,9 +769,7 @@ def aten__native_batch_norm_legit_functional(
         sqr_input_sub_mean = op.Mul(input_sub_mean, input_sub_mean)
         running_var = op.ReduceMean(sqr_input_sub_mean, axes, keepdims=False)
 
-    # Preserve training rather than forcing inference for older ORT kernels.
-    # We have to split to two private functions, because BatchNormalization returns
-    # three outputs when training_mode=True and one when it is False.
+    # Preserve batch statistics rather than forcing running-stat inference.
     if training:
         (
             norm,

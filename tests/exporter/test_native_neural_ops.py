@@ -314,7 +314,7 @@ class TestNativeNeuralOps(common_utils.TestCase):
                 rtol=2e-5,
             )
 
-    @common_utils.parametrize("opset", [18, 20, 21, 23])
+    @common_utils.parametrize("opset", [18, 20, 21, 23, 24, 28])
     def test_registration(self, device, opset):
         registry = _registration.ONNXRegistry.from_torchlib(opset)
         entries = [
@@ -322,9 +322,11 @@ class TestNativeNeuralOps(common_utils.TestCase):
             for meta in _torchlib_registry.get_torchlib_ops()
             if meta.onnx_function.function.__module__
             in (neural.__name__, normalization.__name__)
+            and meta.opset_introduced <= opset
         ]
-        self.assertEqual(len(entries), 75)
+        self.assertEqual(len(entries), 75 + int(opset >= 24))
         newer = {
+            torch.ops.aten.silu.default: (24, neural.aten_silu_opset24),
             torch.ops.aten.gelu.default: (20, nn.aten_gelu_opset20),
             torch.ops.aten.group_norm.default: (21, nn.aten_group_norm),
             torch.ops.aten.scaled_dot_product_attention.default: (

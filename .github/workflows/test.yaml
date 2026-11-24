@@ -15,6 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  opset29:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package and current development schemas
+        run: |
+          pip install -r requirements-dev.txt -e .
+          pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8178f7357d52e63db0"
+      - name: Check and execute development operators using ONNX reference runtime
+        run: pytest tests/exporter/test_opsets.py -m opset29
   test:
     strategy:
       fail-fast: false

@@ -677,6 +677,16 @@ def aten_logcumsumexp(op: TranslationContext, self: ir.Value, dim: int) -> ir.Va
     return result
 
 
+@onnx_impl(aten.logcumsumexp.default, opset_introduced=29)
+def aten_logcumsumexp_opset29(
+    op: TranslationContext, self: ir.Value, dim: int
+) -> ir.Value:
+    """Use stable per-prefix accumulation, including infinities and empty axes."""
+    if len(common_ops.require_shape(op, self)) == 0:
+        return op.Identity(self)
+    return op.LogCumSumExp(self, axis=dim)
+
+
 @onnx_impl(aten.logdet.default)
 def aten_logdet(op: TranslationContext, self: ir.Value) -> ir.Value:
     """logdet(Tensor self) -> Tensor"""

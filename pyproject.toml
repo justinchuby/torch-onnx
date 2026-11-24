@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
   "torch>=2.15,<2.16",
-  "onnx-ir>=0.1.16",
+  "onnx-ir>=1.1.0",
   "onnxscript>=0.7.2",
   "onnx>=1.23.2",
   "typing-extensions",
@@ -42,7 +42,7 @@ license-files = ["LICENSE", "LICENSE-PYTORCH"]
 
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
-addopts = '--tb=short --color=yes -m "not integration and not opinfo"'
+addopts = '--tb=short --color=yes -m "not integration and not opinfo and not opset29"'
 testpaths = [
   "tests/exporter",
   "tests/torchlib",
@@ -50,10 +50,12 @@ testpaths = [
   "tests/decomp_test.py",
   "tests/fake_tensor_test.py",
   "tests/standalone_test.py",
+  "tests/recovered",
 ]
 markers = [
   "integration: optional model-family integration suites",
   "opinfo: expanded PyTorch OpInfo operator coverage",
+  "opset29: requires the pinned ONNX main build; separate development-schema CI job",
 ]
 
 [tool.pyrefly]
@@ -120,3 +122,4 @@ ignore = [
 "tests/exporter/test_native*.py" = ["B023", "PERF401"]
 "tests/exporter/test_small_models_e2e.py" = ["B023"]
 "tests/torchlib/*.py" = ["PLW2901"]
+"tests/recovered/*.py" = ["PERF401"]

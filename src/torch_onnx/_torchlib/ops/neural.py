@@ -1430,6 +1430,12 @@ def aten_silu(op: TranslationContext, self: ir.Value) -> ir.Value:
     return op.Mul(self, op.Sigmoid(self))
 
 
+@onnx_impl(aten.silu.default, opset_introduced=24)
+def aten_silu_opset24(op: TranslationContext, self: ir.Value) -> ir.Value:
+    """silu(Tensor self) -> Tensor"""
+    return op.Swish(self)
+
+
 @onnx_impl(aten.softplus.default)
 def aten_softplus(
     op: TranslationContext, self: ir.Value, beta: float = 1.0, threshold: float = 20.0

@@ -168,6 +168,9 @@ class ONNXRegistry:
         Args:
             torchlib_registry: The torchlib registry to use for populating the registry.
         """
+        from torch_onnx._ir_builder import validate_opset_version
+
+        validate_opset_version(opset_version)
         if custom_translations is None:
             custom_translations = _custom_translation.snapshot()
         registry = cls()

@@ -23,6 +23,35 @@ _CURRENT: contextvars.ContextVar[GraphBuilder | None] = contextvars.ContextVar(
 )
 
 
+def validate_opset_version(opset: int) -> None:
+    """Reject unknown schema targets instead of relabeling older-schema graphs."""
+    if type(opset) is not int or opset < 1:
+        raise ValueError(f"ONNX opset must be a positive integer, got {opset!r}.")
+    available = onnx.defs.onnx_opset_version()
+    if opset > min(29, available):
+        raise ValueError(
+            f"Requested ONNX opset {opset}; this exporter supports through 29 and "
+            f"installed ONNX {onnx.__version__} provides schemas through {available}. "
+            "Install an ONNX build with the requested schemas (current ONNX main "
+            "for opset 29), or select a supported opset_version."
+        )
+    if opset == 29:
+        for name in ("Expm1", "Log1p", "LogCumSumExp", "ScatterElements"):
+            try:
+                schema = onnx.defs.get_schema(name, 29)
+            except onnx.defs.SchemaError as error:
+                raise ValueError(
+                    f"ONNX {onnx.__version__} advertises opset 29 but lacks {name}. "
+                    "Install current ONNX main as documented in docs/opsets.md; "
+                    "older weekly builds have incomplete opset 29 schemas."
+                ) from error
+            if schema.since_version != 29:
+                raise ValueError(
+                    f"ONNX {onnx.__version__} lacks the opset 29 {name} schema. "
+                    "Install current ONNX main as documented in docs/opsets.md."
+                )
+
+
 def current_builder() -> GraphBuilder:
     r"""Return the builder installed by ``GraphBuilder.activate()``."""
     builder = _CURRENT.get()
@@ -112,6 +141,7 @@ class GraphBuilder:
     """
 
     def __init__(self, graph: ir.Graph, *, opset: int = 18) -> None:
+        validate_opset_version(opset)
         existing = graph.opset_imports.get("")
         if existing is not None and existing != opset:
             raise ValueError(
@@ -380,7 +410,7 @@ class GraphBuilder:
             if value is not None
         }
         attribute_dtype = None
-        if not domain and op_type == "Cast":
+        if not domain and op_type in ("Cast", "BitCast"):
             attribute_dtype = ir.DataType(attributes["to"])
         elif not domain and op_type == "ConstantOfShape":
             attribute_dtype = (

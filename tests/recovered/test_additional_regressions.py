@@ -5,12 +5,15 @@ Recovered before deletion 6dca9f63bc4975ac323044a440c2c7e5f8512408.
 Original method bodies and comments use the standalone modern-export harness.
 """
 
+import copy
 from collections import OrderedDict
 
 import torch
 import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
+
+import torch_onnx
 
 
 class TestRecoveredAdditional(RecoveredRuntimeHarness):
@@ -2460,6 +2463,20 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         with self.assertRaises(RuntimeError):
             self.run_test(STFT(), x)
 
+    def test_stft_wrong_return_complex(self):
+        class STFT(torch.nn.Module):
+            def forward(self, x):
+                n_fft = 16
+                return torch.stft(x, n_fft=n_fft, center=False, return_complex=True)
+
+        x = torch.randn((1, 32), requires_grad=True)
+        self.run_test(
+            STFT(),
+            x,
+            atol=1e-6,
+            additional_test_inputs=[torch.linspace(-1, 1, 32).reshape(1, 32)],
+        )
+
     def test_stft_normalize(self):
         class STFT(torch.nn.Module):
             def forward(self, x):
@@ -3268,6 +3285,94 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         idx = torch.tensor([4, 3, 4, 2])
         self.run_test(embedding, idx)
 
+    def test_fake_quantize_per_tensor(self):
+        class FakeQuantizePerTensorModel(torch.nn.Module):
+            def forward(self, input):
+                scale = 1.0 / 127
+                zero_point = 0
+                quant_min = -128
+                quant_max = 127
+                return torch.fake_quantize_per_tensor_affine(
+                    input, scale, zero_point, quant_min, quant_max
+                )
+
+        x = torch.randn(6, 4, 3, 3)
+        self.run_test(
+            FakeQuantizePerTensorModel(),
+            x,
+            additional_test_inputs=[torch.linspace(-2, 2, x.numel()).reshape_as(x)],
+        )
+
+    def test_fake_quantize_per_tensor_dynamic_scale_zeropoint(self):
+        class FakeQuantizePerTensorModel(torch.nn.Module):
+            def forward(self, input, scale, zero_point):
+                quant_min = -128
+                quant_max = 127
+                return torch.fake_quantize_per_tensor_affine(
+                    input, scale, zero_point, quant_min, quant_max
+                )
+
+        x = torch.randn(6, 4, 3, 3)
+        scale = torch.tensor(1.0 / 127)
+        zero_point = torch.tensor(0)
+        self.run_test(
+            FakeQuantizePerTensorModel(),
+            (x, scale, zero_point),
+            additional_test_inputs=[
+                (
+                    torch.linspace(-3, 3, x.numel()).reshape_as(x),
+                    torch.tensor(0.02),
+                    torch.tensor(-4),
+                )
+            ],
+        )
+
+    def test_fake_quantize_activation(self):
+        from torch.ao import quantization
+
+        m = torch.nn.Linear(1, 1)
+        m.qconfig = quantization.QConfig(
+            activation=quantization.default_fake_quant,
+            weight=quantization.default_per_channel_weight_fake_quant,
+        )
+        quantization.prepare_qat(m.train(), inplace=True)
+        m.apply(quantization.enable_observer)
+        m.apply(quantization.enable_fake_quant)
+        for module in m.modules():
+            if isinstance(module, quantization.FakeQuantize):
+                module.calculate_qparams()
+
+        m.apply(quantization.disable_observer)
+        m.eval()
+
+        # Fake quantize activation is a special case, as it restricts quantized range to be (0, 127),
+        # while standard 8bit quantization range is (-128, 127) or (0, 255).
+        # Set fixed weight, bias and inputs to test if ONNX handles the overflow correctly.
+        m.weight = torch.nn.Parameter(torch.tensor([[1.0], [1.0], [1.0]]))
+        m.bias = torch.nn.Parameter(torch.tensor([0.0]))
+        x = torch.tensor([[150.0], [127.0], [-5.0]])
+        original = copy.deepcopy(m)
+        activation = m.activation_post_process
+        self.assertFalse(bool(activation.observer_enabled))
+        self.assertTrue(bool(activation.fake_quant_enabled))
+        scale, zero_point = float(activation.scale), int(activation.zero_point)
+        quant_min, quant_max = activation.quant_min, activation.quant_max
+
+        class InferenceFakeQuant(torch.nn.Module):
+            def forward(self, value):
+                return torch.fake_quantize_per_tensor_affine(
+                    value, scale, zero_point, quant_min, quant_max
+                )
+
+        # Preserve the frozen inference operation without tensor-valued Python flags.
+        m.activation_post_process = InferenceFakeQuant()
+        other = torch.tensor([[0.5], [1.5], [126.5]])
+        overflow = torch.tensor([[127.5], [128.0], [-1.0]])
+        for value in (x, other, overflow):
+            self.assertEqual(m(value), original(value))
+        self.assertEqual(m(x), torch.tensor([[127.0] * 3, [127.0] * 3, [0.0] * 3]))
+        self.run_test(m, x, additional_test_inputs=[other, overflow])
+
     def test_fake_quantize_per_channel(self):
         class FakeQuantizePerChannelModel(torch.nn.Module):
             def forward(self, input):
@@ -3746,6 +3851,34 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
 
         x = torch.randn(10, 5)
         self.run_test(M(), (x,))
+
+    def test_print_tensor_within_torch_nn_module(self):
+        class PrintTensorOnMyModel(torch.nn.Module):
+            def forward(self, x):
+                # 'print' has side effect calling 'resolve_conj' and 'resolve_neg'.
+                x_firsts = x[:, 0]
+                print(f"x_firsts: {x_firsts}")
+                # 'tolist' has side effect calling 'resolve_conj' and 'resolve_neg'.
+                # Annotation added to pass torch script.
+                _: list[float] = x.tolist()
+                return x_firsts
+
+        for input_dtype in (torch.cfloat, torch.float):
+            with self.subTest(input_dtype=input_dtype):
+                m = PrintTensorOnMyModel()
+                x = torch.randn(10, 5, dtype=input_dtype)
+                if input_dtype == torch.cfloat:
+                    with self.assertRaisesRegex(
+                        torch_onnx.errors.TorchExportError,
+                        r"local_scalar_dense/item NYI for torch\.complex64",
+                    ):
+                        self.run_test(m, x)
+                else:
+                    self.run_test(
+                        m,
+                        x,
+                        additional_test_inputs=[torch.randn_like(x)],
+                    )
 
     def test_lerp(self):
         class LerpModel(torch.nn.Module):

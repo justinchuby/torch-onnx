@@ -69,9 +69,15 @@ def quantized_decomposed_quantize_per_tensor(
 ) -> ir.Value:
     """quantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> Tensor"""
 
-    if dtype == ir.DataType.INT32:
-        # Reference: clamp(round(input * (1 / scale)) + zero_point, quant_min, quant_max).to(int32).
-        # The reciprocal divides in float64; float16/bfloat16 inputs compute in float32.
+    # Tensor overloads extract single elements, irrespective of parameter rank.
+    if isinstance(scale, ir.Value):
+        scale = op.Reshape(scale, [])
+    if isinstance(zero_point, ir.Value):
+        zero_point = op.Reshape(zero_point, [])
+
+    if dtype not in _FLOAT8_DTYPES:
+        # Match reciprocal multiplication before rounding, not division by scale:
+        # the two differ at float32 half steps. Half inputs compute in float32.
         if input.dtype in (ir.DataType.FLOAT16, ir.DataType.BFLOAT16):
             input = op.Cast(input, to=ir.DataType.FLOAT)
         if isinstance(scale, float):
@@ -82,18 +88,19 @@ def quantized_decomposed_quantize_per_tensor(
             inv_scale = op.Reciprocal(
                 op.Cast(scale, to=ir.DataType.DOUBLE),
             )
-        quantized = op.Add(
-            op.Round(
-                op.Mul(
-                    input,
-                    op.CastLike(inv_scale, input),
-                ),
-            ),
-            op.CastLike(zero_point, input),
+        input = op.Mul(
+            input,
+            op.CastLike(inv_scale, input),
         )
-        # Cast float-to-int is undefined out of range, so clamping is required
-        # even at the full int32 range.
-        return op.Cast(_clip(op, quantized, quant_min, quant_max), to=dtype)
+        if dtype == ir.DataType.INT32:
+            quantized = op.Add(
+                op.Round(input),
+                op.CastLike(zero_point, input),
+            )
+            # Cast float-to-int is undefined out of range, so clamping is required
+            # even at the full int32 range.
+            return op.Cast(_clip(op, quantized, quant_min, quant_max), to=dtype)
+        scale = 1.0
 
     quantized = op.QuantizeLinear(
         input,

@@ -93,6 +93,35 @@ class TestNativeTorchlib(common_utils.TestCase):
             None, dict(zip((value.name for value in values), tensors, strict=False))
         )
 
+    @common_utils.parametrize(
+        "counts", [(1, 3), (3, 1), (0, 1), (1, 0), (0, 0), (2, 2)]
+    )
+    @common_utils.parametrize("accumulate", [False, True])
+    def test_boolean_index_put_broadcast(self, counts, accumulate):
+        data = torch.arange(32, dtype=torch.float32).reshape(4, 4, 2)
+        rows = torch.arange(4) < counts[0]
+        columns = torch.arange(4) < counts[1]
+        updates = torch.tensor([1.0, -2.0])
+        args = (data, rows, columns, updates)
+
+        def translation(op, value, row_mask, column_mask, update):
+            return core.aten_index_put(
+                op, value, [row_mask, column_mask], update, accumulate
+            )
+
+        class Model(torch.nn.Module):
+            def forward(self, value, row_mask, column_mask, update):
+                return torch.index_put(
+                    value, (row_mask, column_mask), update, accumulate=accumulate
+                )
+
+        expected = Model()(*args)
+        actual = self.evaluate(translation, [arg.numpy() for arg in args])
+        self.assertEqual(torch.from_numpy(actual[0]), expected)
+        program = torch_onnx.export(Model().eval(), args, verbose=False)
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        self.assertEqual(program(*args)[0], expected)
+
     def test_registration_is_native_and_preserves_metadata(self):
         with no_script():
             entries = _torchlib_registry.get_torchlib_ops()
@@ -307,6 +336,70 @@ class TestNativeTorchlib(common_utils.TestCase):
             dtype.numpy()
         )
         self.assertEqual(result, expected)
+
+    @common_utils.parametrize("input_dtype", [torch.float16, torch.float32])
+    @common_utils.parametrize(
+        "output_dtype,ir_dtype,zero_point,quant_min,quant_max",
+        [
+            (torch.int8, ir.DataType.INT8, 0, -128, 127),
+            (torch.uint8, ir.DataType.UINT8, 128, 0, 255),
+        ],
+    )
+    @common_utils.parametrize("parameter_shape", [None, (), (1, 1, 1)])
+    def test_quantization_reciprocal_rounding(
+        self,
+        input_dtype,
+        output_dtype,
+        ir_dtype,
+        zero_point,
+        quant_min,
+        quant_max,
+        parameter_shape,
+    ):
+        grid = torch.arange(-20, 21, dtype=torch.float32) * 0.2
+        x = (grid[:, None] + grid[None, :]).flatten().to(input_dtype)
+        if parameter_shape is not None:
+            scale = torch.tensor(0.4, dtype=torch.float32).reshape(parameter_shape)
+            zero = torch.tensor(zero_point, dtype=torch.int64).reshape(parameter_shape)
+            expected = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                x, scale, zero, quant_min, quant_max, output_dtype
+            )
+            result = self.evaluate(
+                quantized_decomposed.quantized_decomposed_quantize_per_tensor,
+                [x.numpy(), scale.numpy(), zero.numpy()],
+                quant_min=quant_min,
+                quant_max=quant_max,
+                dtype=ir_dtype,
+            )[0]
+        else:
+            expected = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                x, 0.4, zero_point, quant_min, quant_max, output_dtype
+            )
+            result = self.evaluate(
+                quantized_decomposed.quantized_decomposed_quantize_per_tensor,
+                [x.numpy()],
+                scale=0.4,
+                zero_point=zero_point,
+                quant_min=quant_min,
+                quant_max=quant_max,
+                dtype=ir_dtype,
+            )[0]
+        self.assertEqual(result, expected.numpy(), rtol=0, atol=0)
+
+        class Model(torch.nn.Module):
+            def forward(self, *args):
+                if parameter_shape is None:
+                    return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                        args[0], 0.4, zero_point, quant_min, quant_max, output_dtype
+                    )
+                return torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                    *args, quant_min, quant_max, output_dtype
+                )
+
+        args = (x,) if parameter_shape is None else (x, scale, zero)
+        program = torch_onnx.export(Model().eval(), args, verbose=False)
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        torch.testing.assert_close(program(*args)[0], expected, rtol=0, atol=0)
 
     def test_per_channel_quantization(self):
         x = np.array([[-1.0, 0.0, 1.0], [-4.0, 0.0, 4.0]], dtype=np.float32)

@@ -59,12 +59,22 @@ def from_dynamic_axes_to_dynamic_shapes(
     if kwargs is None:
         kwargs = {}
 
+    all_inputs_named = len(input_names) >= len(_pytree.tree_leaves((args, kwargs)))
     dynamic_shapes: dict[str, Any | None] = {}
     for input_name, axes in dynamic_axes.items():
         # NOTE: torch.export.Dim.DYNAMIC does its best to infer the min and max values
         # from the model, but it's not guaranteed to be dynamic.
         if input_name in output_names:
             # output names are not needed for dynamic_shapes
+            continue
+        if input_names and all_inputs_named and input_name not in input_names:
+            warnings.warn(
+                f"Provided key {input_name} for dynamic axes is not a valid input/output name. "
+                f"Valid names are {sorted((*input_names, *output_names))!r}. "
+                "Remove this entry or set input_names/output_names to include it.",
+                UserWarning,
+                stacklevel=3,
+            )
             continue
         if isinstance(axes, dict):
             if any(not isinstance(k, int) for k in axes):

@@ -8,9 +8,13 @@ public ONNXProgram serialization, and modern capture instead of JIT graphs.
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
+import warnings
 from pathlib import Path
 
 import onnx
+import onnx_ir as ir
 import torch
 import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
@@ -19,7 +23,353 @@ from torch.testing._internal import common_utils
 import torch_onnx
 
 
+def _custom_gelu(
+    op: torch_onnx.TranslationContext, value: ir.Value, approximate: str = "none"
+) -> ir.Value:
+    if approximate != "none":
+        raise ValueError("This custom Gelu is exact. Use approximate='none'.")
+    return op.builder.node(
+        "Gelu", [value], domain="com.microsoft", version=1, output_types=[value.type]
+    )[0]
+
+
+def _custom_inverse(op: torch_onnx.TranslationContext, value: ir.Value) -> ir.Value:
+    return op.builder.node(
+        "Inverse", [value], domain="com.microsoft", version=1, output_types=[value.type]
+    )[0]
+
+
 class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
+    def test_validate_dynamic_axes_invalid_input_output_name(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        x, y = torch.randn(3, 4), torch.randn(3, 4)
+        for invalid_axes in ({}, {0: "invalid_batch"}):
+            with self.subTest(invalid_axes=invalid_axes):
+                axes = {
+                    "input1": {},
+                    "output": {},
+                    "invalid_name1": invalid_axes,
+                    "invalid_name2": invalid_axes,
+                }
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    program = torch_onnx.export(
+                        Model().eval(),
+                        (x, y),
+                        input_names=["input1", "input2"],
+                        output_names=["output"],
+                        dynamic_axes=axes,
+                        verbose=False,
+                    )
+                messages = [
+                    str(warning.message)
+                    for warning in caught
+                    if str(warning.message).startswith("Provided key")
+                ]
+                self.assertEqual(len(messages), 2)
+                for name in ("invalid_name1", "invalid_name2"):
+                    self.assertTrue(
+                        any(f"Provided key {name} " in message for message in messages)
+                    )
+                self.assertIn("invalid_name1", axes)
+                self.assertIn("invalid_name2", axes)
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                self.assert_program_outputs(program, (x, y), expected=x + y)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            partial_names = torch_onnx.export(
+                Model().eval(),
+                (x, y),
+                input_names=["input1"],
+                dynamic_axes={"input1": {0: "batch"}, "y": {0: "batch"}},
+                verbose=False,
+            )
+        self.assertFalse(any(str(w.message).startswith("Provided key") for w in caught))
+        changed = torch.randn(5, 4)
+        self.assert_program_outputs(
+            partial_names, (changed, changed), expected=changed + changed
+        )
+
+    def test_verbose(self):
+        class MyModule(torch.nn.Module):
+            def forward(self, input):
+                return torch.exp(input)
+
+        model = MyModule().eval()
+        x = torch.randn(3, 4)
+        # Modern verbosity controls progress, not the retired JIT docstring stripping.
+        for verbose in (None, False, True):
+            with self.subTest(verbose=verbose):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    program = torch_onnx.export(model, (x,), verbose=verbose)
+                if verbose is False:
+                    self.assertEqual(output.getvalue(), "")
+                else:
+                    self.assertIn("Translate the graph into ONNX", output.getvalue())
+                self.assert_program_roundtrip(program, examples=[x], reference=model)
+
+    def test_local_function_overloads(self):
+        class NWithOverloads(torch.nn.Module):
+            def forward(self, x, y=None, z=None):
+                if y is None:
+                    return x + 1
+                elif z is None:
+                    return x + y
+                else:
+                    return x + y, x + z
+
+        class M(torch.nn.Module):
+            def __init__(self, num_layers):
+                super().__init__()
+                self.n = NWithOverloads()
+
+            def forward(self, x, y, z):
+                return self.n(x), self.n(x, y), self.n(x, y, z)
+
+        class NativeN(NWithOverloads):
+            def forward(self, x, y=None, z=None):
+                if y is None:
+                    return torch.ops.recovered_overloads.unary.default(x)
+                elif z is None:
+                    return torch.ops.recovered_overloads.binary.default(x, y)
+                return torch.ops.recovered_overloads.ternary.default(x, y, z)
+
+        function_names = [
+            "NWithOverloads",
+            "NWithOverloads.1",
+            "NWithOverloads.2",
+        ]
+
+        def translation_for(arity):
+            formals = [
+                ir.Value(name=f"input_{i}", type=ir.TensorType(ir.DataType.FLOAT))
+                for i in range(arity)
+            ]
+            body = ir.Graph(
+                formals, [], nodes=[], name="overload", opset_imports={"": 20}
+            )
+            builder = torch_onnx.GraphBuilder(body, opset=20)
+            if arity == 1:
+                one = builder.call(
+                    "Constant", value=ir.tensor(1.0, dtype=ir.DataType.FLOAT)
+                )[0]
+                body.outputs.append(builder.call("Add", formals[0], one)[0])
+            else:
+                body.outputs.append(builder.call("Add", formals[0], formals[1])[0])
+                if arity == 3:
+                    body.outputs.append(builder.call("Add", formals[0], formals[2])[0])
+            function = ir.Function(
+                "RecoveredFunctions",
+                function_names[arity - 1],
+                "",
+                graph=body,
+                attributes=[],
+            )
+
+            def translation(
+                op: torch_onnx.TranslationContext, *values: ir.Value
+            ) -> ir.Value | tuple[ir.Value, ir.Value]:
+                outputs = op.builder.call_function(function, *values, version=1)
+                if arity == 3:
+                    return outputs[0], outputs[1]
+                return outputs[0]
+
+            return translation
+
+        def implementation(*args):
+            return NWithOverloads()(*args)
+
+        schemas = [
+            ("unary", "(Tensor x) -> Tensor"),
+            ("binary", "(Tensor x, Tensor y) -> Tensor"),
+            ("ternary", "(Tensor x, Tensor y, Tensor z) -> (Tensor, Tensor)"),
+        ]
+        x, y, z = torch.randn(2, 3), torch.randn(2, 3), torch.randn(2, 3)
+        reference = M(3)
+        model = M(3)
+        model.n = NativeN()
+        targets = []
+        with torch.library._scoped_library(
+            "recovered_overloads", "FRAGMENT"
+        ) as library:
+            try:
+                for arity, (name, schema) in enumerate(schemas, start=1):
+                    qualified = f"recovered_overloads::{name}"
+                    torch.library.define(qualified, schema, lib=library)
+                    torch.library.impl(
+                        qualified, "CompositeExplicitAutograd", lib=library
+                    )(implementation)
+                    torch.library.register_fake(qualified, lib=library)(implementation)
+                    target = getattr(torch.ops.recovered_overloads, name).default
+                    torch_onnx.register_custom_translation(
+                        target, translation_for(arity)
+                    )
+                    targets.append(target)
+                program = torch_onnx.export(
+                    model.eval(), (x, y, z), optimize=False, verbose=False
+                )
+                torch_onnx.testing.assert_onnx_program(program, strategy=None)
+                self.assertCountEqual(
+                    [function.name for function in program.model_proto.functions],
+                    function_names,
+                )
+                self.assert_program_roundtrip(
+                    program,
+                    examples=[(x, y, z), (-x, -y, -z)],
+                    reference=reference,
+                )
+                program.optimize()
+                program.release()
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                self.assert_program_outputs(program, (x, y, z), reference=reference)
+            finally:
+                for target in targets:
+                    torch_onnx.unregister_custom_translation(target)
+
+    def test_custom_layer_tuple(self):
+        class CustomFunction(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, input):
+                return input, input
+
+        formal = ir.Value(name="input", type=ir.TensorType(ir.DataType.FLOAT))
+        body = ir.Graph(
+            [formal], [], nodes=[], name="custom_tuple", opset_imports={"": 20}
+        )
+        builder = torch_onnx.GraphBuilder(body, opset=20)
+        body.outputs.extend(
+            [builder.call("Identity", formal)[0], builder.call("Identity", formal)[0]]
+        )
+        function = ir.Function(
+            "CustomNamespace", "Custom", "", graph=body, attributes=[]
+        )
+
+        def custom(
+            op: torch_onnx.TranslationContext, value: ir.Value
+        ) -> tuple[ir.Value, ir.Value]:
+            left, right = op.builder.call_function(function, value, version=1)
+            return left, right
+
+        with torch.library._scoped_library("recovered_tuple", "FRAGMENT") as library:
+            torch.library.define(
+                "recovered_tuple::custom",
+                "(Tensor input) -> (Tensor, Tensor)",
+                lib=library,
+            )
+
+            @torch.library.impl(
+                "recovered_tuple::custom", "CompositeExplicitAutograd", lib=library
+            )
+            def implementation(
+                value: torch.Tensor,
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                return value.clone(), value.clone()
+
+            @torch.library.register_fake("recovered_tuple::custom", lib=library)
+            def fake(value: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                return value.clone(), value.clone()
+
+            class Custom(torch.nn.Module):
+                def forward(self, input):
+                    return torch.ops.recovered_tuple.custom.default(input)
+
+            target = torch.ops.recovered_tuple.custom.default
+            torch_onnx.register_custom_translation(target, custom)
+            self.addCleanup(torch_onnx.unregister_custom_translation, target)
+            program = torch_onnx.export(
+                Custom().eval(),
+                (torch.randn(2, 3),),
+                opset_version=20,
+                optimize=False,
+                verbose=False,
+                input_names=["batch"],
+                dynamic_shapes=(
+                    {
+                        0: torch.export.Dim("rows", min=2),
+                        1: torch.export.Dim("columns", min=2),
+                    },
+                ),
+            )
+            nodes = [
+                node for node in program.model.graph if node.domain == "CustomNamespace"
+            ]
+            self.assertEqual(len(nodes), 1)
+            self.assertEqual(nodes[0].op_type, "Custom")
+            self.assertEqual(len(nodes[0].outputs), 2)
+            self.assertIn(function.identifier(), program.model.functions)
+            # Retain the original singleton fixture despite narrower EP guards.
+            self.assert_program_roundtrip(
+                program,
+                examples=[torch.randn(1, 3), torch.randn(2, 3), torch.randn(3, 5)],
+                reference=CustomFunction.apply,
+                rtol=0,
+                atol=0,
+            )
+
+    def _check_custom_domain(self, model, args, opname):
+        for opset in [None, 18, 24]:
+            program = torch_onnx.export(model, args, opset_version=opset, verbose=False)
+            if opset is not None:
+                self.assertEqual(program.model.opset_imports[""], opset)
+            self.assertEqual(program.model.opset_imports["com.microsoft"], 1)
+            self.assertTrue(
+                any(
+                    node.op_type == opname and node.domain == "com.microsoft"
+                    for node in program.model.graph
+                )
+            )
+            self.assert_program_roundtrip(program, strategy=None)
+
+    def test_custom_opsets_gelu(self):
+        target = torch.ops.aten.gelu.default
+        torch_onnx.register_custom_translation(target)(_custom_gelu)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        self._check_custom_domain(
+            torch.nn.GELU(approximate="none").eval(), (torch.randn(3, 3),), "Gelu"
+        )
+
+    def test_register_aten_custom_op_symbolic(self):
+        target = torch.ops.aten.gelu.default
+        torch_onnx.register_custom_translation(target, _custom_gelu)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        self._check_custom_domain(
+            torch.nn.GELU(approximate="none").eval(), (torch.randn(3, 3),), "Gelu"
+        )
+
+    def test_custom_opsets_inverse(self):
+        class CustomInverse(torch.nn.Module):
+            def forward(self, x):
+                return torch.inverse(x) + x
+
+        target = torch.ops.aten.linalg_inv.default
+        torch_onnx.register_custom_translation(target, _custom_inverse)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        x = torch.randn(2, 3, 3)
+        x = x @ x.mT + torch.eye(3)
+        self._check_custom_domain(CustomInverse().eval(), (x,), "Inverse")
+
+    def test_bad_symbolic_registration(self):
+        def bad_cat(op):
+            return op.Identity(0)
+
+        class CatModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat((x, x, x), 0)
+
+        target = torch.ops.aten.cat.default
+        torch_onnx.register_custom_translation(target, bad_cat)
+        self.addCleanup(torch_onnx.unregister_custom_translation, target)
+        with self.assertRaisesRegex(
+            torch_onnx.errors.ConversionError,
+            "Native translation.*bad_cat.*failed",
+        ):
+            torch_onnx.export(CatModel().eval(), (torch.randn(2, 3),), verbose=False)
+
     @staticmethod
     def _module_scope(node):
         return ast.literal_eval(node.metadata_props["pkg.torch.onnx.name_scopes"])[-2]

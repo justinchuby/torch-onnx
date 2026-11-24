@@ -20,6 +20,7 @@ import onnx_ir as ir
 import torch
 import torch.fx
 from onnx_ir import convenience as ir_convenience
+from onnx_ir.passes import common as ir_common_passes
 from torch.export import graph_signature
 
 from torch_onnx import (
@@ -756,6 +757,8 @@ def _call_legacy_translation(
 
     from torch_onnx import _building, _tensors
 
+    if not isinstance(onnx_function, onnxscript.OnnxFunction):
+        model.graph.opset_imports[""] = opset
     opset = onnxscript.values.Opset("", opset)
     with onnxscript.evaluator.default_as(
         tracer := _building.OpRecorder(opset, constant_farm)
@@ -1517,6 +1520,8 @@ def _exported_program_to_onnx_program(
 
     # Collect and add opset imports to the model
     _ir_passes.add_opset_imports(model)
+    if lower != "none":
+        model.opset_imports.setdefault("", registry.opset_version)
 
     if any(
         isinstance(meta.onnx_function, _custom_translation.NativeTranslation)
@@ -1547,7 +1552,7 @@ def _exported_program_to_onnx_program(
                     # Keep lifted FakeTensors in IR instead of serializing their data.
                     onnxscript.version_converter.convert_version(body, target_opset)
                     graph = body.graph
-            except RuntimeError as error:
+            except (RuntimeError, ValueError) as error:
                 raise _errors.GraphConstructionError(
                     f"Cannot align function {identifier!r} from ONNX opset "
                     f"{function.opset_imports.get('')} to {target_opset}. "
@@ -1850,8 +1855,15 @@ def export(
     if onnx_program.exported_program is None:
         raise AssertionError("exported_program must be non-None")
 
+    # Keep unused lifted parameter aliases out of unoptimized exports.
+    ir_common_passes.RemoveUnusedNodesPass()(onnx_program.model)
+
     # Converter opset version and optimize
-    if opset_version is not None:
+    # Even no-op version conversion inlines local functions.
+    if (
+        opset_version is not None
+        and onnx_program.model.opset_imports.get("") != opset_version
+    ):
         onnx_program.model = onnxscript_apis.convert_version(
             onnx_program.model, opset_version
         )

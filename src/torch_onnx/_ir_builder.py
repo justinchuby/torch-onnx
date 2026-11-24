@@ -24,32 +24,12 @@ _CURRENT: contextvars.ContextVar[GraphBuilder | None] = contextvars.ContextVar(
 
 
 def validate_opset_version(opset: int) -> None:
-    """Reject unknown schema targets instead of relabeling older-schema graphs."""
+    """Validate that the requested ONNX opset version is a positive integer."""
     if type(opset) is not int or opset < 1:
-        raise ValueError(f"ONNX opset must be a positive integer, got {opset!r}.")
-    available = onnx.defs.onnx_opset_version()
-    if opset > min(29, available):
         raise ValueError(
-            f"Requested ONNX opset {opset}; this exporter supports through 29 and "
-            f"installed ONNX {onnx.__version__} provides schemas through {available}. "
-            "Install an ONNX build with the requested schemas (current ONNX main "
-            "for opset 29), or select a supported opset_version."
+            f"ONNX opset must be a positive integer, got {opset!r}. "
+            "Pass an integer >= 1."
         )
-    if opset == 29:
-        for name in ("Expm1", "Log1p", "LogCumSumExp", "ScatterElements"):
-            try:
-                schema = onnx.defs.get_schema(name, 29)
-            except onnx.defs.SchemaError as error:
-                raise ValueError(
-                    f"ONNX {onnx.__version__} advertises opset 29 but lacks {name}. "
-                    "Install current ONNX main as documented in docs/opsets.md; "
-                    "older weekly builds have incomplete opset 29 schemas."
-                ) from error
-            if schema.since_version != 29:
-                raise ValueError(
-                    f"ONNX {onnx.__version__} lacks the opset 29 {name} schema. "
-                    "Install current ONNX main as documented in docs/opsets.md."
-                )
 
 
 def current_builder() -> GraphBuilder:
@@ -92,9 +72,13 @@ class TranslationContext:
         try:
             schema = onnx.defs.get_schema(name, self.builder.opset, "")
         except onnx.defs.SchemaError as error:
+            available = onnx.defs.onnx_opset_version()
             raise AttributeError(
-                f"No ONNX operator {name!r} at opset {self.builder.opset}. "
-                "Check the spelling or use builder.node() for a custom domain."
+                f"No ONNX operator {name!r} at opset {self.builder.opset} "
+                f"(installed ONNX {onnx.__version__} provides default-domain "
+                f"schemas through opset {available}). Check the spelling, install "
+                "an ONNX build with that schema, or use builder.node() with "
+                "explicit output_types for custom/unregistered operators."
             ) from error
 
         def call(
@@ -285,10 +269,31 @@ class GraphBuilder:
         try:
             schema = onnx.defs.get_schema(op_type, version, domain)
         except onnx.defs.SchemaError as error:
+            schema_context = (
+                f" (installed ONNX {onnx.__version__} provides default-domain "
+                f"schemas through opset {onnx.defs.onnx_opset_version()})"
+                if not domain
+                else ""
+            )
             raise ValueError(
-                f"No ONNX schema for {domain}::{op_type} at version {version}. "
-                "Correct the operator/opset or use node() with explicit output types."
+                f"No ONNX schema for {domain}::{op_type} at version {version}"
+                f"{schema_context}. Correct the operator/opset, install an ONNX "
+                "build with that schema, or use node() with explicit output types."
             ) from error
+        if (
+            not domain
+            and op_type == "ScatterElements"
+            and attributes.get("reduction") == "mean"
+            and schema.since_version < 29
+        ):
+            raise ValueError(
+                f"ScatterElements reduction='mean' requires the opset 29 schema, "
+                f"but installed ONNX {onnx.__version__} resolves ScatterElements "
+                f"since_version={schema.since_version} (default-domain schemas "
+                f"through opset {onnx.defs.onnx_opset_version()}). Install an "
+                "ONNX build with opset 29 schemas, select opset_version <= 28, "
+                "or register a custom translation."
+            )
         if not schema.min_input <= len(inputs) <= schema.max_input:
             raise ValueError(
                 f"{op_type} expects {schema.min_input}..{schema.max_input} inputs, "

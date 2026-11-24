@@ -1,9 +1,12 @@
-# ONNX opsets 24–29
+# ONNX opsets and custom-opset extensibility
 
-The exporter targets ONNX opsets 18–29. Older targets still use the existing
-version converter. Schema validation is against the installed ONNX package:
-requesting a version newer than its schema registry fails with installation
-guidance, rather than relabeling an older-schema graph.
+Built-in translations cover ONNX opsets 18–29, and older targets still use the
+existing version converter. The exporter does not enforce a maximum opset gate:
+users can export custom operators, custom domains, and custom translations
+targeting newer opset versions without breaking export. Schema-guided operator
+calls still validate against the installed ONNX schema registry so missing
+default-domain schemas fail with actionable guidance rather than silently
+emitting invalid older-schema operators.
 
 The development-schema authority is ONNX main
 [`622adf94d4e720142950aa8178f7357d52e63db0`](https://github.com/onnx/onnx/commit/622adf94d4e720142950aa8178f7357d52e63db0).
@@ -47,3 +50,11 @@ pytest tests/exporter/test_opsets.py -m opset29
 ```
 
 Default exports still use PyTorch's established default opset, not development 29.
+
+## Semantic normalization operators
+
+Batch normalization uses ONNX `BatchNormalization` in inference and training
+translations. Training supplies the computed batch mean and biased variance to
+the inference-mode operator, while separately preserving PyTorch's saved
+statistics and unbiased running-variance update. This retains a fusible
+normalization operator without requiring a training-capable runtime.

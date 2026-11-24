@@ -15,6 +15,91 @@ from torch import Tensor
 
 
 class TestRecoveredConvolutionShapes(RecoveredRuntimeHarness):
+    def test_convolution_allow_tf32(self):
+        class Module(torch.nn.Module):
+            def __init__(self, allow_tf32):
+                super().__init__()
+                self.allow_tf32 = allow_tf32
+                weight = torch.rand(32, 3, 3, 3)
+                self.weight = torch.nn.Parameter(weight)
+
+            def forward(self, x):
+                if self.allow_tf32:
+                    return torch._convolution(
+                        x,
+                        self.weight,
+                        None,
+                        [2, 2],
+                        [0, 0],
+                        [1, 1],
+                        False,
+                        [0, 0],
+                        1,
+                        False,
+                        False,
+                        True,
+                        True,
+                    )
+                else:
+                    return torch._convolution(
+                        x,
+                        self.weight,
+                        None,
+                        [2, 2],
+                        [0, 0],
+                        [1, 1],
+                        False,
+                        [0, 0],
+                        1,
+                        False,
+                        False,
+                        True,
+                    )
+
+        x = torch.randn(1, 3, 224, 224)
+        self.run_test(Module(False), x, rtol=1e-3, atol=1e-6)
+        self.run_test(Module(True), x, rtol=1e-3, atol=1e-6)
+
+    def test_low_level_convolution_overloads(self):
+        class Module(torch.nn.Module):
+            def __init__(self, target, transposed):
+                super().__init__()
+                self.target = target
+                self.transposed = transposed
+                self.weight = torch.nn.Parameter(
+                    torch.randn((4, 3, 3) if transposed else (6, 2, 3))
+                )
+                self.bias = torch.nn.Parameter(torch.randn(6))
+
+            def forward(self, x):
+                flags = (True, True, False)
+                if self.target is torch.ops.aten._convolution.default:
+                    flags = (*flags, False)
+                return self.target(
+                    x,
+                    self.weight,
+                    self.bias,
+                    [2],
+                    [1],
+                    [1],
+                    self.transposed,
+                    [1 if self.transposed else 0],
+                    2,
+                    *flags,
+                )
+
+        for target in (
+            torch.ops.aten._convolution.default,
+            torch.ops.aten._convolution.deprecated,
+        ):
+            for transposed in (False, True):
+                with self.subTest(target=target, transposed=transposed):
+                    self.run_test(
+                        Module(target, transposed),
+                        torch.randn(2, 4, 9),
+                        additional_test_inputs=[torch.randn(2, 4, 9)],
+                    )
+
     def test_fuse_conv_bn1d(self):
         class Fuse(torch.nn.Module):
             def __init__(self) -> None:

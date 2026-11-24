@@ -246,6 +246,38 @@ def aten_convolution(
     return result
 
 
+@onnx_impl((aten._convolution.default, aten._convolution.deprecated))
+def aten__convolution(
+    op: TranslationContext,
+    input: ir.Value,
+    weight: ir.Value,
+    bias: ir.Value | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    transposed: bool,
+    output_padding: Sequence[int],
+    groups: int,
+    benchmark: bool,
+    deterministic: bool,
+    cudnn_enabled: bool,
+    allow_tf32: bool = True,
+) -> ir.Value:
+    # Backend execution-policy flags are not properties of an ONNX Conv.
+    return aten_convolution(
+        op,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+    )
+
+
 def _conv_kernel_shape(
     op: TranslationContext, weight: ir.Value, complex: bool = False
 ) -> Sequence[int] | None:
@@ -666,22 +698,24 @@ def _aten_native_batch_norm_training_onnx(
     sqr = op.Mul(input_sub_mean, input_sub_mean)
     var = op.ReduceMean(sqr, axes, keepdims=False)
     rstd = op.Div(1.0, op.Sqrt(op.Add(var, eps)))
-    # Explicit normalization also supports inference-only runtimes when batch
-    # statistics are required (eval mode with track_running_stats=False).
-    rank = len(common_ops.require_shape(op, input))
-    channel_shape = [1, -1, *([1] * (rank - 2))]
-    normalized = op.Mul(input_sub_mean, op.Reshape(rstd, channel_shape))
+    # Use batch statistics with the fused inference operator. ONNX's training
+    # operator updates biased running variance, unlike PyTorch's update below,
+    # and is unavailable in inference-only runtimes.
+    mean = op.Reshape(mean, [-1])
     norm = op.CastLike(
-        op.Add(
-            op.Mul(
-                normalized, op.Reshape(op.CastLike(weight, normalized), channel_shape)
-            ),
-            op.Reshape(op.CastLike(bias, normalized), channel_shape),
-        ),
+        op.BatchNormalization(
+            upcast_input,
+            op.CastLike(weight, upcast_input),
+            op.CastLike(bias, upcast_input),
+            mean,
+            var,
+            epsilon=eps,
+            momentum=momentum,
+            training_mode=False,
+            outputs=1,
+        )[0],
         input,
     )
-    # Get mean again with size = [1, C]
-    mean = op.ReduceMean(upcast_input, axes, keepdims=False)
 
     # Compute the running var the PyTorch way
     # https://github.com/pytorch/pytorch/blob/5cc511f72fe073bbd8c10d796d72dce67f5cd5c4/torch/_decomp/decompositions.py#L1646

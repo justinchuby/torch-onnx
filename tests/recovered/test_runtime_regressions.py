@@ -64,7 +64,7 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
         dynamic_axes=None,
         dynamic_shapes=None,
         remained_onnx_input_idx=None,
-        training=False,
+        training: bool | None = False,
     ):
         args = input_args if isinstance(input_args, tuple) else (input_args,)
         # A trailing dictionary is legacy kwargs syntax unless followed by {}.
@@ -73,8 +73,10 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
             if args and isinstance(args[-1], dict) and input_kwargs is None
             else args
         )
+        if training is not None:
+            model.train(training)
         program = torch_onnx.export(
-            model.train(training),
+            model,
             export_args,
             optimize=True,
             verbose=False,

@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 561 original runtime test bodies/comments, four control-flow
+retired frontend. 567 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 171, 'inapplicable': 55, 'migrated': 649}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 165, 'inapplicable': 55, 'migrated': 655}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -893,12 +893,12 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:10540::test_fake_quantize_per_tensor_dynamic_scale_zeropoint` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10555::test_fake_quantize_per_channel` | migrated | tests/recovered/test_additional_regressions.py::test_fake_quantize_per_channel |
 | `test_pytorch_onnx_onnxruntime.py:10576::test_fake_quantize_activation` | blocked | FakeQuantize observer flag/state causes data-dependent Python control flow in torch.export; inference-only fake quantization is covered by the recovered model variant |
-| `test_pytorch_onnx_onnxruntime.py:10602::test_batchnorm_training` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10638::test_batchnorm_training_mode_fix_layer` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10675::test_batchnorm_eval_mode_train_layer` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10712::test_instancenorm_training` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10748::test_instancenorm_training_mode_fix_layer` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10785::test_instancenorm_eval_mode_train_layer` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10602::test_batchnorm_training` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10638::test_batchnorm_training_mode_fix_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10675::test_batchnorm_eval_mode_train_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10712::test_instancenorm_training` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10748::test_instancenorm_training_mode_fix_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10785::test_instancenorm_eval_mode_train_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10823::test_dropout_training` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10868::test_dropout_training_zero` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10933::test_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |

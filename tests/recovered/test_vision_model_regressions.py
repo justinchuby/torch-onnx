@@ -1,0 +1,100 @@
+# Copyright: PyTorch contributors. See LICENSE-PYTORCH.
+"""Current torchvision adaptations of the removed test_models.py model cases.
+
+Source: e2c2673d00500d268fcb1cc63fa7cc3173876505, removed by
+6dca9f63bc4975ac323044a440c2c7e5f8512408. Preserve original architectures,
+input dimensions, constant-one inputs and inference numerical checks.
+"""
+
+import copy
+
+import onnx
+import onnxruntime as ort
+import pytest
+import torch
+import torchvision.models as models
+
+import torch_onnx
+
+
+@pytest.mark.parametrize(
+    ("name", "shape", "kwargs", "rtol", "atol"),
+    [
+        ("resnet50", (2, 3, 224, 224), {}, 1e-2, 1e-6),
+        ("densenet121", (2, 3, 224, 224), {}, 1e-2, 1e-5),
+        ("inception_v3", (2, 3, 299, 299), {}, 1e-2, 1e-7),
+        ("googlenet", (2, 3, 224, 224), {}, 1e-3, 1e-5),
+        ("mnasnet1_0", (2, 3, 224, 224), {}, 1e-3, 1e-5),
+        ("mobilenet_v2", (2, 3, 224, 224), {}, 1e-3, 1e-5),
+        ("shufflenet_v2_x1_0", (2, 3, 224, 224), {}, 1e-3, 1e-5),
+        ("alexnet", (2, 3, 224, 224), {}, 1e-2, 1e-7),
+        (
+            "segmentation.fcn_resnet101",
+            (2, 3, 224, 224),
+            {"weights_backbone": None},
+            1e-3,
+            1e-5,
+        ),
+        (
+            "segmentation.deeplabv3_resnet101",
+            (2, 3, 224, 224),
+            {"weights_backbone": None},
+            1e-3,
+            1e-5,
+        ),
+        ("video.r3d_18", (1, 3, 4, 112, 112), {}, 1e-3, 1e-5),
+        ("video.mc3_18", (1, 3, 4, 112, 112), {}, 1e-3, 1e-5),
+        ("video.r2plus1d_18", (1, 3, 4, 112, 112), {}, 1e-3, 1e-5),
+    ],
+)
+def test_original_vision_model(name, shape, kwargs, rtol, atol):
+    previous_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    program = None
+    try:
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(0)
+            factory = models
+            for component in name.split("."):
+                factory = getattr(factory, component)
+            model = factory(weights=None, **kwargs).eval()
+            x = torch.randn(shape) if name == "inception_v3" else torch.ones(shape)
+            program = torch_onnx.export(model, (x,), verbose=False)
+            onnx.checker.check_model(program.model_proto, full_check=True)
+
+            def initialize_session(serialized):
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = 1
+                return ort.InferenceSession(
+                    serialized, options, providers=["CPUExecutionProvider"]
+                )
+
+            program.initialize_inference_session(initialize_session)
+            if name in {
+                "inception_v3",
+                "segmentation.fcn_resnet101",
+                "segmentation.deeplabv3_resnet101",
+            }:
+                # Near-zero cancellation makes float32 itself an unstable oracle
+                # for these deep, untrained networks with large output ranges.
+                with torch.no_grad():
+                    reference = torch.utils._pytree.tree_leaves(model(x))[0]
+                    oracle = torch.utils._pytree.tree_leaves(
+                        copy.deepcopy(model).double()(x.double())
+                    )[0]
+                    actual = program(x)[0]
+                assert actual.shape == reference.shape
+                assert actual.dtype == reference.dtype
+                difference = actual.double() - oracle
+                assert difference.norm() / oracle.norm() <= 1e-5
+                assert difference.abs().max() / oracle.abs().max() <= 1e-5
+                if name == "inception_v3":
+                    # Preserve the source's explicit 1% unstable-element allowance.
+                    mismatch = ~torch.isclose(actual, reference, rtol=rtol, atol=atol)
+                    assert mismatch.double().mean() <= 0.01
+            else:
+                torch_onnx.testing.assert_onnx_program(program, rtol=rtol, atol=atol)
+    finally:
+        if program is not None:
+            program.release()
+        torch.set_num_threads(previous_threads)

@@ -9,18 +9,18 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 381 original runtime test bodies/comments, four control-flow
-regressions and 12 model methods were ported to the modern standalone exporter. Each exports real models and compares
+retired frontend. 411 original runtime test bodies/comments, four control-flow
+regressions and 25 model methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 423, 'inapplicable': 55, 'migrated': 397}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 380, 'inapplicable': 55, 'migrated': 440}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
-inputs against the same exported graph. Every enabled recovered method also saves and reloads
+inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
 the ONNX model before comparing values, shapes and dtypes. Legacy byte indexing
 uses the current boolean-mask API; checks for pruned inputs check unused graph
 inputs instead, because modern export preserves the original callable signature.
@@ -87,6 +87,25 @@ modes and alignment choices. The original volumetric grid-sampling checks
 remain enabled. This caught a missing ORT int16 Where kernel in signed shifts;
 selection now sign-extends to int32 and casts back without changing results.
 
+Another 43 source methods restore random-factory shape/dtype/canceled-value
+checks, deterministic multinomial selection, mixed integer/float comparisons,
+reduction dtypes and thirteen original torchvision architectures. These are not
+statistical random-distribution tests. The dynamic random-size cases execute
+additional shapes against one graph. Historical double/half reduction exclusions
+are removed, and the historical less-than test's accidental greater-than body is
+corrected. The prototype's obsolete conditional skip is removed; class-method
+branches now execute both paths through a genuine dynamic ONNX If.
+
+Vision models retain their original input dimensions and architectures, use no
+downloaded weights, and execute actual ONNX Runtime inference after full schema
+checking. For untrained Inception and ResNet101 segmentation models, float32
+PyTorch itself exhibits cancellation against a float64 oracle (measured relative
+L2 errors up to 2e-6). These three tests therefore require both relative L2 and
+range-normalized maximum errors at most 1e-5 against float64 PyTorch; they do not
+silently loosen every operator's tolerances. Inception additionally retains the
+source's explicit 1% unstable-element allowance. Other vision models retain their
+original elementwise tolerances.
+
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
 | `test_autograd_funs.py:19::test_single_output` | blocked | Custom autograd symbolic test needs an explicit torch.export/native translation rewrite |
@@ -107,30 +126,30 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_models.py:95::test_embedding_sequential_2` | migrated | tests/recovered/test_model_regressions.py::test_original_embedding_sequence[EmbeddingNetwork2] |
 | `test_models.py:100::test_srresnet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models.py:107::test_super_resolution` | migrated | tests/recovered/test_model_regressions.py::test_super_resolution |
-| `test_models.py:111::test_alexnet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:111::test_alexnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (alexnet); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:115::test_mnist` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[MNIST] |
 | `test_models.py:120::test_vgg16` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models.py:126::test_vgg16_bn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models.py:132::test_vgg19` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models.py:138::test_vgg19_bn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:143::test_resnet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:149::test_inception` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:143::test_resnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (resnet50); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:149::test_inception` | migrated | `tests/recovered/test_vision_model_regressions.py` (inception_v3); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:153::test_squeezenet` | migrated | tests/recovered/test_model_regressions.py::test_squeezenet_models |
-| `test_models.py:166::test_densenet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:166::test_densenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (densenet121); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models.py:172::test_dcgan_netD` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[False] |
 | `test_models.py:179::test_dcgan_netG` | migrated | tests/recovered/test_model_regressions.py::test_dcgan_models[True] |
 | `test_models.py:186::test_fake_quant` | migrated | tests/recovered/test_model_regressions.py::test_original_small_models[FakeQuantNet], frozen-observer inference variant checked against original |
 | `test_models.py:191::test_qat_resnet_pertensor` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models.py:214::test_qat_resnet_per_channel` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:236::test_googlenet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:240::test_mnasnet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:244::test_mobilenet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:249::test_shufflenet` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:254::test_fcn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:264::test_deeplab` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:273::test_r3d_18_video` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:277::test_mc3_18_video` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
-| `test_models.py:281::test_r2plus1d_18_video` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
+| `test_models.py:236::test_googlenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (googlenet); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:240::test_mnasnet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mnasnet1_0); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:244::test_mobilenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (mobilenet_v2); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:249::test_shufflenet` | migrated | `tests/recovered/test_vision_model_regressions.py` (shufflenet_v2_x1_0); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:254::test_fcn` | migrated | `tests/recovered/test_vision_model_regressions.py` (segmentation.fcn_resnet101); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:264::test_deeplab` | migrated | `tests/recovered/test_vision_model_regressions.py` (segmentation.deeplabv3_resnet101); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:273::test_r3d_18_video` | migrated | `tests/recovered/test_vision_model_regressions.py` (video.r3d_18); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:277::test_mc3_18_video` | migrated | `tests/recovered/test_vision_model_regressions.py` (video.mc3_18); original architecture/shape, full schema check and CPU numerical execution |
+| `test_models.py:281::test_r2plus1d_18_video` | migrated | `tests/recovered/test_vision_model_regressions.py` (video.r2plus1d_18); original architecture/shape, full schema check and CPU numerical execution |
 | `test_models_onnxruntime.py:209::test_faster_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models_onnxruntime.py:252::test_mask_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
 | `test_models_onnxruntime.py:310::test_keypoint_rcnn` | blocked | Full historical model/optional dependency fixture migration not yet validated; no downloaded model weights or blanket skips added |
@@ -327,21 +346,21 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_pytorch_onnx_onnxruntime.py:2729::test_copy_ellipsis` | migrated | tests/recovered/test_additional_regressions.py::test_copy_ellipsis |
 | `test_pytorch_onnx_onnxruntime.py:2744::test_copy_ellipsis_script` | migrated | tests/recovered/test_additional_regressions.py::test_copy_ellipsis_script |
 | `test_pytorch_onnx_onnxruntime.py:2759::test_flip` | migrated | `test_runtime_regressions.py::test_flip`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:2768::test_randint` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2779::test_randint_value` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2789::test_randint_like` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2798::test_randn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2806::test_rand` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2814::test_randn_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2827::test_rand_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2841::test_randn_dynamic_size` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2850::test_rand_dynamic_size` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2858::test_randn_like` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2867::test_rand_like` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2876::test_randn_like_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2889::test_rand_like_dtype` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2902::test_bernoulli` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:2913::test_bernoulli_p` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:2768::test_randint` | migrated | `tests/recovered/test_factory_regressions.py::test_randint`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2779::test_randint_value` | migrated | `tests/recovered/test_factory_regressions.py::test_randint_value`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2789::test_randint_like` | migrated | `tests/recovered/test_factory_regressions.py::test_randint_like`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2798::test_randn` | migrated | `tests/recovered/test_factory_regressions.py::test_randn`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2806::test_rand` | migrated | `tests/recovered/test_factory_regressions.py::test_rand`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2814::test_randn_dtype` | migrated | `tests/recovered/test_factory_regressions.py::test_randn_dtype`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2827::test_rand_dtype` | migrated | `tests/recovered/test_factory_regressions.py::test_rand_dtype`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2841::test_randn_dynamic_size` | migrated | `tests/recovered/test_factory_regressions.py::test_randn_dynamic_size`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2850::test_rand_dynamic_size` | migrated | `tests/recovered/test_factory_regressions.py::test_rand_dynamic_size`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2858::test_randn_like` | migrated | `tests/recovered/test_factory_regressions.py::test_randn_like`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2867::test_rand_like` | migrated | `tests/recovered/test_factory_regressions.py::test_rand_like`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2876::test_randn_like_dtype` | migrated | `tests/recovered/test_factory_regressions.py::test_randn_like_dtype`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2889::test_rand_like_dtype` | migrated | `tests/recovered/test_factory_regressions.py::test_rand_like_dtype`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2902::test_bernoulli` | migrated | `tests/recovered/test_factory_regressions.py::test_bernoulli`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:2913::test_bernoulli_p` | migrated | `tests/recovered/test_factory_regressions.py::test_bernoulli_p`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:2932::test_reshape_allowzero` | migrated | tests/recovered/test_additional_regressions.py::test_reshape_allowzero |
 | `test_pytorch_onnx_onnxruntime.py:2941::test_reshape_different_rank` | migrated | `test_runtime_regressions.py::test_reshape_different_rank`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3064::test_interpolate_upsample` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -434,10 +453,10 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_pytorch_onnx_onnxruntime.py:4388::test_gather_constant_fold` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:4446::test_expand` | migrated | `test_runtime_regressions.py::test_expand`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:4472::test_dynamic_expand_as` | migrated | tests/recovered/test_additional_regressions.py::test_dynamic_expand_as |
-| `test_pytorch_onnx_onnxruntime.py:4518::test_multinomial` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:4565::test_reduced_sum` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:4568::test_reduced_mean` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:4571::test_reduced_prod` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
+| `test_pytorch_onnx_onnxruntime.py:4518::test_multinomial` | migrated | `tests/recovered/test_factory_regressions.py::test_multinomial`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:4565::test_reduced_sum` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_reduced_sum`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:4568::test_reduced_mean` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_reduced_mean`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:4571::test_reduced_prod` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_reduced_prod`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:4574::test_reduced_sum_dtypes` | migrated | tests/recovered/test_additional_regressions.py::test_reduced_sum_dtypes |
 | `test_pytorch_onnx_onnxruntime.py:4587::test_reduced_min_max` | migrated | `test_runtime_regressions.py::test_reduced_min_max`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:4601::test_reduce_log_sum_exp` | migrated | `test_runtime_regressions.py::test_reduce_log_sum_exp`; original numerical body, modern standalone harness |
@@ -475,16 +494,16 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_pytorch_onnx_onnxruntime.py:5236::test_logical_or` | migrated | `test_runtime_regressions.py::test_logical_or`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5258::test_logical_xor` | migrated | `test_runtime_regressions.py::test_logical_xor`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5280::test_logical_not` | migrated | `test_runtime_regressions.py::test_logical_not`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:5298::test_eq` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:5305::test_gt` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:5313::test_ge` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:5320::test_gt_scalar` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:5298::test_eq` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_eq`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5305::test_gt` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_gt`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5313::test_ge` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_ge`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5320::test_gt_scalar` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_gt_scalar`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:5327::test_gt_primitive` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:5340::test_ge_scalar` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:5347::test_lt` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:5355::test_le` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:5362::test_lt_scalar` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:5370::test_le_scalar` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:5340::test_ge_scalar` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_ge_scalar`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5347::test_lt` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_lt`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5355::test_le` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_le`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5362::test_lt_scalar` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_lt_scalar`; real export/check/save/reload/runtime |
+| `test_pytorch_onnx_onnxruntime.py:5370::test_le_scalar` | migrated | `tests/recovered/test_reduction_comparison_regressions.py::test_le_scalar`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:5377::test_matmul` | migrated | `test_runtime_regressions.py::test_matmul`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5390::test_matmul_batch` | migrated | `test_runtime_regressions.py::test_matmul_batch`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5418::test_argmin_argmax` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
@@ -556,7 +575,7 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_pytorch_onnx_onnxruntime.py:6647::test_zeros_ones_with_tensor_input` | migrated | tests/recovered/test_additional_regressions.py::test_zeros_ones_with_tensor_input |
 | `test_pytorch_onnx_onnxruntime.py:6657::test_tolist` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6667::test_list_pass` | migrated | tests/recovered/test_additional_regressions.py::test_list_pass |
-| `test_pytorch_onnx_onnxruntime.py:6729::test_new_empty` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6729::test_new_empty` | migrated | `tests/recovered/test_factory_regressions.py::test_new_empty`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6742::test_new_full` | migrated | `test_runtime_regressions.py::test_new_full`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:6754::test_inplace_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6771::test_inplace_fill` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_fill |
@@ -721,7 +740,7 @@ selection now sign-extends to int32 and casts back without changing results.
 | `test_pytorch_onnx_onnxruntime.py:9663::test_maximum_dtypes` | migrated | tests/recovered/test_additional_regressions.py::test_maximum_dtypes |
 | `test_pytorch_onnx_onnxruntime.py:9685::test_any` | migrated | tests/recovered/test_additional_regressions.py::test_any |
 | `test_pytorch_onnx_onnxruntime.py:9708::test_all` | migrated | tests/recovered/test_additional_regressions.py::test_all |
-| `test_pytorch_onnx_onnxruntime.py:9730::test_dropout` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:9730::test_dropout` | migrated | `tests/recovered/test_factory_regressions.py::test_dropout`; real export/check/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:9743::test_rrelu_eval` | migrated | tests/recovered/test_additional_regressions.py::test_rrelu_eval |
 | `test_pytorch_onnx_onnxruntime.py:9747::test_shape_constant_fold` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:9761::test_celu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |

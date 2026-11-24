@@ -757,6 +757,8 @@ def _call_legacy_translation(
 
     from torch_onnx import _building, _tensors
 
+    if not isinstance(onnx_function, onnxscript.OnnxFunction):
+        model.graph.opset_imports[""] = opset
     opset = onnxscript.values.Opset("", opset)
     with onnxscript.evaluator.default_as(
         tracer := _building.OpRecorder(opset, constant_farm)
@@ -1518,6 +1520,8 @@ def _exported_program_to_onnx_program(
 
     # Collect and add opset imports to the model
     _ir_passes.add_opset_imports(model)
+    if lower != "none":
+        model.opset_imports.setdefault("", registry.opset_version)
 
     if any(
         isinstance(meta.onnx_function, _custom_translation.NativeTranslation)
@@ -1548,7 +1552,7 @@ def _exported_program_to_onnx_program(
                     # Keep lifted FakeTensors in IR instead of serializing their data.
                     onnxscript.version_converter.convert_version(body, target_opset)
                     graph = body.graph
-            except RuntimeError as error:
+            except (RuntimeError, ValueError) as error:
                 raise _errors.GraphConstructionError(
                     f"Cannot align function {identifier!r} from ONNX opset "
                     f"{function.opset_imports.get('')} to {target_opset}. "

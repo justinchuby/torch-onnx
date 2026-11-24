@@ -161,21 +161,190 @@ def test_einsum_28_bfloat16_schema():
 
 
 def test_unavailable_schema_target_is_actionable():
+    for opset in (30, 50):
+        validate_opset_version(opset)
+    for invalid in (0, -1, True, 18.5, "29"):
+        with pytest.raises(ValueError, match="positive integer"):
+            validate_opset_version(invalid)  # type: ignore[arg-type]
+
+    graph = ir.Graph([], [], nodes=[], name="missing_schema")
+    builder = torch_onnx.GraphBuilder(graph, opset=30)
+    op = torch_onnx.TranslationContext(builder)
+    x = ir.Value(name="x", type=ir.TensorType(ir.DataType.FLOAT), shape=ir.Shape([2]))
+    with pytest.raises(AttributeError, match="provides default-domain schemas through"):
+        op.NotARealFutureOnnxOperator(x)
+    with pytest.raises(ValueError, match="provides default-domain schemas through"):
+        builder.call("NotARealFutureOnnxOperator", x)
+
+    real_get_schema = onnx.defs.get_schema
+    scatter_18 = onnx.defs.get_schema("ScatterElements", 18, "")
+
+    def fake_onnx_28_get_schema(name, max_inclusive_version, domain=""):
+        if domain == "" and name in {"Expm1", "Log1p", "LogCumSumExp"}:
+            raise onnx.defs.SchemaError(f"missing {name}")
+        if domain == "" and name == "ScatterElements":
+            return scatter_18
+        return real_get_schema(name, min(max_inclusive_version, 28), domain)
+
+    class Expm1Model(torch.nn.Module):
+        def forward(self, v):
+            return torch.expm1(v)
+
+    class ScatterMeanModel(torch.nn.Module):
+        def forward(self, v, idx, src):
+            return v.scatter_reduce(0, idx, src, reduce="mean", include_self=True)
+
     with (
         mock.patch.object(onnx.defs, "onnx_opset_version", return_value=28),
-        pytest.raises(ValueError, match="current ONNX main"),
+        mock.patch.object(onnx.defs, "get_schema", side_effect=fake_onnx_28_get_schema),
     ):
-        validate_opset_version(29)
-    with pytest.raises(ValueError, match="supports through 29"):
-        validate_opset_version(30)
-    with (
-        mock.patch.object(onnx.defs, "onnx_opset_version", return_value=29),
-        mock.patch.object(
-            onnx.defs, "get_schema", side_effect=onnx.defs.SchemaError("missing")
-        ),
-        pytest.raises(ValueError, match="older weekly builds have incomplete"),
-    ):
-        validate_opset_version(29)
+        with pytest.raises(
+            torch_onnx.errors.ConversionError,
+            match="provides default-domain schemas through opset 28",
+        ):
+            torch_onnx.export(
+                Expm1Model().eval(),
+                (torch.randn(2),),
+                opset_version=29,
+                verbose=False,
+            )
+        with pytest.raises(
+            torch_onnx.errors.ConversionError,
+            match="ScatterElements reduction='mean' requires the opset 29 schema",
+        ):
+            torch_onnx.export(
+                ScatterMeanModel().eval(),
+                (
+                    torch.tensor([2.0, 4.0]),
+                    torch.tensor([0, 1]),
+                    torch.tensor([1.0, 3.0]),
+                ),
+                opset_version=29,
+                optimize=False,
+                verbose=False,
+            )
+
+
+def test_future_and_custom_opset_extensibility():
+    @torch.library.custom_op("torch_onnx_test::affine_scale", mutates_args=())
+    def affine_scale(x: torch.Tensor) -> torch.Tensor:
+        return x * 2.0 + 1.0
+
+    @affine_scale.register_fake
+    def _(x: torch.Tensor) -> torch.Tensor:
+        return torch.empty_like(x)
+
+    def custom_affine_35(op, x):
+        scaled = op.builder.node(
+            "FutureScale",
+            [x],
+            domain="acme.ops",
+            version=3,
+            attributes={"factor": 2.0},
+            output_types=[x.type],
+        )[0]
+        return op.Add(scaled, 1.0)
+
+    def custom_expm1_35(op, x):
+        return op.Sub(op.Exp(x), 1.0)
+
+    torch_onnx.register_custom_translation(
+        torch.ops.torch_onnx_test.affine_scale.default,
+        custom_affine_35,
+        opset_version=35,
+        replace=True,
+    )
+    torch_onnx.register_custom_translation(
+        torch.ops.aten.expm1.default,
+        custom_expm1_35,
+        opset_version=35,
+        replace=True,
+    )
+    try:
+
+        class CustomFutureModel(torch.nn.Module):
+            def forward(self, x):
+                y = torch.ops.torch_onnx_test.affine_scale.default(x)
+                z = torch.onnx.ops.symbolic(
+                    "acme.symbolic::Bias",
+                    (y,),
+                    attrs={"bias": 0.5},
+                    dtype=y.dtype,
+                    shape=y.shape,
+                    version=2,
+                )
+                return torch.expm1(z)
+
+        program = torch_onnx.export(
+            CustomFutureModel().eval(),
+            (torch.randn(2, 3),),
+            opset_version=35,
+            optimize=False,
+            verbose=False,
+        )
+        assert program.model.opset_imports[""] == 35
+        assert program.model.opset_imports["acme.ops"] == 3
+        assert program.model.opset_imports["acme.symbolic"] == 2
+        assert [node.op_type for node in program.model.graph] == [
+            "FutureScale",
+            "Constant",
+            "Add",
+            "Bias",
+            "Exp",
+            "Sub",
+        ]
+
+        class StandardFutureOpsetModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.expm1(x) + 2.0
+
+        executable = torch_onnx.export(
+            StandardFutureOpsetModel().eval(),
+            (torch.tensor([0.0, 0.5, -0.25]),),
+            opset_version=35,
+            verbose=False,
+        )
+        assert executable.model.opset_imports[""] == 35
+        onnx.checker.check_model(executable.model_proto, full_check=True)
+        torch_onnx.testing.assert_onnx_program(executable, backend="reference")
+
+        class PassthroughModel(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        passthrough = torch_onnx.export(
+            PassthroughModel().eval(),
+            (torch.randn(2, 3),),
+            opset_version=35,
+            verbose=False,
+        )
+        assert passthrough.model.opset_imports[""] == 35
+        onnx.checker.check_model(passthrough.model_proto, full_check=True)
+        torch_onnx.testing.assert_onnx_program(passthrough, backend="reference")
+
+        class LegacyTableModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.torch_onnx_test.affine_scale.default(x)
+
+        legacy_table = torch_onnx.export(
+            LegacyTableModel().eval(),
+            (torch.tensor([1.0, -2.0]),),
+            opset_version=35,
+            custom_translation_table={
+                torch.ops.torch_onnx_test.affine_scale.default: lambda x: x * 2.0 + 1.0
+            },
+            verbose=False,
+        )
+        assert legacy_table.model.opset_imports[""] == 35
+        onnx.checker.check_model(legacy_table.model_proto, full_check=True)
+        torch_onnx.testing.assert_onnx_program(legacy_table, backend="reference")
+    finally:
+        torch_onnx.unregister_custom_translation(
+            torch.ops.aten.expm1.default, opset_version=35
+        )
+        torch_onnx.unregister_custom_translation(
+            torch.ops.torch_onnx_test.affine_scale.default, opset_version=35
+        )
 
 
 @pytest.mark.opset29

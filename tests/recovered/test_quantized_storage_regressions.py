@@ -86,8 +86,35 @@ class _ConvertedLayer(torch.nn.Module):
                 groups=layer.groups,
             )
         )
+        self.pointwise = (
+            not linear
+            and weight.shape[2:] == (1, 1)
+            and layer.groups == 1
+            and layer.stride == (1, 1)
+            and layer.padding == (0, 0)
+            and self.axis == 0
+        )
+        if self.pointwise:
+            scale = self.scales.float() * self.input_scale
+            self.register_buffer("requantization_scale", scale / self.output_scale)
+            self.register_buffer("requantization_bias", self.bias / scale)
 
     def forward(self, x):
+        if self.pointwise:
+            # Accumulate integer products before float32 requantization:
+            # dequantizing first can move a result across a rounding tie.
+            value = _quantize(x, self.input_scale, self.input_zero).double()
+            value = value - self.input_zero
+            weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
+            result = torch.matmul(value.permute(0, 2, 3, 1), weight.T).float()
+            result = (result + self.requantization_bias) * self.requantization_scale
+            result = torch.round(result) + self.output_zero
+            result = result.clamp(self.output_zero if self.relu else 0, 255)
+            return _dequantize(
+                result.permute(0, 3, 1, 2).to(torch.uint8),
+                self.output_scale,
+                self.output_zero,
+            )
         value = _dequantize(
             _quantize(x, self.input_scale, self.input_zero),
             self.input_scale,

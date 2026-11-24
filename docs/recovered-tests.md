@@ -9,16 +9,28 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 567 original runtime test bodies/comments, four control-flow
+retired frontend. 579 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 165, 'inapplicable': 55, 'migrated': 655}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 153, 'inapplicable': 55, 'migrated': 667}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
+
+Recovered Normal/Uniform sampling exposed missing BOOL-only `_is_all_true`
+translation. Its native reduction now preserves scalar, mixed and empty-input
+semantics; statistical checks retain the original sample counts and tolerances.
+Python distribution argument validation remains enabled. These valid-domain
+tests do not claim ONNX Runtime enforcement of invalid distribution parameters.
+Training dropout additionally checks retained-value scaling and retention rates.
+
+Conditional transpose and fixed-arity list outputs execute genuine ONNX If
+graphs with both predicates and changed values/shapes. Empty branches are tested
+at several independently exported ranks; in-place nested loops retain their
+original fixed trip counts and aliasing setup, not dynamic-loop semantics.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -706,8 +718,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:6771::test_inplace_fill` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_fill |
 | `test_pytorch_onnx_onnxruntime.py:6780::test_inplace_arithmetic` | migrated | `tests/recovered/test_capture_regressions.py::test_inplace_arithmetic`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:6792::test_inplace_arithmetic_half` | migrated | tests/recovered/test_additional_regressions.py::test_inplace_arithmetic_half |
-| `test_pytorch_onnx_onnxruntime.py:6807::test_inplace_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:6828::test_inplace_with_loop_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:6807::test_inplace_with_loop` | migrated | tests/recovered/test_branch_alias_regressions.py; original fixed-count in-place loop and changed random inputs, serialization/runtime checks; no dynamic-trip-count claim |
+| `test_pytorch_onnx_onnxruntime.py:6828::test_inplace_with_loop_2` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested fixed loops, alias setup/comments and changed random inputs, serialization/runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:6873::test_inplace_attr_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6900::test_inplace_attr_copy_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:6942::test_inplace_sequence_with_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -878,11 +890,11 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:9878::test_where` | migrated | tests/recovered/test_additional_regressions.py::test_where |
 | `test_pytorch_onnx_onnxruntime.py:9890::test_where_condition` | migrated | tests/recovered/test_additional_regressions.py::test_where_condition |
 | `test_pytorch_onnx_onnxruntime.py:9908::test_where_condition_script` | migrated | tests/recovered/test_additional_regressions.py::test_where_condition_script |
-| `test_pytorch_onnx_onnxruntime.py:9924::test_empty_branch` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:9924::test_empty_branch` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested empty branches plus independent rank-1/2/4 exports, serialization/runtime checks |
 | `test_pytorch_onnx_onnxruntime.py:9942::test_derive_index_scripting` | migrated | tests/recovered/test_additional_regressions.py::test_derive_index_scripting |
 | `test_pytorch_onnx_onnxruntime.py:9986::test_derive_index` | migrated | tests/recovered/test_additional_regressions.py::test_derive_index |
-| `test_pytorch_onnx_onnxruntime.py:10030::test_if_transpose` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10048::test_if_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10030::test_if_transpose` | migrated | tests/recovered/test_branch_alias_regressions.py; actual shape-dependent ONNX If, both predicates across changed dimensions, independent imperative oracle and serialization/runtime checks |
+| `test_pytorch_onnx_onnxruntime.py:10048::test_if_list` | migrated | tests/recovered/test_branch_alias_regressions.py; actual ONNX If with unequal-shape fixed-arity list outputs, both predicates, independent oracle and serialization/runtime checks; not variable-length sequences |
 | `test_pytorch_onnx_onnxruntime.py:10064::test_if_view` | migrated | tests/recovered/test_control_flow_regressions.py::test_if_view; torch.while_loop/torch.cond adaptation |
 | `test_pytorch_onnx_onnxruntime.py:10087::test_split_tensor_scalar` | migrated | tests/recovered/test_additional_regressions.py::test_split_tensor_scalar |
 | `test_pytorch_onnx_onnxruntime.py:10095::test_split_tensor_multi` | migrated | tests/recovered/test_additional_regressions.py::test_split_tensor_multi |
@@ -899,8 +911,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:10712::test_instancenorm_training` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10748::test_instancenorm_training_mode_fix_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10785::test_instancenorm_eval_mode_train_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
-| `test_pytorch_onnx_onnxruntime.py:10823::test_dropout_training` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10868::test_dropout_training_zero` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10823::test_dropout_training` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
+| `test_pytorch_onnx_onnxruntime.py:10868::test_dropout_training_zero` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
 | `test_pytorch_onnx_onnxruntime.py:10933::test_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10958::test_multiple_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:11001::test_nms` | migrated | tests/recovered/test_additional_regressions.py::test_nms |
@@ -966,11 +978,11 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:12593::test_sum_empty_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_sum_empty_tensor |
 | `test_pytorch_onnx_onnxruntime.py:12608::test_broad_cast_tensors` | migrated | tests/recovered/test_additional_regressions.py::test_broad_cast_tensors |
 | `test_pytorch_onnx_onnxruntime.py:12630::test_scaled_dot_product_attention` | migrated | tests/recovered/test_additional_regressions.py::test_scaled_dot_product_attention |
-| `test_pytorch_onnx_onnxruntime.py:12652::test_dist_normal` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12670::test_dist_normal_correctness` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12705::test_nn_init_normal_correctness` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12742::test_dist_uniform` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12755::test_dist_uniform_correctness` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:12652::test_dist_normal` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
+| `test_pytorch_onnx_onnxruntime.py:12670::test_dist_normal_correctness` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
+| `test_pytorch_onnx_onnxruntime.py:12705::test_nn_init_normal_correctness` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
+| `test_pytorch_onnx_onnxruntime.py:12742::test_dist_uniform` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
+| `test_pytorch_onnx_onnxruntime.py:12755::test_dist_uniform_correctness` | migrated | Original broadcasting/sample counts/parameters/statistical tolerances in tests/recovered/test_stochastic_regressions.py; native BOOL-only _is_all_true fixes validation translation without disabling checks; original and reloaded ORT execution, strict shape/dtype, repeated-sample randomness and dropout scaling/retention checks |
 | `test_pytorch_onnx_onnxruntime.py:12789::test_sequence_to_int` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_int |
 | `test_pytorch_onnx_onnxruntime.py:12799::test_sequence_to_float` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_float |
 | `test_pytorch_onnx_onnxruntime.py:12811::test_sequence_to_bool` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_bool |

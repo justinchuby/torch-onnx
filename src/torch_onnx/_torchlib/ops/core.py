@@ -1826,6 +1826,18 @@ def aten_all(op: TranslationContext, self: ir.Value) -> ir.Value:
     return _promotion.boolean_reduction(op, result, self)
 
 
+@onnx_impl(aten._is_all_true.default)
+def aten__is_all_true(op: TranslationContext, self: ir.Value) -> ir.Value:
+    """_is_all_true(Tensor self) -> Tensor"""
+    dtype = common_ops.require_dtype(op, self)
+    if dtype != ir.DataType.BOOL:
+        raise TypeError(
+            f"_is_all_true requires BOOL input, got {dtype}. "
+            "Compare the input or cast it to torch.bool before exporting."
+        )
+    return aten_all(op, self)
+
+
 @onnx_impl(aten.all.dim)
 def aten_all_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False

@@ -36,6 +36,7 @@ _EXPECTED_CORE_TARGETS = (
     ("aten_abs", False, (aten.abs.default, operator.abs)),
     ("aten_abs_complex", True, (aten.abs.default,)),
     ("aten__local_scalar_dense", False, (aten._local_scalar_dense.default,)),
+    ("aten__is_all_true", False, (aten._is_all_true.default,)),
     ("aten_acos", False, (aten.acos.default,)),
     ("aten_acosh", False, (aten.acosh.default,)),
     ("aten_add", False, (aten.add.Tensor,)),
@@ -247,8 +248,27 @@ def _evaluate(function, tensors, *, opset=18):
 class TestNativeLeafOps(common_utils.TestCase):
     hw_classification = HardwareClassification.CPU
 
+    @common_utils.parametrize(
+        "kind", ["scalar_true", "scalar_false", "mixed", "all", "empty"]
+    )
+    def test_is_all_true(self, device, kind):
+        values = {
+            "scalar_true": torch.tensor(True),
+            "scalar_false": torch.tensor(False),
+            "mixed": torch.tensor([True, False]),
+            "all": torch.tensor([[True, True]]),
+            "empty": torch.empty((0,), dtype=torch.bool),
+        }
+        value = values[kind].to(device)
+        expected = aten._is_all_true.default(value)
+        self.assertEqual(_evaluate(core.aten__is_all_true, [value]), expected)
+
     def test_invalid_inputs_are_explicit(self, device):
         x = torch.tensor([1], dtype=torch.int64, device=device)
+        with self.assertRaisesRegex(
+            TypeError, "_is_all_true requires BOOL.*cast it to torch.bool"
+        ):
+            _evaluate(core.aten__is_all_true, [x])
         with self.assertRaisesRegex(
             ValueError, "rounding_mode='nearest'.*trunc.*floor"
         ):
@@ -285,7 +305,7 @@ class TestNativeLeafOps(common_utils.TestCase):
                 self.assertIs(translation.function, getattr(core, name))
                 self.assertFalse(entries[0].is_custom)
                 self.assertEqual(entries[0].opset_introduced, 18)
-        self.assertEqual(len(seen), 180)
+        self.assertEqual(len(seen), 181)
 
     @common_utils.parametrize("shape", [(), (3,), (0, 3)])
     @common_utils.parametrize(

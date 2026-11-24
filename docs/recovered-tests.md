@@ -10,13 +10,13 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 460 original runtime test bodies/comments, four control-flow
-regressions, 32 model methods, seven autograd forward-inlining methods and 22
+regressions, 32 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 295, 'inapplicable': 55, 'migrated': 525}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 277, 'inapplicable': 55, 'migrated': 543}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -164,6 +164,26 @@ LSTM and GRU fixtures, preserving embedding/decoder layers and hidden-state
 repackaging. In addition to original token/zero-state inputs, the same graphs
 execute alternate tokens and nonzero tensor/tuple hidden states. These remain
 CPU inference checks; legacy scripting decorators are not retained.
+
+Eighteen further utility methods check flag restoration after capture failure,
+dynamic split widths and total lengths, unused-weight pruning, Conv/BN and
+ResNet fusion, function inlining, parameter/input/output names, mode preservation,
+shared layers/parameters, initializer CSE, resize constants and module scopes.
+Native name-scope metadata replaces JIT scope strings; CSE retains the first
+shared Add's owner and all three distinct Mul owners. Constants may become a
+shared initializer rather than JIT Constant nodes. Duplicate outputs retain
+five distinct requested names while two independent inputs run additional
+batches. Uninitialized historical naming-test parameters are initialized for
+actual numerical checks.
+
+Parameter-identity checks explicitly disable optimization before saving weights
+as inputs or comparing independently mutable equal-valued parameters. Eval-mode
+optimization then deduplicates equal initializers. The old scripted deduplication
+variant now exercises a precaptured ExportedProgram, not TorchScript support.
+Mode checks preserve the caller's current model mode rather than restoring the
+retired training-mode override API. CPU DataParallel now exports successfully;
+its original invalid reflection-padding example is given sufficient spatial
+dimensions. This does not claim GPU DataParallel support.
 
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
@@ -982,9 +1002,9 @@ CPU inference checks; legacy scripting decorators are not retained.
 | `test_pytorch_onnx_shape_inference.py:423::test_no_setType_for_single_custom_op` | inapplicable | Targets private TorchScript shape-inference passes; modern native schema/metadata contracts live in exporter/test_ir_builder.py |
 | `test_pytorch_onnx_shape_inference.py:457::test_setType_maintains_output_shape_for_single_custom_op_with_dynamic_axes` | inapplicable | Targets private TorchScript shape-inference passes; modern native schema/metadata contracts live in exporter/test_ir_builder.py |
 | `test_pytorch_onnx_shape_inference.py:500::test_setType_maintains_output_shape_for_single_custom_op_with_onnx_ops` | inapplicable | Targets private TorchScript shape-inference passes; modern native schema/metadata contracts live in exporter/test_ir_builder.py |
-| `test_utility_funs.py:102::test_is_in_onnx_export` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:102::test_is_in_onnx_export` | migrated | test_export_utility_regressions.py; both package and Torch export flags are true during failed capture and restored afterward |
 | `test_utility_funs.py:120::test_validate_dynamic_axes_invalid_input_output_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:141::test_split_to_slice` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:141::test_split_to_slice` | migrated | test_export_utility_regressions.py; no SplitToSequence; actual independent widths/batches and total widths 7/9 execute |
 | `test_utility_funs.py:162::test_constant_fold_transpose` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_transpose`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:182::test_constant_fold_reduceL2` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reduceL2`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:200::test_constant_fold_reduceL1` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reduceL1`; native IR invariant and actual numerical/runtime checks |
@@ -1008,18 +1028,18 @@ CPU inference checks; legacy scripting decorators are not retained.
 | `test_utility_funs.py:615::test_constant_fold_shape` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_shape`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:635::test_constant_fold_upsample_scale_fold_as_constant` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_upsample_scale_fold_as_constant`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:645::test_verbose` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:677::test_error_on_data_parallel` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:677::test_error_on_data_parallel` | migrated | test_export_utility_regressions.py; modern CPU wrapper now succeeds; corrected originally invalid reflection-pad input height; no GPU claim |
 | `test_utility_funs.py:692::test_sequence_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:735::test_export_mode` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:735::test_export_mode` | migrated | test_export_utility_regressions.py; current train/eval modes survive export and actual runtime/save/reload; no retired mode-override API |
 | `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:801::test_local_function` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:921::test_local_function_overloads` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:963::test_local_function_infer_scopes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:988::test_local_function_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1049::test_local_function_subset_of_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1082::test_node_scope` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1142::test_scope_of_constants_when_combined_by_cse_pass` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1190::test_scope_of_nodes_when_combined_by_cse_pass` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1082::test_node_scope` | migrated | test_export_utility_regressions.py; original GELU/LayerNorm/nested ReLU model; exact native module-scope set |
+| `test_utility_funs.py:1142::test_scope_of_constants_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared native initializer and valid source-module ownership after CSE, rather than three JIT Constants |
+| `test_utility_funs.py:1190::test_scope_of_nodes_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared Add owned by first layer and three distinct Mul owners, plus real runtime/save/reload |
 | `test_utility_funs.py:1250::test_aten_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1268::test_custom_op_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1308::test_custom_opsets_gelu` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
@@ -1030,16 +1050,16 @@ CPU inference checks; legacy scripting decorators are not retained.
 | `test_utility_funs.py:1426::test_custom_layer_tuple` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1449::test_autograd_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1480::test_autograd_module_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1515::test_unused_initializers` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1542::test_scripting_param` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1578::test_fuse_conv_bn` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1605::test_fuse_resnet18` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1619::test_onnx_function_substitution_pass` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1650::test_onnx_value_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1684::test_onnx_node_naming` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1794::test_deduplicate_initializers` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1797::test_deduplicate_initializers_torchscript` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1515::test_unused_initializers` | migrated | test_export_utility_regressions.py; unused linear weights absent, exactly two live transpose-convolution parameters remain; actual runtime/save/reload |
+| `test_utility_funs.py:1542::test_scripting_param` | migrated | test_export_utility_regressions.py; original training Conv/BN model via native capture; named parameters survive unoptimized save as graph inputs; actual runtime |
+| `test_utility_funs.py:1578::test_fuse_conv_bn` | migrated | test_export_utility_regressions.py; original model becomes exactly one Conv; actual runtime/save/reload |
+| `test_utility_funs.py:1605::test_fuse_resnet18` | migrated | test_export_utility_regressions.py; original ResNet18 has no remaining BatchNormalization; actual runtime/save/reload |
+| `test_utility_funs.py:1619::test_onnx_function_substitution_pass` | migrated | test_export_utility_regressions.py; ordinary function inlines to exactly Sub/Add; alternate numerical inputs and save/reload |
+| `test_utility_funs.py:1650::test_onnx_value_name` | migrated | test_export_utility_regressions.py; sliced linear weights keep original parameter names in unoptimized ONNXProgram.save graph inputs |
+| `test_utility_funs.py:1684::test_onnx_node_naming` | migrated | test_export_utility_regressions.py; original four-linear model has nonempty unique native names and four correct module owners; requested output name/save/reload |
+| `test_utility_funs.py:1794::test_deduplicate_initializers` | migrated | test_export_utility_regressions.py; original shared layers/parameters; raw parameter identity in train/eval and value dedup only after explicit eval optimization |
+| `test_utility_funs.py:1797::test_deduplicate_initializers_torchscript` | migrated | test_export_utility_regressions.py; original fixture via precaptured ExportedProgram instead of retired ScriptModule; train/eval identity and optimized eval dedup |
 | `test_utility_funs.py:1801::test_deduplicate_initializers_diff_devices` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1824::test_duplicated_output_node` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1875::test_deduplicate_ignore_upsample_scale` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1824::test_duplicated_output_node` | migrated | test_export_utility_regressions.py; five distinct requested output names, two independently valued inputs, original dimensions and additional dynamic batch |
+| `test_utility_funs.py:1875::test_deduplicate_ignore_upsample_scale` | migrated | test_export_utility_regressions.py; original two-upsample model and dimensions, numerical/save/reload checks; allows valid resize CSE while verifying constant scales/sizes |
 | `test_utility_funs.py:1901::test_bad_symbolic_registration` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |

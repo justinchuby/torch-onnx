@@ -121,6 +121,7 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
                     rtol=rtol,
                     atol=atol,
                 )
+        return program
 
 
 class TestRecoveredRuntime(RecoveredRuntimeHarness):

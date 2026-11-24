@@ -25,8 +25,9 @@ import onnx_ir as ir
 
 model = torch.nn.ReLU().eval()
 inputs = (torch.randn(2, 3),)
-program = torch_onnx.export(model, inputs, "model.onnx")
-program.optimize()
+onnx_program = torch_onnx.export(model, inputs)
+onnx_program.optimize()
+onnx_program.save("model.onnx")
 
 # Convert an existing ExportedProgram directly to ONNX IR.
 exported = torch.export.export(model, inputs)
@@ -35,7 +36,8 @@ proto = ir.to_proto(ir_model)
 
 # Opt-in routing of the modern PyTorch API to this standalone exporter.
 torch_onnx.patch_torch(report=True, verify=True)
-torch.onnx.export(model, inputs)
+onnx_program = torch.onnx.export(model, inputs)
+onnx_program.save("model.onnx")
 torch_onnx.unpatch_torch()
 
 torch_onnx.analyze(exported)
@@ -48,9 +50,9 @@ translations, optimization, verification, profiling and reports. `ONNXProgram`,
 registration.
 
 Exports return the exact `torch.onnx.ONNXProgram` class, also exposed as
-`torch_onnx.ONNXProgram`, for downstream compatibility. See the
-[opset 24–29 support matrix](docs/opsets.md) for native newer operators,
-development-schema requirements, and runtime limits, and the
+`torch_onnx.ONNXProgram`, for downstream compatibility. See
+[opset support and extensibility](docs/opsets.md) for native newer operators,
+custom opset extensibility, and schema requirements, and the
 [recovered regression inventory](docs/recovered-tests.md) for historical coverage.
 
 Python scalar arguments remain in ONNX input order for compatibility with the

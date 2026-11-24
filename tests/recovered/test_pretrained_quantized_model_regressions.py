@@ -79,6 +79,19 @@ class _ConvertedCat(torch.nn.Module):
         )
 
 
+class _ConvertedMean(torch.nn.Module):
+    def __init__(self, dims, scale, zero_point):
+        super().__init__()
+        self.dims, self.scale, self.zero_point = dims, scale, zero_point
+
+    def forward(self, value):
+        return _dequantize(
+            _quantize(value.mean(self.dims), self.scale, self.zero_point),
+            self.scale,
+            self.zero_point,
+        )
+
+
 def _adapt_model(model):
     adapted = torch.fx.symbolic_trace(model)
     parameters: dict[torch.fx.Node, tuple[float, int] | None] = {}
@@ -177,16 +190,37 @@ def _adapt_model(model):
                 torch.unsqueeze,
                 operator.add,
                 operator.mul,
+                operator.floordiv,
             }:
                 assert (
                     incoming is None
-                ), f"Expected an unquantized input-transform operation: {node}"
+                ), f"Expected an unquantized scalar/input-transform operation: {node}"
             else:
                 assert node.target in {
                     torch.flatten,
                     torch.topk,
                     operator.getitem,
                     torch.nn.functional.max_pool2d,
+                    torch.chunk,
+                    torch.transpose,
+                }, f"Add an explicit quantization contract for {node}"
+        elif node.op == "call_method":
+            if node.target == "size":
+                outgoing = None
+            elif node.target == "mean":
+                assert incoming is not None, f"Missing mean qparams for {node}"
+                name = f"adapted_{node.name}"
+                adapted.add_submodule(name, _ConvertedMean(node.args[1], *incoming))
+                node.op, node.target, node.args = (
+                    "call_module",
+                    name,
+                    (node.args[0],),
+                )
+            else:
+                assert node.target in {
+                    "view",
+                    "contiguous",
+                    "chunk",
                 }, f"Add an explicit quantization contract for {node}"
         parameters[node] = outgoing
     adapted.graph.lint()
@@ -239,6 +273,10 @@ def _load_pretrained_model(name, weights):
             "inception_v3",
             quantization.Inception_V3_QuantizedWeights.IMAGENET1K_FBGEMM_V1,
         ),
+        (
+            "shufflenet_v2_x0_5",
+            quantization.ShuffleNet_V2_X0_5_QuantizedWeights.IMAGENET1K_FBGEMM_V1,
+        ),
     ],
 )
 @torch.no_grad()
@@ -272,8 +310,10 @@ def test_pretrained_quantized_model(name, weights):
                 "DequantizeLinear",
                 "TopK",
             }
-            if name in {"googlenet", "inception_v3"}:
+            if name in {"googlenet", "inception_v3", "shufflenet_v2_x0_5"}:
                 assert any(node.op_type == "Concat" for node in program.model.graph)
+            if name == "shufflenet_v2_x0_5":
+                assert any(node.op_type == "Transpose" for node in program.model.graph)
             harness.assert_program_roundtrip(
                 program,
                 examples=[image, flipped],

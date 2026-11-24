@@ -10,14 +10,14 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 671 original runtime test bodies/comments, four control-flow
-regressions, 42 model methods, seven autograd forward-inlining methods and 52
+regressions, 43 model methods, seven autograd forward-inlining methods and 52
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 42, 'inapplicable': 57, 'migrated': 776}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 41, 'inapplicable': 57, 'migrated': 777}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -35,10 +35,17 @@ rounding. Both original and horizontally flipped images compare against the
 independent, unchanged quantized network, and use the shared standalone
 export/check/save/reload harness. Linux uses FBGEMM; Windows packs the same
 checkpoint with oneDNN and the same observer configuration. This does not claim
-automatic QTensor module capture or restored coverage for the other two
-pretrained quantized models. In particular, the ResNeXt101 V1 probe already
+automatic QTensor module capture or restored coverage for the remaining
+pretrained quantized ResNeXt101 model. Its V1 probe already
 disagrees before ONNX export (source top-one 834 versus Q/DQ adapter 652);
 changing the top-one contract or substituting newer V2 weights is not accepted.
+
+The original pretrained ShuffleNetV2 x0.5 fixture retains its V1 checkpoint and
+the same independent photo/flipped-photo top-one and serialization contracts.
+Explicit integer-storage adapters preserve quantized concatenation and mean
+rounding; chunk/view/transpose/contiguous retain channel-shuffle qparams.
+Graph assertions require native Concat and Transpose alongside convolution,
+Q/DQ and TopK rather than replacing the architecture.
 
 The original pretrained MobileNetV3 fixture also retains its V1 checkpoint,
 photo/top-one oracle and flipped-image roundtrip. Following TorchVision's
@@ -626,7 +633,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_models_quantized_onnxruntime.py:62::test_mobilenet_v3` | migrated | test_mobilenet_quantized_regressions.py; exact V1 QAT checkpoint loaded before conversion, original photo/preprocessing/top-one oracle and flipped image; complete integer-storage Q/DQ including native HardSwish/HardSigmoid, squeeze/excitation multiplication and residual addition; independent oracle/export/check/save/reload |
 | `test_models_quantized_onnxruntime.py:69::test_inception_v3` | migrated | test_pretrained_quantized_model_regressions.py; exact V1 checkpoint, pretrained input transform and no-aux inference policy; original photo/top-one and flipped image, quantized branch concatenation/pooling via explicit Q/DQ, independent original oracle/export/check/save/reload; old quantized::cat skip removed |
 | `test_models_quantized_onnxruntime.py:76::test_googlenet` | migrated | test_pretrained_quantized_model_regressions.py; exact V1 checkpoint and internal pretrained input transform, original image/top-one and flipped image, complete Q/DQ branches/concatenation/pooling, original quantized oracle and serialization; no retained quantized::cat skip |
-| `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | blocked | Source disabled this pretrained whole model for quantized::cat; original photo/top-one contract and native channel-shuffle/concatenation/Q/DQ adaptation are not yet restored or validated, rather than retaining that skip |
+| `test_models_quantized_onnxruntime.py:83::test_shufflenet_v2_x0_5` | migrated | `tests/recovered/test_pretrained_quantized_model_regressions.py::test_pretrained_quantized_model[shufflenet_v2_x0_5]`; original V1 checkpoint/photo/top-one oracle, explicit quantized concatenation/mean rounding, native channel shuffle and flipped-image save/reload; source skip removed |
 | `test_models_quantized_onnxruntime.py:89::test_resnet18` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights/image/preprocessing/top-one oracle, explicit native Q/DQ whole-network adaptation, flipped input and shared serialization/runtime harness |
 | `test_models_quantized_onnxruntime.py:93::test_resnet50` | migrated | `test_pretrained_quantized_model_regressions.py`; original pretrained V1 weights (not newer DEFAULT/V2), source image/top-one oracle, native Q/DQ residual/average-pool contracts and shared serialization/runtime harness |
 | `test_models_quantized_onnxruntime.py:97::test_resnext101_32x8d` | blocked | Original pretrained V1/image probe on oneDNN disagrees before ONNX export: unchanged quantized oracle predicts 834, explicit Q/DQ adapter predicts 652; no relaxed top-one contract or V2-weight substitution |

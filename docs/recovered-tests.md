@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 560 original runtime test bodies/comments, four control-flow
+retired frontend. 561 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 172, 'inapplicable': 55, 'migrated': 648}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 171, 'inapplicable': 55, 'migrated': 649}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -319,7 +319,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:171::test_fuse_conv_bn1d` | migrated | test_convolution_shape_regressions.py; original model/runtime/save/reload; float32 absolute tolerance 1e-6 matches the original 3D fusion case |
 | `test_pytorch_onnx_onnxruntime.py:186::test_fuse_conv_bn2d` | migrated | test_convolution_shape_regressions.py; original model/runtime/save/reload |
 | `test_pytorch_onnx_onnxruntime.py:203::test_fuse_conv_bn3d` | migrated | test_convolution_shape_regressions.py; original model/runtime/save/reload |
-| `test_pytorch_onnx_onnxruntime.py:220::test_fuse_conv_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:220::test_fuse_conv_in_block` | migrated | Original Conv1d/BatchNorm1d and imperative oracle preserved with real torch.cond/ONNX If; both predicates and changed batch/sequence sizes execute on one graph, retaining unequal output lengths and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:257::test_conv_tbc` | migrated | test_convolution_shape_regressions.py; fixed missing native conv_tbc translation; separate direct tests cover negative/zero/positive padding |
 | `test_pytorch_onnx_onnxruntime.py:293::test_reshape_constant_fold` | migrated | test_convolution_shape_regressions.py; original buffered weight reshape/broadcast/runtime/save/reload |
 | `test_pytorch_onnx_onnxruntime.py:348::test_paste_mask_in_image` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |

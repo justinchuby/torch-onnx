@@ -11,6 +11,54 @@ from test_runtime_regressions import RecoveredRuntimeHarness
 
 
 class TestRecoveredConvolutionEmbedding(RecoveredRuntimeHarness):
+    def test_fuse_conv_in_block(self):
+        class Fuse(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=5,
+                    out_channels=5,
+                    kernel_size=3,
+                    stride=1,
+                    padding=2,
+                    dilation=1,
+                )
+                self.bn = torch.nn.BatchNorm1d(5)
+
+            def forward(self, x):
+                def transformed(value):
+                    return self.bn(self.conv(value))
+
+                return torch.cond(
+                    torch.logical_not(x.sum() > -1),
+                    transformed,
+                    lambda value: value.clone(),
+                    (x,),
+                )
+
+        model = Fuse().eval()
+        original = torch.randn(2, 5, 9, requires_grad=True)
+        alternates = [
+            -torch.ones(2, 5, 9),
+            torch.ones(2, 5, 9),
+            -torch.ones(3, 5, 7),
+            torch.ones(3, 5, 7),
+        ]
+        with torch.no_grad():
+            for value in [original, *alternates]:
+                expected = value if value.sum() > -1 else model.bn(model.conv(value))
+                self.assertEqual(model(value), expected)
+        program = self.run_test(
+            model,
+            original,
+            input_names=["x"],
+            dynamic_axes={"x": [0, 2]},
+            additional_test_inputs=alternates,
+            rtol=1e-3,
+            atol=1e-6,
+        )
+        self.assertIn("If", {node.op_type for node in program.model.graph})
+
     def test_conv_bn(self):
         class MyModule(torch.nn.Module):
             def __init__(self) -> None:

@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 622 original runtime test bodies/comments, four control-flow
+retired frontend. 637 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 45
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 103, 'inapplicable': 57, 'migrated': 715}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 88, 'inapplicable': 57, 'migrated': 730}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -40,7 +40,29 @@ This recovery exposed per-tensor quantizer division changing float32 half-step
 rounding and missing half-input promotion. Native integer quantization now
 multiplies by the float64-computed reciprocal at float32 precision before unit
 QuantizeLinear rounding, matching PyTorch; scalar and Tensor parameters and
-float16/float32 inputs have focused regressions. No tolerances were relaxed.
+float16/float32 inputs have focused regressions. Single-element Tensor parameters
+are reshaped to scalars, matching `.item()` even for rank-three parameter inputs
+rather than accidentally broadcasting the output rank. No tolerances were relaxed.
+
+Seven further converted-QAT regressions retain the original per-channel weights,
+biases, fuse-before-prepare order and deterministic fixtures. Native per-channel
+weight D/Q supports linear, convolution, separate/fused ReLU and fused linear-ReLU
+cases; changed sign, half-step and reversed-spatial inputs execute against the
+untouched converted eager models before and after serialization. Parameter-free
+QAT ReLU and list-based self-concatenation also execute numerically. The latter
+no longer retains the retired frontend's ORT invalid-node-index skip. These are
+inference adapters, not general legacy QTensor capture or QAT training support.
+
+Direct quantized linear, 1D/2D/3D convolution and fused-ReLU convolution retain
+the original per-tensor weights, biases, shapes and strides. Integer-storage
+adapters execute against the unchanged quantized modules, including sign changes
+and serialization. Quantized adaptive average pooling preserves integer-storage
+rounding and also checks the entire uint8 range at its original 4x3x10x14 size.
+The three nonzero-output-padding transpose fixtures require FBGEMM, which this
+Windows PyTorch build lacks; oneDNN explicitly rejects those parameters. They
+remain blocked pending actual Linux validation, not counted as restored.
+Their backend-specific integration tests run explicitly in the normal Linux CI
+job, rather than adding skips. The regular local suite does not require FBGEMM.
 
 Recovered Normal/Uniform sampling exposed missing BOOL-only `_is_all_true`
 translation. Its native reduction now preserves scalar, mixed and empty-input
@@ -1086,17 +1108,17 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:12799::test_sequence_to_float` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_float |
 | `test_pytorch_onnx_onnxruntime.py:12811::test_sequence_to_bool` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_bool |
 | `test_pytorch_onnx_onnxruntime.py:12822::test_tuple_output_from_if_with_raised_exception` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12837::test_quantized_linear` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12853::test_quantized_conv1d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12867::test_quantized_conv2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12882::test_quantized_conv3d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12896::test_quantized_adaptive_avg_pool2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12903::test_quantized_conv1d_relu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12917::test_quantized_conv2d_relu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12932::test_quantized_conv3d_relu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12948::test_quantized_conv_transpose1d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12964::test_quantized_conv_transpose2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:12981::test_quantized_conv_transpose3d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:12837::test_quantized_linear` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_linear`; original weights/nonzero bias/input offset, explicit integer-storage Q/DQ, exact original oracle before/after serialization |
+| `test_pytorch_onnx_onnxruntime.py:12853::test_quantized_conv1d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv1d`; original 3x16x32 input/33x16x3 weights/stride/bias, exact original quantized oracle and sign-changed inputs with save/reload |
+| `test_pytorch_onnx_onnxruntime.py:12867::test_quantized_conv2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv2d`; original 3x16x32x32 input/weights/stride/bias, native Q/DQ/Conv, exact original oracle at changed inputs |
+| `test_pytorch_onnx_onnxruntime.py:12882::test_quantized_conv3d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv3d`; original 3x16x8x8x8 input, 2x3x4 kernel/3x1x2 stride, exact original oracle and sign-changed inputs before/after serialization |
+| `test_pytorch_onnx_onnxruntime.py:12896::test_quantized_adaptive_avg_pool2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_adaptive_avg_pool2d`; original 4x3x10x14 input/5x7 output/parameters, integer-storage rounding, full uint8 range and exact original quantized oracle |
+| `test_pytorch_onnx_onnxruntime.py:12903::test_quantized_conv1d_relu` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv1d_relu`; original fused-ReLU module/weights/shape/stride/bias, exact independent oracle before/after serialization |
+| `test_pytorch_onnx_onnxruntime.py:12917::test_quantized_conv2d_relu` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv2d_relu`; original fused-ReLU module/3x16x32x32 fixture/stride/bias, exact original oracle and changed inputs |
+| `test_pytorch_onnx_onnxruntime.py:12932::test_quantized_conv3d_relu` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv3d_relu`; original fused-ReLU 3D module/kernel/stride/shape/bias, exact original oracle and changed inputs |
+| `test_pytorch_onnx_onnxruntime.py:12948::test_quantized_conv_transpose1d` | blocked | Backend test implemented in `tests/recovered/test_quantized_storage_regressions.py`; original nonzero output_padding requires unavailable FBGEMM (oneDNN rejects it); explicit Linux CI integration step pending actual validation |
+| `test_pytorch_onnx_onnxruntime.py:12964::test_quantized_conv_transpose2d` | blocked | Backend test implemented with original nonzero output_padding/weights/shape; Windows build has no FBGEMM and oneDNN rejects these parameters; explicit Linux CI execution pending |
+| `test_pytorch_onnx_onnxruntime.py:12981::test_quantized_conv_transpose3d` | blocked | Backend test implemented retaining original output_padding=(0,1,2), not reduced; requires actual FBGEMM Linux validation, because this Windows build supports only oneDNN and rejects the original fixture |
 | `test_pytorch_onnx_onnxruntime.py:13090::test_quantized_unary_ops` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_unary_ops`; all 17 original variants/parameters and uint8 range, explicit Q/DQ storage ABI, exact original QTensor oracle before/after serialization |
 | `test_pytorch_onnx_onnxruntime.py:13105::test_quantized_flatten` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_flatten`; original unsigned storage/shape and changed values, exact original quantized flatten oracle |
 | `test_pytorch_onnx_onnxruntime.py:13115::test_quantized_cat_when_concatinating_the_same_tensor` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_cat_when_concatinating_the_same_tensor`; original QFunctional oracle, shared input, explicit Q/DQ/requantization, changed values |
@@ -1105,13 +1127,13 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13192::test_quantized_arithmetic` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_arithmetic`; original quantized add/mul and parameters, 100 changed pairs, exposes/fixes native reciprocal-rounding defect |
 | `test_pytorch_onnx_onnxruntime.py:13205::test_quantize_per_tensor` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantize_per_tensor`; original signed/unsigned parameters and shape, integer outputs compared exactly with original QTensor storage, saturation/save/reload |
 | `test_pytorch_onnx_onnxruntime.py:13217::test_dequantize` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_dequantize`; original signed fixture/parameters and saturation values, integer input ABI, native DequantizeLinear and exact original float oracle |
-| `test_pytorch_onnx_onnxruntime.py:13226::test_qat_linear_per_channel` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13258::test_quantized_list_of_inputs_with_cat` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13279::test_qat_relu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13301::test_qat_conv2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13332::test_qat_conv2d_relu` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13365::test_qat_conv2d_relu_fused` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13399::test_qat_linear_relu_fused` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13226::test_qat_linear_per_channel` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_linear_per_channel`; original per-channel weights/bias/configuration and 4x4 offset fixture, native weight D/Q, exact original oracle and changed inputs/save/reload |
+| `test_pytorch_onnx_onnxruntime.py:13258::test_quantized_list_of_inputs_with_cat` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_list_of_inputs_with_cat`; original 2x4x6 converted-QAT self-concatenation, exact original oracle, changed inputs and serialization; obsolete invalid-node skip removed |
+| `test_pytorch_onnx_onnxruntime.py:13279::test_qat_relu` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_relu`; original converted-QAT configuration and 8x4 random fixture, native Q/DQ, exact original oracle including changed sign/half-step inputs |
+| `test_pytorch_onnx_onnxruntime.py:13301::test_qat_conv2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_conv2d`; original per-channel weights/bias/stride and deterministic 3x4x8x8 fixture, native Q/DQ/Conv, exact original oracle at changed inputs before/after serialization |
+| `test_pytorch_onnx_onnxruntime.py:13332::test_qat_conv2d_relu` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_conv2d_relu`; original separate ReLU/converted-QAT configuration and fixtures, exact original oracle with sign/half-step/spatial-order changes |
+| `test_pytorch_onnx_onnxruntime.py:13365::test_qat_conv2d_relu_fused` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_conv2d_relu_fused`; original fuse-before-prepare order, per-channel weights and deterministic fixture, native Q/DQ, exact original oracle before/after serialization |
+| `test_pytorch_onnx_onnxruntime.py:13399::test_qat_linear_relu_fused` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_linear_relu_fused`; original fused linear-ReLU preparation/weights/bias and 3x4 fixture, native per-channel weight D/Q, exact original oracle with changed inputs/save/reload |
 | `test_pytorch_onnx_onnxruntime.py:13431::test_qat_maxpool2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_maxpool2d`; original converted-QAT configuration/deterministic fixture, Q/DQ adapter checked exactly with untouched eager original, changed rounding/saturation inputs |
 | `test_pytorch_onnx_onnxruntime.py:13456::test_qat_avg_pool2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_avg_pool2d`; original converted-QAT configuration/deterministic fixture and output requantization, exact independent oracle before/after serialization |
 | `test_pytorch_onnx_onnxruntime.py:13469::test_qat_upsample_nearest2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_qat_upsample_nearest2d`; original 1.5 nearest resize/converted-QAT fixture, exact oracle, changed negative/half-step/saturation inputs with save/reload |

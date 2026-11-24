@@ -316,7 +316,7 @@ class TestNativeTorchlib(common_utils.TestCase):
             (torch.uint8, ir.DataType.UINT8, 128, 0, 255),
         ],
     )
-    @common_utils.parametrize("tensor_parameters", [False, True])
+    @common_utils.parametrize("parameter_shape", [None, (), (1, 1, 1)])
     def test_quantization_reciprocal_rounding(
         self,
         input_dtype,
@@ -325,13 +325,13 @@ class TestNativeTorchlib(common_utils.TestCase):
         zero_point,
         quant_min,
         quant_max,
-        tensor_parameters,
+        parameter_shape,
     ):
         grid = torch.arange(-20, 21, dtype=torch.float32) * 0.2
         x = (grid[:, None] + grid[None, :]).flatten().to(input_dtype)
-        if tensor_parameters:
-            scale = torch.tensor(0.4, dtype=torch.float32)
-            zero = torch.tensor(zero_point, dtype=torch.int64)
+        if parameter_shape is not None:
+            scale = torch.tensor(0.4, dtype=torch.float32).reshape(parameter_shape)
+            zero = torch.tensor(zero_point, dtype=torch.int64).reshape(parameter_shape)
             expected = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
                 x, scale, zero, quant_min, quant_max, output_dtype
             )
@@ -356,6 +356,21 @@ class TestNativeTorchlib(common_utils.TestCase):
                 dtype=ir_dtype,
             )[0]
         self.assertEqual(result, expected.numpy(), rtol=0, atol=0)
+
+        class Model(torch.nn.Module):
+            def forward(self, *args):
+                if parameter_shape is None:
+                    return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                        args[0], 0.4, zero_point, quant_min, quant_max, output_dtype
+                    )
+                return torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                    *args, quant_min, quant_max, output_dtype
+                )
+
+        args = (x,) if parameter_shape is None else (x, scale, zero)
+        program = torch_onnx.export(Model().eval(), args, verbose=False)
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        torch.testing.assert_close(program(*args)[0], expected, rtol=0, atol=0)
 
     def test_per_channel_quantization(self):
         x = np.array([[-1.0, 0.0, 1.0], [-4.0, 0.0, 4.0]], dtype=np.float32)

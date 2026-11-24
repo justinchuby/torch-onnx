@@ -69,6 +69,12 @@ def quantized_decomposed_quantize_per_tensor(
 ) -> ir.Value:
     """quantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> Tensor"""
 
+    # Tensor overloads extract single elements, irrespective of parameter rank.
+    if isinstance(scale, ir.Value):
+        scale = op.Reshape(scale, [])
+    if isinstance(zero_point, ir.Value):
+        zero_point = op.Reshape(zero_point, [])
+
     if dtype not in _FLOAT8_DTYPES:
         # Match reciprocal multiplication before rounding, not division by scale:
         # the two differ at float32 half steps. Half inputs compute in float32.

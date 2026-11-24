@@ -53,7 +53,7 @@ testpaths = [
   "tests/recovered",
 ]
 markers = [
-  "integration: optional model-family integration suites",
+  "integration: optional model-family or backend-specific suites (FBGEMM references run explicitly in CI)",
   "opinfo: expanded PyTorch OpInfo operator coverage",
   "opset29: requires the pinned ONNX main build; separate development-schema CI job",
 ]

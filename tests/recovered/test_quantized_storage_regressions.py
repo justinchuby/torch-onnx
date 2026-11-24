@@ -7,17 +7,12 @@ Untouched eager quantized operations provide independent numerical oracles.
 """
 
 import math
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-import onnx_ir as ir
 import pytest
 import torch
 import torch.ao.quantization.fx._decomposed  # Registers quantized_decomposed.
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch.utils import _pytree
-
-import torch_onnx
 
 _qd = torch.ops.quantized_decomposed
 
@@ -185,23 +180,18 @@ class TestRecoveredQuantizedStorage(RecoveredRuntimeHarness):
         program = self.run_test(
             model, stored[0], additional_test_inputs=stored[1:], rtol=0, atol=0
         )
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "quantized.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for args, stored_args in zip(examples, stored, strict=True):
-                expected = _pytree.tree_map(_storage, original(*args))
-                self.assertEqual(model(*stored_args), expected, rtol=0, atol=0)
-                expected_outputs = _pytree.tree_leaves(expected)
-                for candidate in (program, reloaded):
-                    outputs = candidate(*stored_args)
-                    self.assertEqual(len(outputs), len(expected_outputs))
-                    for actual, expected_output in zip(
-                        outputs, expected_outputs, strict=True
-                    ):
-                        torch.testing.assert_close(
-                            actual, expected_output, rtol=0, atol=0
-                        )
+        reloaded = self.reload_program(program)
+        for args, stored_args in zip(examples, stored, strict=True):
+            expected = _pytree.tree_map(_storage, original(*args))
+            self.assertEqual(model(*stored_args), expected, rtol=0, atol=0)
+            for candidate in (program, reloaded):
+                self.assert_program_outputs(
+                    candidate,
+                    stored_args,
+                    expected=expected,
+                    rtol=0,
+                    atol=0,
+                )
         return program
 
     def _stored_layer(

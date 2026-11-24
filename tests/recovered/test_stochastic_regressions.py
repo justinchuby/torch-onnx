@@ -8,11 +8,7 @@ Original and serialized programs must retain actual randomness; distribution
 argument validation remains enabled.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import onnx
-import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 
@@ -40,10 +36,7 @@ class TestRecoveredStochastic(RecoveredRuntimeHarness):
     def _samples(self, model, args, shape, *, check_randomness=True):
         program = torch_onnx.export(model, args, verbose=False)
         onnx.checker.check_model(program.model_proto, full_check=True)
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "stochastic.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+        reloaded = self.reload_program(program)
         results = []
         for candidate in [program, reloaded]:
             first = candidate(*args)[0]

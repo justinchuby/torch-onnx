@@ -181,7 +181,8 @@ def test_pretrained_quantized_model(name, weights):
                 torch.testing.assert_close(
                     adapted(value), original(value), rtol=0, atol=0
                 )
-            program = RecoveredRuntimeHarness().run_test(
+            harness = RecoveredRuntimeHarness()
+            program = harness.run_test(
                 adapted,
                 (image,),
                 additional_test_inputs=[flipped],
@@ -194,10 +195,13 @@ def test_pretrained_quantized_model(name, weights):
                 "DequantizeLinear",
                 "TopK",
             }
-            for value in (image, flipped):
-                torch.testing.assert_close(
-                    program(value)[0], original(value), rtol=0, atol=0
-                )
+            harness.assert_program_roundtrip(
+                program,
+                examples=[image, flipped],
+                reference=original,
+                rtol=0,
+                atol=0,
+            )
     finally:
         if program is not None:
             program.release()

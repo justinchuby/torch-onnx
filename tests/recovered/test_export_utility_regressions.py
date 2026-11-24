@@ -77,7 +77,7 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                 self.assertIn("invalid_name1", axes)
                 self.assertIn("invalid_name2", axes)
                 onnx.checker.check_model(program.model_proto, full_check=True)
-                self.assertEqual(program(x, y)[0], x + y)
+                self.assert_program_outputs(program, (x, y), expected=x + y)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -90,7 +90,9 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
             )
         self.assertFalse(any(str(w.message).startswith("Provided key") for w in caught))
         changed = torch.randn(5, 4)
-        self.assertEqual(partial_names(changed, changed)[0], changed + changed)
+        self.assert_program_outputs(
+            partial_names, (changed, changed), expected=changed + changed
+        )
 
     def test_verbose(self):
         class MyModule(torch.nn.Module):
@@ -109,15 +111,7 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                     self.assertEqual(output.getvalue(), "")
                 else:
                     self.assertIn("Translate the graph into ONNX", output.getvalue())
-                onnx.checker.check_model(program.model_proto, full_check=True)
-                self.assertEqual(program(x)[0], model(x))
-                with common_utils.TemporaryDirectoryName() as directory:
-                    path = Path(directory) / "verbose.onnx"
-                    program.save(path, external_data=False)
-                    reloaded = torch_onnx.ONNXProgram(
-                        ir.load(path), program.exported_program
-                    )
-                    self.assertEqual(reloaded(x)[0], model(x))
+                self.assert_program_roundtrip(program, examples=[x], reference=model)
 
     def test_local_function_overloads(self):
         class NWithOverloads(torch.nn.Module):
@@ -219,31 +213,20 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                 program = torch_onnx.export(
                     model.eval(), (x, y, z), optimize=False, verbose=False
                 )
-                onnx.checker.check_model(program.model_proto, full_check=True)
                 torch_onnx.testing.assert_onnx_program(program, strategy=None)
                 self.assertCountEqual(
                     [function.name for function in program.model_proto.functions],
                     function_names,
                 )
-                with common_utils.TemporaryDirectoryName() as directory:
-                    path = Path(directory) / "overloads.onnx"
-                    program.save(path, external_data=False)
-                    reloaded = torch_onnx.ONNXProgram(
-                        ir.load(path), program.exported_program
-                    )
-                    for candidate in (program, reloaded):
-                        for args in ((x, y, z), (-x, -y, -z)):
-                            expected = torch.utils._pytree.tree_flatten(
-                                reference(*args)
-                            )[0]
-                            self.assertEqual(list(candidate(*args)), expected)
+                self.assert_program_roundtrip(
+                    program,
+                    examples=[(x, y, z), (-x, -y, -z)],
+                    reference=reference,
+                )
                 program.optimize()
                 program.release()
                 onnx.checker.check_model(program.model_proto, full_check=True)
-                self.assertEqual(
-                    list(program(x, y, z)),
-                    torch.utils._pytree.tree_flatten(reference(x, y, z))[0],
-                )
+                self.assert_program_outputs(program, (x, y, z), reference=reference)
             finally:
                 for target in targets:
                     torch_onnx.unregister_custom_translation(target)
@@ -319,24 +302,18 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
             self.assertEqual(nodes[0].op_type, "Custom")
             self.assertEqual(len(nodes[0].outputs), 2)
             self.assertIn(function.identifier(), program.model.functions)
-            onnx.checker.check_model(program.model_proto, full_check=True)
-            with common_utils.TemporaryDirectoryName() as directory:
-                path = Path(directory) / "custom-tuple.onnx"
-                program.save(path, external_data=False)
-                loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
             # Retain the original singleton fixture despite narrower EP guards.
-            for value in (torch.randn(1, 3), torch.randn(2, 3), torch.randn(3, 5)):
-                expected = CustomFunction.apply(value)
-                for candidate in (program, loaded):
-                    actual = candidate(value)
-                    self.assertEqual(len(actual), 2)
-                    for got, want in zip(actual, expected, strict=True):
-                        torch.testing.assert_close(got, want, rtol=0, atol=0)
+            self.assert_program_roundtrip(
+                program,
+                examples=[torch.randn(1, 3), torch.randn(2, 3), torch.randn(3, 5)],
+                reference=CustomFunction.apply,
+                rtol=0,
+                atol=0,
+            )
 
     def _check_custom_domain(self, model, args, opname):
         for opset in [None, 18, 24]:
             program = torch_onnx.export(model, args, opset_version=opset, verbose=False)
-            onnx.checker.check_model(program.model_proto, full_check=True)
             if opset is not None:
                 self.assertEqual(program.model.opset_imports[""], opset)
             self.assertEqual(program.model.opset_imports["com.microsoft"], 1)
@@ -346,12 +323,7 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                     for node in program.model.graph
                 )
             )
-            torch_onnx.testing.assert_onnx_program(program, strategy=None)
-            with common_utils.TemporaryDirectoryName() as directory:
-                path = Path(directory) / "custom-domain.onnx"
-                program.save(path, external_data=False)
-                loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            torch_onnx.testing.assert_onnx_program(loaded, strategy=None)
+            self.assert_program_roundtrip(program, strategy=None)
 
     def test_custom_opsets_gelu(self):
         target = torch.ops.aten.gelu.default

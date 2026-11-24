@@ -56,10 +56,13 @@ class TestRecoveredFloatOutRanges(RecoveredRuntimeHarness):
         )
         try:
             self.assertIn("Range", {node.op_type for node in program.model.graph})
-            for args in examples:
-                torch.testing.assert_close(
-                    program(*args)[0], original(*args), rtol=0, atol=0
-                )
+            self.assert_program_roundtrip(
+                program,
+                examples=examples,
+                reference=original,
+                rtol=0,
+                atol=0,
+            )
         finally:
             program.release()
 

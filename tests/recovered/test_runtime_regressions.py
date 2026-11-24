@@ -9,13 +9,15 @@ checks ONNX validity, saves/reloads and compares numerical values/shapes/dtypes.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
-import onnx
-import onnx_ir as ir
 import pytest
 import torch
+from _assertions import (
+    assert_program_outputs,
+    assert_program_roundtrip,
+    export_and_assert,
+    reload_onnx_program,
+)
 from torch import Tensor
 from torch.testing._internal import common_utils
 
@@ -27,11 +29,12 @@ def test_batch_norm_no_stats_half_precision(mixed_weights):
     model = torch.nn.BatchNorm1d(3, track_running_stats=False).eval()
     if not mixed_weights:
         model = model.half()
-    program = torch_onnx.export(
-        model, (torch.randn(4, 3, dtype=torch.float16),), verbose=False
+    export_and_assert(
+        model,
+        (torch.randn(4, 3, dtype=torch.float16),),
+        rtol=2e-3,
+        atol=1e-3,
     )
-    onnx.checker.check_model(program.model_proto, full_check=True)
-    torch_onnx.testing.assert_onnx_program(program, rtol=2e-3, atol=1e-3)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int64, torch.bool])
@@ -43,12 +46,58 @@ def test_masked_select_broadcast_and_empty(dtype, empty):
 
     x = torch.tensor([[0], [1]], dtype=dtype)
     mask = torch.tensor([[False, not empty, False]])
-    program = torch_onnx.export(Model().eval(), (x, mask), verbose=False)
-    onnx.checker.check_model(program.model_proto, full_check=True)
-    torch_onnx.testing.assert_onnx_program(program)
+    export_and_assert(Model().eval(), (x, mask))
 
 
 class RecoveredRuntimeHarness(common_utils.TestCase):
+    def reload_program(
+        self,
+        program: torch_onnx.ONNXProgram,
+        *,
+        external_data: bool = False,
+    ) -> torch_onnx.ONNXProgram:
+        return reload_onnx_program(program, external_data=external_data)
+
+    def assert_program_outputs(
+        self,
+        program: torch_onnx.ONNXProgram,
+        args=(),
+        kwargs=None,
+        *,
+        rtol: float | None = None,
+        atol: float | None = None,
+        **expectation,
+    ) -> None:
+        assert_program_outputs(
+            program,
+            args,
+            kwargs,
+            rtol=rtol,
+            atol=atol,
+            **expectation,
+        )
+
+    def assert_program_roundtrip(
+        self,
+        program: torch_onnx.ONNXProgram,
+        *,
+        examples=None,
+        reference=None,
+        rtol: float | None = None,
+        atol: float | None = None,
+        strategy: str | None = None,
+        external_data: bool = False,
+    ) -> torch_onnx.ONNXProgram:
+        return assert_program_roundtrip(
+            program,
+            examples=examples,
+            reference=reference,
+            rtol=rtol,
+            atol=atol,
+            strategy=strategy,
+            external_data=external_data,
+        )
+
     @torch.no_grad()
     def run_test(
         self,
@@ -58,6 +107,7 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
         *,
         rtol=1e-3,
         atol=1e-7,
+        opset_version: int | None = None,
         additional_test_inputs=None,
         input_names=None,
         output_names=None,
@@ -75,18 +125,23 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
         )
         if training is not None:
             model.train(training)
+        target_opset = (
+            getattr(self, "opset_version", None)
+            if opset_version is None
+            else opset_version
+        )
         program = torch_onnx.export(
             model,
             export_args,
             optimize=True,
             verbose=False,
             kwargs={} if input_kwargs is None else input_kwargs,
+            opset_version=target_opset,
             input_names=input_names,
             output_names=output_names,
             dynamic_axes=dynamic_axes,
             dynamic_shapes=dynamic_shapes,
         )
-        onnx.checker.check_model(program.model_proto, full_check=True)
         if output_names is not None:
             self.assertEqual(
                 [value.name for value in program.model.graph.outputs][
@@ -94,35 +149,19 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
                 ],
                 list(output_names),
             )
-        torch_onnx.testing.assert_onnx_program(
-            program, strategy=None, rtol=rtol, atol=atol
-        )
         if remained_onnx_input_idx is not None:
             # Modern export preserves the call signature, even for constant outputs.
             self.assertEqual(
                 sum(bool(value.uses()) for value in program.model.graph.inputs),
                 len(remained_onnx_input_idx),
             )
-        with common_utils.TemporaryDirectoryName() as directory:
-            path = Path(directory) / "recovered.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            torch_onnx.testing.assert_onnx_program(
-                reloaded, strategy=None, rtol=rtol, atol=atol
-            )
-        if additional_test_inputs is not None:
-            for other_input in additional_test_inputs:
-                other_args = (
-                    other_input if isinstance(other_input, tuple) else (other_input,)
-                )
-                torch_onnx.testing.assert_onnx_program(
-                    program,
-                    args=other_args,
-                    kwargs={},
-                    strategy=None,
-                    rtol=rtol,
-                    atol=atol,
-                )
+        self.assert_program_roundtrip(
+            program,
+            examples=additional_test_inputs,
+            rtol=rtol,
+            atol=atol,
+            strategy=None,
+        )
         return program
 
 

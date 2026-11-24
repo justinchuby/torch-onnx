@@ -9,16 +9,10 @@ ONNXProgram mutation. Fixed loops/list lengths retain their original bounds.
 """
 
 import copy
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
-from torch.utils import _pytree
-
-import torch_onnx
 
 
 def _tensor_state_model(model):
@@ -83,13 +77,11 @@ class TestRecoveredModuleState(RecoveredRuntimeHarness):
         x = torch.randn(8, 4, 3)
         reference = M(tensor_flags=True)
         program = self.run_test(M(tensor_flags=False), (x,))
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "beam-sequence.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for candidate in (program, reloaded):
-                for values in (x, -x, torch.zeros_like(x), torch.randn_like(x)):
-                    self.assertEqual(list(candidate(values)), reference(values))
+        self.assert_program_roundtrip(
+            program,
+            examples=[x, -x, torch.zeros_like(x), torch.randn_like(x)],
+            reference=reference,
+        )
 
     def run_state_test(self, model, input_args, *, persistent_bias=False):
         args = input_args if isinstance(input_args, tuple) else (input_args,)
@@ -98,28 +90,22 @@ class TestRecoveredModuleState(RecoveredRuntimeHarness):
         adapter = _FunctionalBiasState(model) if persistent_bias else model
         inputs = (*args, initial) if persistent_bias else args
         program = self.run_test(adapter, inputs)
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "module-state.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for candidate in (program, reloaded):
-                oracle = copy.deepcopy(reference)
-                state = initial.clone()
-                for values in (
-                    args,
-                    tuple(-value for value in args),
-                    tuple(torch.randn_like(value) for value in args),
-                ):
-                    expected = oracle(*values)
-                    actual = (
-                        candidate(*values, state)
-                        if persistent_bias
-                        else candidate(*values)
-                    )
-                    if persistent_bias:
-                        expected = (expected, oracle.conv.bias)
-                        state = actual[-1]
-                    self.assertEqual(list(actual), _pytree.tree_flatten(expected)[0])
+        reloaded = self.reload_program(program)
+        for candidate in (program, reloaded):
+            oracle = copy.deepcopy(reference)
+            state = initial.clone()
+            for values in (
+                args,
+                tuple(-value for value in args),
+                tuple(torch.randn_like(value) for value in args),
+            ):
+                expected = oracle(*values)
+                call_args = (*values, state) if persistent_bias else values
+                if persistent_bias:
+                    expected = (expected, oracle.conv.bias)
+                self.assert_program_outputs(candidate, call_args, expected=expected)
+                if persistent_bias:
+                    state = candidate(*values, state)[-1]
 
     def test_set_attr(self):
         class MyModule(torch.nn.Module):

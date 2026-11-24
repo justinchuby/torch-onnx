@@ -8,11 +8,7 @@ Original fixed-loop bodies/comments are retained, without claiming dynamic
 trip counts. Original and changed inputs run through serialization checks.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import onnx
-import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
@@ -118,14 +114,16 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
         self.assertEqual(
             sum(node.op_type == "Loop" for node in program.model.graph.all_nodes()), 4
         )
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "nested-index-put.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for value in (x, torch.randn(4, 1), torch.randn(2, 3), torch.randn(512, 2)):
-                expected = Original()(value)
-                for candidate in (program, reloaded):
-                    self.assertEqual(candidate(value)[0], expected)
+        self.assert_program_roundtrip(
+            program,
+            examples=[
+                x,
+                torch.randn(4, 1),
+                torch.randn(2, 3),
+                torch.randn(512, 2),
+            ],
+            reference=Original(),
+        )
 
     def test_set_attr_modules(self):
         class InnerModule2(torch.nn.Module):
@@ -208,19 +206,16 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
             remained_onnx_input_idx=[1],
         )
         self.assertFalse(fixed.model.graph.inputs[0].uses())
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "nested-embedding-state.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for candidate in (program, reloaded):
-                reference = Module()
-                state = reference.module.module.weights.clone()
-                # Persistent updates are explicit inputs/outputs, not capture-time writes.
-                for value in (x, torch.randn(4, 17), torch.randn(2, 2)):
-                    expected = reference(value)
-                    actual, state = candidate(value, state)
-                    self.assertEqual(actual, expected)
-                    self.assertEqual(state, reference.module.module.weights)
+        reloaded = self.reload_program(program)
+        for candidate in (program, reloaded):
+            reference = Module()
+            state = reference.module.module.weights.clone()
+            # Persistent updates are explicit inputs/outputs, not capture-time writes.
+            for value in (x, torch.randn(4, 17), torch.randn(2, 2)):
+                expected = reference(value)
+                actual, state = candidate(value, state)
+                self.assertEqual(actual, expected)
+                self.assertEqual(state, reference.module.module.weights)
 
     def test_set_attr_modules_2(self):
         class InnerModule(torch.nn.Module):
@@ -303,24 +298,21 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
             additional_test_inputs=[y],
         )
         self.assertIn("If", {node.op_type for node in program.model.graph})
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "dynamic-return.onnx"
-            program.save(path, external_data=False)
-            loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-        original = UninitializedModel()
         # As in the conditional-state cases, ONNX execution covers 0/1 even
         # though the attached ExportedProgram's capture guards exclude them.
-        for value in (
-            x,
-            y,
-            torch.arange(4, dtype=torch.int).reshape(1, 4),
-            torch.ones(1, 6, dtype=torch.int),
-            torch.empty(0, 4, dtype=torch.int),
-        ):
-            for candidate in (program, loaded):
-                output = candidate(value)
-                self.assertEqual(len(output), 1)
-                torch.testing.assert_close(output[0], original(value), rtol=0, atol=0)
+        self.assert_program_roundtrip(
+            program,
+            examples=[
+                x,
+                y,
+                torch.arange(4, dtype=torch.int).reshape(1, 4),
+                torch.ones(1, 6, dtype=torch.int),
+                torch.empty(0, 4, dtype=torch.int),
+            ],
+            reference=UninitializedModel(),
+            rtol=0,
+            atol=0,
+        )
 
     def test_uninitialized(self):
         class UninitializedModel(torch.nn.Module):
@@ -437,10 +429,7 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
         )
         onnx.checker.check_model(program.model_proto, full_check=True)
         self.assertIn("If", {node.op_type for node in program.model.graph})
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "states.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+        reloaded = self.reload_program(program)
         original_extent = 30 if hidden_size == 10 else 4
         examples = [
             (
@@ -463,7 +452,6 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
         # attached ExportedProgram's guards remain narrower than ONNX execution.
         for value, state in examples:
             expected = original(value, state)
-            expected = expected if isinstance(expected, tuple) else (expected,)
             adapted_state = state
             if reads_previous and state.shape[0] == 0:
                 # Empty state carries no values; retain its count while supplying
@@ -471,17 +459,14 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
                 adapted_state = state.new_empty(
                     (0, value.shape[0], hidden_size, *value.shape[2:])
                 )
-            for candidate in [program, reloaded]:
-                actual = candidate(value, adapted_state)
-                self.assertEqual(len(actual), len(expected))
-                for actual_tensor, expected_tensor in zip(
-                    actual, expected, strict=True
-                ):
-                    torch.testing.assert_close(
-                        actual_tensor, expected_tensor, rtol=0, atol=0
-                    )
-                    self.assertEqual(actual_tensor.shape, expected_tensor.shape)
-                    self.assertEqual(actual_tensor.dtype, expected_tensor.dtype)
+            for candidate in (program, reloaded):
+                self.assert_program_outputs(
+                    candidate,
+                    (value, adapted_state),
+                    expected=expected,
+                    rtol=0,
+                    atol=0,
+                )
         return model
 
     def test_if_transpose(self):
@@ -723,26 +708,21 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
             dynamic_shapes=(None, {0: torch.export.Dim("state_count", min=2)}),
             remained_onnx_input_idx=[1],
         )
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "value-state.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for state in (
-                empty_tensor,
-                torch.rand(1, 1, 10, 30, 30),
-                -torch.rand(1, 1, 10, 30, 30),
-                torch.rand(2, 1, 10, 30, 30),
-            ):
-                expected = original(random_data, state)
-                adapted_state = (
-                    state.new_empty((0, 1, 10, 30, 30))
-                    if state.shape[0] == 0
-                    else state
+        reloaded = self.reload_program(program)
+        for state in (
+            empty_tensor,
+            torch.rand(1, 1, 10, 30, 30),
+            -torch.rand(1, 1, 10, 30, 30),
+            torch.rand(2, 1, 10, 30, 30),
+        ):
+            expected = original(random_data, state)
+            adapted_state = (
+                state.new_empty((0, 1, 10, 30, 30)) if state.shape[0] == 0 else state
+            )
+            for candidate in (program, reloaded):
+                self.assert_program_outputs(
+                    candidate, (random_data, adapted_state), expected=expected
                 )
-                for candidate in (program, reloaded):
-                    self.assertEqual(
-                        list(candidate(random_data, adapted_state)), list(expected)
-                    )
 
     def test_index_put_inplace_ops(self):
         def check_init(input_data: Tensor, hidden_size: int) -> Tensor:
@@ -826,18 +806,16 @@ class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
         self.assertIn("Div", {node.op_type for node in loop_body.node})
         original_data = torch.rand(1, 5, 30, 30)
         self.run_test(Example(), original_data, remained_onnx_input_idx=[])
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "inplace-state-loop.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for candidate in (program, reloaded):
-                for values in (
-                    data,
-                    original_data,
-                    torch.rand(2, 7, 9, 11),
-                    torch.empty(0, 5, 4, 5),
-                ):
-                    self.assertEqual(list(candidate(values)), [Example()(values)])
+        self.assert_program_roundtrip(
+            program,
+            examples=[
+                data,
+                original_data,
+                torch.rand(2, 7, 9, 11),
+                torch.empty(0, 5, 4, 5),
+            ],
+            reference=Example(),
+        )
 
     def test_index_put_if_3(self):
         def check_init(

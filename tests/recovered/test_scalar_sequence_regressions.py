@@ -5,9 +5,6 @@ Removed in 6dca9f63bc4975ac323044a440c2c7e5f8512408. Ordinary Modules
 replace ScriptModules; original examples and scalar/dtype contracts remain.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
@@ -98,15 +95,11 @@ class TestRecoveredScalarSequences(RecoveredRuntimeHarness):
                     "SequenceAt", {node.op_type for node in program.model.graph}
                 )
                 self.assertNotIsInstance(program.model.graph.outputs[0].shape[0], int)
-                with TemporaryDirectory() as directory:
-                    path = Path(directory) / "sequence-getitem.onnx"
-                    program.save(path, external_data=False)
-                    reloaded = torch_onnx.ONNXProgram(
-                        ir.load(path), program.exported_program
-                    )
-                    for candidate in (program, reloaded):
-                        for args in examples:
-                            self.assertEqual(candidate(*args)[0], GetItemModel()(*args))
+                self.assert_program_roundtrip(
+                    program,
+                    examples=examples,
+                    reference=GetItemModel(),
+                )
             finally:
                 torch_onnx.unregister_custom_translation(target)
 

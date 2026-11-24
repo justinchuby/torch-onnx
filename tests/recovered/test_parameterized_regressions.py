@@ -13,6 +13,8 @@ import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch.testing._internal import common_utils
 
+import torch_onnx
+
 
 @common_utils.instantiate_parametrized_tests
 class TestRecoveredParameterized(RecoveredRuntimeHarness):
@@ -338,7 +340,7 @@ class TestRecoveredParameterized(RecoveredRuntimeHarness):
         ):
             if self.opset_version < 20:
                 with self.assertRaises(
-                    torch.onnx.OnnxExporterError,
+                    torch_onnx.errors.OnnxExporterError,
                 ):
                     self.run_test(
                         GridSampleModule(mode, padding_mode, align_corners),

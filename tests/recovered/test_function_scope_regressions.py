@@ -5,37 +5,31 @@ Explicit native registration/functions replace automatic module extraction.
 The missing-Embedding-attribute fixture uses ordinary native model export.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import onnx
 import onnx_ir as ir
 import torch
-from torch.utils import _pytree
+from _assertions import assert_program_outputs, assert_program_roundtrip
 
 import torch_onnx
 
 
 @torch.no_grad()
 def _check_roundtrip_and_optimize(program, reference, examples):
-    onnx.checker.check_model(program.model_proto, full_check=True)
-    with TemporaryDirectory() as directory:
-        path = Path(directory) / "function-scopes.onnx"
-        program.save(path, external_data=False)
-        reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-        for candidate in (program, reloaded):
-            for args in examples:
-                expected = _pytree.tree_flatten(reference(*args))[0]
-                torch.testing.assert_close(
-                    list(candidate(*args)), expected, rtol=1e-3, atol=1e-7
-                )
+    assert_program_roundtrip(
+        program,
+        examples=examples,
+        reference=reference,
+        rtol=1e-3,
+        atol=1e-7,
+    )
     program.optimize()
     program.release()
     onnx.checker.check_model(program.model_proto, full_check=True)
     for args in examples:
-        torch.testing.assert_close(
-            list(program(*args)),
-            _pytree.tree_flatten(reference(*args))[0],
+        assert_program_outputs(
+            program,
+            args,
+            reference=reference,
             rtol=1e-3,
             atol=1e-7,
         )

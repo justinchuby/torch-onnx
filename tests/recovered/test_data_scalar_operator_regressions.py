@@ -7,9 +7,6 @@ Python integer specialization. Linspace uses an explicit capture boundary
 with the unchanged eager body and the package's existing native translation.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
@@ -68,21 +65,20 @@ class _NativeLinspace(torch.nn.Module):
 
 class TestRecoveredDataScalarOperators(RecoveredRuntimeHarness):
     def _check_original_roundtrip(self, program, examples, original, *, mutates=False):
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "data-scalars.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            try:
-                for args in examples:
-                    original_args = (args[0].clone(), *args[1:]) if mutates else args
-                    expected = original(*original_args)
-                    for candidate in (program, reloaded):
-                        torch.testing.assert_close(
-                            candidate(*args)[0], expected, rtol=1e-6, atol=1e-7
-                        )
-            finally:
-                reloaded.release()
-                program.release()
+        def reference(*args):
+            original_args = (args[0].clone(), *args[1:]) if mutates else args
+            return original(*original_args)
+
+        try:
+            self.assert_program_roundtrip(
+                program,
+                examples=examples,
+                reference=reference,
+                rtol=1e-6,
+                atol=1e-7,
+            )
+        finally:
+            program.release()
 
     def test_slice_with_input_step_size(self):
         examples = [

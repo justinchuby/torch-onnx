@@ -6,11 +6,7 @@ the same parent's pytorch_test_common.py. Native optimization replaces the
 retired do_constant_folding flag.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import numpy as np
-import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
@@ -115,34 +111,28 @@ class TestRecoveredRecurrentModels(RecoveredRuntimeHarness):
                     dynamic_shapes=({0: time, 1: batch}, state_shapes),
                     additional_test_inputs=[(changed_input, changed_initial)],
                 )
+                self.assertNotIsInstance(program.model.graph.inputs[0].shape[0], int)
+                self.assertNotIsInstance(program.model.graph.inputs[0].shape[1], int)
                 if kind == "rnn":
                     self.assertIn(
                         "Loop", {node.op_type for node in program.model.graph}
                     )
-                    for args in (
-                        (input, initial),
-                        (changed_input, changed_initial),
-                    ):
-                        self.assertEqual(program(*args), model(*args))
-                self.assertNotIsInstance(program.model.graph.inputs[0].shape[0], int)
-                self.assertNotIsInstance(program.model.graph.inputs[0].shape[1], int)
-                with TemporaryDirectory() as directory:
-                    path = Path(directory) / f"dynamic-{kind}.onnx"
-                    program.save(path, external_data=False)
-                    reloaded = torch_onnx.ONNXProgram(
-                        ir.load(path), program.exported_program
+                    self.assert_program_roundtrip(
+                        program,
+                        examples=[
+                            (input, initial),
+                            (changed_input, changed_initial),
+                        ],
+                        reference=model,
                     )
+                else:
+                    reloaded = self.reload_program(program)
                     torch_onnx.testing.assert_onnx_program(
                         reloaded,
                         args=(changed_input, changed_initial),
                         kwargs={},
                         strategy=None,
                     )
-                    if kind == "rnn":
-                        self.assertEqual(
-                            reloaded(changed_input, changed_initial),
-                            model(changed_input, changed_initial),
-                        )
 
     def test_rnn_no_bias(self):
         class RnnModelWithPackedSequence(torch.nn.Module):
@@ -240,18 +230,13 @@ class TestRecoveredRecurrentModels(RecoveredRuntimeHarness):
                     adapter, examples[0], additional_test_inputs=examples[1:]
                 )
                 self.assertIn("Where", {node.op_type for node in program.model.graph})
-                with TemporaryDirectory() as directory:
-                    path = Path(directory) / "packed-rnn.onnx"
-                    program.save(path, external_data=False)
-                    reloaded = torch_onnx.ONNXProgram(
-                        ir.load(path), program.exported_program
-                    )
-                    for args in examples:
-                        expected = original(*args)
-                        for candidate in (program, reloaded):
-                            self.assertEqual(
-                                candidate(*args), expected, rtol=1e-3, atol=1e-7
-                            )
+                self.assert_program_roundtrip(
+                    program,
+                    examples=examples,
+                    reference=original,
+                    rtol=1e-3,
+                    atol=1e-7,
+                )
 
     def test_lstm_no_hidden(self):
         self.run_test(torch.nn.LSTM(16, 16), torch.randn(10, 16, 16))

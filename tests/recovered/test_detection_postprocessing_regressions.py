@@ -10,20 +10,13 @@ loops. Heatmap capture uses nonsingleton examples; ONNX execution additionally
 checks the original single-keypoint case, outside ExportedProgram's guards.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
-import onnx_ir as ir
 import torch
 import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
-from torch.utils import _pytree
 from torchvision.models.detection.roi_heads import (
     heatmaps_to_keypoints,
     paste_masks_in_image,
 )
-
-import torch_onnx
 
 
 class _ClipBoxes(torch.nn.Module):
@@ -128,16 +121,13 @@ class TestRecoveredDetectionPostprocessing(RecoveredRuntimeHarness):
             model, arguments[capture_index], dynamic_shapes=dimensions
         )
         self.assertIn(required_operator, {node.op_type for node in program.model.graph})
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "postprocessing.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for candidate in (program, reloaded):
-                for args in arguments:
-                    expected = _pytree.tree_flatten(reference(*args))[0]
-                    torch.testing.assert_close(
-                        list(candidate(*args)), expected, rtol=1e-3, atol=1e-7
-                    )
+        self.assert_program_roundtrip(
+            program,
+            examples=arguments,
+            reference=reference,
+            rtol=1e-3,
+            atol=1e-7,
+        )
 
     def test_clip_boxes_to_image(self):
         class Module(torch.nn.Module):

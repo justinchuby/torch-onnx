@@ -6,11 +6,7 @@ not by a claim that torch.export captures PackedSequence. Time and batch remain
 symbolic, including reverse directions and every layer's initial/final states.
 """
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 import numpy as np
-import onnx_ir as ir
 import torch
 from test_recurrent_model_regressions import (
     RNN_BATCH_SIZE,
@@ -21,8 +17,6 @@ from test_recurrent_model_regressions import (
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch.testing._internal import common_utils
 from torch.utils import _pytree
-
-import torch_onnx
 
 
 class _MaskedRecurrence(torch.nn.Module):
@@ -210,21 +204,22 @@ class TestRecoveredRecurrentMatrix(RecoveredRuntimeHarness):
         )
         self.assertNotIsInstance(program.model.graph.inputs[0].shape[0], int)
         self.assertNotIsInstance(program.model.graph.inputs[0].shape[1], int)
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "recurrent-matrix.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            for values in examples:
-                expected = reference(source, values)
-                # Both original dropout configurations run in eval mode and use
-                # identical weights, so share one export without losing a case.
-                torch.testing.assert_close(
-                    reference(without_dropout, values),
-                    expected,
+        reloaded = self.reload_program(program)
+        for values in examples:
+            expected = reference(source, values)
+            # Both original dropout configurations run in eval mode and use
+            # identical weights, so share one export without losing a case.
+            torch.testing.assert_close(
+                reference(without_dropout, values),
+                expected,
+                rtol=1e-3,
+                atol=1e-7,
+            )
+            for candidate in (program, reloaded):
+                self.assert_program_outputs(
+                    candidate,
+                    values,
+                    expected=expected,
                     rtol=1e-3,
                     atol=1e-7,
                 )
-                for actual in (program(*values), reloaded(*values)):
-                    torch.testing.assert_close(
-                        list(actual), expected, rtol=1e-3, atol=1e-7
-                    )

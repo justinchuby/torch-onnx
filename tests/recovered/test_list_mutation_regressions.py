@@ -245,10 +245,7 @@ class TestRecoveredListMutations(RecoveredRuntimeHarness):
             (x, y),
             additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
         )
-
-        actual = program(x, y)
-        self.assertEqual(len(actual), 1)
-        torch.testing.assert_close(actual[0], x[-1] @ y)
+        self.assert_program_outputs(program, (x, y), expected=x[-1] @ y)
 
     def test_list_del_in_block(self):
         class ListModel(torch.nn.Module):
@@ -274,10 +271,7 @@ class TestRecoveredListMutations(RecoveredRuntimeHarness):
             (x, y),
             additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
         )
-
-        actual = program(x, y)
-        self.assertEqual(len(actual), 1)
-        torch.testing.assert_close(actual[0], x[0] @ y)
+        self.assert_program_outputs(program, (x, y), expected=x[0] @ y)
 
     def test_list_unpack(self):
         class ListModel(torch.nn.Module):

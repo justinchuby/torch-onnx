@@ -7,11 +7,9 @@ legacy Constant-node accounting; static examples do not claim unrestricted
 dynamic dimensions where constant operands or recurrent weights fix sizes.
 """
 
-from pathlib import Path
-
 import onnx
-import onnx_ir as ir
 import torch
+from _assertions import assert_program_roundtrip
 from torch.testing._internal import common_utils
 
 import torch_onnx
@@ -28,19 +26,14 @@ class TestRecoveredOptimizer(common_utils.TestCase):
         program = torch_onnx.export(
             model.eval(), args, input_names=input_names, verbose=False
         )
-        onnx.checker.check_model(program.model_proto, full_check=True)
-        torch_onnx.testing.assert_onnx_program(program, rtol=1e-3, atol=1e-6)
         alternatives = tuple(torch.randn_like(value) for value in args)
-        torch_onnx.testing.assert_onnx_program(
-            program, args=alternatives, kwargs={}, rtol=1e-3, atol=1e-6
+        assert_program_roundtrip(
+            program,
+            examples=[alternatives],
+            rtol=1e-3,
+            atol=1e-6,
+            strategy="TorchExportNonStrictStrategy",
         )
-        with common_utils.TemporaryDirectoryName() as directory:
-            path = Path(directory) / "optimized.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            torch_onnx.testing.assert_onnx_program(
-                reloaded, strategy=None, rtol=1e-3, atol=1e-6
-            )
         parameters = {}
         for name, value in program.model.graph.initializers.items():
             assert value.const_value is not None
@@ -349,7 +342,7 @@ class TestRecoveredOptimizer(common_utils.TestCase):
             input_names=["x"],
         )
         for node in graph:
-            self.assertTrue(f"onnx::{node.op_type}" != "onnx::Add")
+            self.assertNotEqual(f"onnx::{node.op_type}", "onnx::Add")
         self.assertLessEqual(self._semantic_node_count(graph), 1)
         params = list(params_dict.values())
         self.assertEqual(len(params), 1)
@@ -449,15 +442,12 @@ class TestRecoveredOptimizer(common_utils.TestCase):
         model = torch.nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
         x = torch.randn(1, 32, 224, 224)
         program = torch_onnx.export(model.eval(), (x,), verbose=False)
-        onnx.checker.check_model(program.model_proto, full_check=True)
         # Native IR may store constants as initializers; scales must not become parameters.
         self.assertEqual(len(program.model.graph.inputs), 1)
         self.assertEqual(len(program.exported_program.graph_signature.parameters), 0)
-        torch_onnx.testing.assert_onnx_program(program, rtol=1e-3, atol=1e-4)
-        with common_utils.TemporaryDirectoryName() as directory:
-            path = Path(directory) / "upsample.onnx"
-            program.save(path, external_data=False)
-            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
-            torch_onnx.testing.assert_onnx_program(
-                reloaded, strategy=None, rtol=1e-3, atol=1e-4
-            )
+        assert_program_roundtrip(
+            program,
+            rtol=1e-3,
+            atol=1e-4,
+            strategy="TorchExportNonStrictStrategy",
+        )

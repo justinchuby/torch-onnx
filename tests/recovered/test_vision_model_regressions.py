@@ -18,6 +18,32 @@ from model_defs.srresnet import SRResNet
 import torch_onnx
 
 
+class _RowTiledConv2d(torch.nn.Conv2d):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert isinstance(self.padding, tuple)
+        assert self.stride == self.dilation == (1, 1) and self.groups == 1
+        assert self.padding == tuple(size // 2 for size in self.kernel_size)
+        height_padding, width_padding = self.padding
+        padded = torch.nn.functional.pad(
+            input, (width_padding, width_padding, height_padding, height_padding)
+        )
+        # Bound the float64 im2col workspace without changing convolution sums.
+        rows = []
+        for start in range(0, input.shape[-2], 8):
+            tile = padded[:, :, start : start + 8 + self.kernel_size[0] - 1, :]
+            rows.append(torch.nn.functional.conv2d(tile, self.weight, self.bias))
+        return torch.cat(rows, dim=-2)
+
+
+def test_row_tiled_oracle_convolution():
+    original = torch.nn.Conv2d(4, 3, 9, padding=4).double()
+    tiled = _RowTiledConv2d(4, 3, 9, padding=4, dtype=torch.float64)
+    tiled.load_state_dict(original.state_dict())
+    with torch.no_grad():
+        x = torch.randn(2, 4, 19, 23, dtype=torch.float64)
+        torch.testing.assert_close(tiled(x), original(x), rtol=1e-12, atol=1e-12)
+
+
 @pytest.mark.parametrize(
     ("name", "shape", "kwargs", "rtol", "atol"),
     [
@@ -97,9 +123,21 @@ def test_original_vision_model(name, shape, kwargs, rtol, atol):
                 # for these deep, untrained networks with large output ranges.
                 with torch.no_grad():
                     reference = torch.utils._pytree.tree_leaves(model(x))[0]
-                    oracle = torch.utils._pytree.tree_leaves(
-                        copy.deepcopy(model).double()(x.double())
-                    )[0]
+                    oracle_model = copy.deepcopy(model).double()
+                    if name == "srresnet":
+                        conv = oracle_model.output_conv
+                        tiled = _RowTiledConv2d(
+                            conv.in_channels,
+                            conv.out_channels,
+                            conv.kernel_size,
+                            padding=conv.padding,
+                            dtype=torch.float64,
+                        )
+                        tiled.load_state_dict(conv.state_dict())
+                        oracle_model.output_conv = tiled
+                    oracle = torch.utils._pytree.tree_leaves(oracle_model(x.double()))[
+                        0
+                    ]
                     actual = program(x)[0]
                 assert actual.shape == reference.shape
                 assert actual.dtype == reference.dtype

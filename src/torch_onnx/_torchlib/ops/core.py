@@ -2013,11 +2013,13 @@ def _aten_argmax(
     """argmax(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
     builder = op.builder
 
-    self_is_scaler = len(common_ops.require_shape(op, self)) == 0
+    rank = len(common_ops.require_shape(op, self))
     self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
-    result = op.ArgMax(self, keepdims=keepdim)
-    if self_is_scaler:
-        result = op.Squeeze(result)
+    result = op.ArgMax(self, keepdims=False)
+    if keepdim:
+        result = op.Reshape(
+            result, builder.constant([1] * rank, dtype=ir.DataType.INT64)
+        )
 
     return result
 
@@ -2061,11 +2063,13 @@ def _aten_argmin(
     """argmin(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
     builder = op.builder
 
-    self_is_scaler = len(common_ops.require_shape(op, self)) == 0
+    rank = len(common_ops.require_shape(op, self))
     self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
-    result = op.ArgMin(self, keepdims=keepdim)
-    if self_is_scaler:
-        result = op.Squeeze(result)
+    result = op.ArgMin(self, keepdims=False)
+    if keepdim:
+        result = op.Reshape(
+            result, builder.constant([1] * rank, dtype=ir.DataType.INT64)
+        )
 
     return result
 

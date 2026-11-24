@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+__all__ = [
+    "core",
+    "embedding",
+    "factories",
+    "fft",
+    "hop",
+    "linalg",
+    "neural",
+    "nn",
+    "normalization",
+    "prims",
+    "quantized_decomposed",
+    "recurrent",
+    "residual",
+    "sequences",
+    "special",
+    "symbolic",
+    "symops",
+    "vision",
+]
+
+from torch_onnx._torchlib.ops import (
+    core,
+    embedding,
+    factories,
+    fft,
+    hop,
+    linalg,
+    neural,
+    nn,
+    normalization,
+    prims,
+    quantized_decomposed,
+    recurrent,
+    residual,
+    sequences,
+    special,
+    symbolic,
+    symops,
+    vision,
+)

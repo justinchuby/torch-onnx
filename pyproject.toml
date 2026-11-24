@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "torch-onnx"
-version = "0.1.25"
+version = "0.2.0"
 description = "Experimental tools for converting PyTorch models to ONNX"
 authors = [{ name = "Justin Chu", email = "justinchu@microsoft.com" }]
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "MIT License"}
+requires-python = ">=3.11"
+license = {text = "MIT AND BSD-3-Clause"}
 keywords = ["onnx", "pytorch", "converter", "convertion", "exporter"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -18,17 +18,15 @@ classifiers = [
   "Operating System :: POSIX",
   "Operating System :: MacOS :: MacOS X",
   "Operating System :: Microsoft :: Windows",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-  "torch>=2.1",
-  "onnxscript>=0.1.0.dev20240831",
-  "onnx>=1.16",
+  "torch>=2.15,<2.16",
+  "onnx-ir>=0.1.16",
+  "onnxscript>=0.7.2",
+  "onnx>=1.23.2",
   "typing-extensions",
   "packaging"
 ]
@@ -39,12 +37,36 @@ Repository = "https://github.com/justinchuby/torch-onnx"
 [project.scripts]
 torch-onnx = "torch_onnx.bin.convert:main"
 
+[tool.setuptools]
+license-files = ["LICENSE", "LICENSE-PYTORCH"]
+
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
-addopts = "--tb=short --color=yes"
+addopts = '--tb=short --color=yes -m "not integration and not opinfo"'
+testpaths = [
+  "tests/exporter",
+  "tests/torchlib",
+  "tests/conversion_test.py",
+  "tests/decomp_test.py",
+  "tests/fake_tensor_test.py",
+  "tests/standalone_test.py",
+]
+markers = [
+  "integration: optional model-family integration suites",
+  "opinfo: expanded PyTorch OpInfo operator coverage",
+]
+
+[tool.pyrefly]
+project-includes = ["src/torch_onnx"]
+# The legacy ONNX Script DSL overrides Value operators and Evaluator returns;
+# their upstream base annotations are not substitutable. Runtime tests cover them.
+project-excludes = [
+  "src/torch_onnx/_building.py",
+  "src/torch_onnx/_tensors.py",
+]
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -92,3 +114,9 @@ ignore = [
 "tests/onnx_test_common.py" = ["UP006", "UP007"]
 "tests/pytorch_test.py" = ["UP006", "UP007"]
 "tests/pytorch_test_common.py" = ["UP006", "UP007"]
+# Preserve upstream's explicit control flow and normalization of loop-local values.
+"src/torch_onnx/**/*.py" = ["SIM102", "SIM108", "PLW2901", "PERF401"]
+# These callbacks are evaluated synchronously inside their loop iteration.
+"tests/exporter/test_native*.py" = ["B023", "PERF401"]
+"tests/exporter/test_small_models_e2e.py" = ["B023"]
+"tests/torchlib/*.py" = ["PLW2901"]

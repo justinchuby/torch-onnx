@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from onnxscript import ir
 from torch import nn
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 import torch_onnx
 
@@ -36,11 +37,11 @@ class MNISTModel(nn.Module):
 
 class FakeTensorTest(unittest.TestCase):
     def test_saving_model_with_fake_tensor_does_not_segfault(self):
-        with torch.onnx.enable_fake_mode():
+        with FakeTensorMode():
             model = MNISTModel()
             fake_input = torch.rand((64, 1, 28, 28), dtype=torch.float32)
 
-        onnx_program = torch_onnx.export_compat(model, (fake_input,))
+        onnx_program = torch_onnx.export_compat(model, (fake_input,), optimize=False)
 
         with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(Exception):
             onnx_program.save(os.path.join(tmpdir, "fake_model.onnx"))
@@ -48,12 +49,15 @@ class FakeTensorTest(unittest.TestCase):
     def test_apply_weights(self):
         model = MNISTModel()
         state_dict = model.state_dict()
-        with torch.onnx.enable_fake_mode():
+        with FakeTensorMode():
             fake_model = MNISTModel()
             fake_input = torch.rand((64, 1, 28, 28), dtype=torch.float32)
 
-        onnx_program = torch_onnx.export_compat(fake_model, (fake_input,))
+        onnx_program = torch_onnx.export_compat(
+            fake_model, (fake_input,), optimize=False
+        )
         onnx_program.apply_weights(state_dict)
+        onnx_program.optimize()
         inputs = (torch.rand((64, 1, 28, 28), dtype=torch.float32),)
         ep = torch.export.export(model, inputs)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -61,7 +65,7 @@ class FakeTensorTest(unittest.TestCase):
             onnx_program.save(model_path)
             saved_model = ir.load(model_path)
             onnx_program_loaded = torch_onnx.ONNXProgram(saved_model, ep)
-            torch_onnx.testing.assert_onnx_program(onnx_program_loaded)
+            torch_onnx.testing.assert_onnx_program(onnx_program_loaded, strategy=None)
 
 
 if __name__ == "__main__":

@@ -2,12 +2,10 @@
 
 [![PyPI version](https://badge.fury.io/py/torch-onnx.svg)](https://badge.fury.io/py/torch-onnx)
 
-Experimental torch ONNX exporter. Compatible with torch>=2.1,<2.6.
-
-> [!WARNING]
-> This is an experimental project and is not designed for production use.
-> Use `torch.onnx.export(..., dynamo=True)` for these purposes.
-> **The main logic from this project has been merged into PyTorch.**
+Standalone native ONNX exporter, synchronized with the modern PyTorch exporter
+and the native ONNX migration stack. **Version 0.2.0 targets PyTorch 2.15.x**
+(latest stable: 2.15.0), Python 3.11+, not older releases or nightly/main.
+This remains an experimental project.
 
 ## Installation
 
@@ -15,48 +13,68 @@ Experimental torch ONNX exporter. Compatible with torch>=2.1,<2.6.
 pip install --upgrade torch-onnx
 ```
 
+ONNX Runtime is optional for execution and verification. ONNX Script is used for
+optimization and legacy custom translation compatibility, not native built-ins.
+
 ## Usage
 
 ```python
 import torch
 import torch_onnx
-from onnxscript import ir
-import onnx
+import onnx_ir as ir
 
-# Get an exported program with torch.export
-exported = torch.export.export(...)
-model = torch_onnx.exported_program_to_ir(exported)
-proto = ir.to_proto(model)
-onnx.save(proto, "model.onnx")
+model = torch.nn.ReLU().eval()
+inputs = (torch.randn(2, 3),)
+program = torch_onnx.export(model, inputs, "model.onnx")
+program.optimize()
 
-# Or patch the torch.onnx export API
-# Set error_report=True to get a detailed error report if the export fails
-torch_onnx.patch_torch(report=True, verify=True, profile=True)
-torch.onnx.export(...)
+# Convert an existing ExportedProgram directly to ONNX IR.
+exported = torch.export.export(model, inputs)
+ir_model = torch_onnx.exported_program_to_ir(exported)
+proto = ir.to_proto(ir_model)
 
-# Use the analysis API to print an analysis report for unsupported ops
+# Opt-in routing of the modern PyTorch API to this standalone exporter.
+torch_onnx.patch_torch(report=True, verify=True)
+torch.onnx.export(model, inputs)
+torch_onnx.unpatch_torch()
+
 torch_onnx.analyze(exported)
 ```
 
-## Design
+The modern export options include dynamic shapes, export-local custom
+translations, optimization, verification, profiling and reports. `ONNXProgram`,
+`ExportableModule`, `InputObserver`, `testing` and `verification` are available.
+`torch_onnx.ops` exposes PyTorch's symbolic operators without duplicate dispatcher
+registration.
 
-{dynamo/jit} -> {ExportedProgram} -> {torchlib} -> {ONNX IR} -> {ONNX}
+## Native translations
 
-- Use ExportedProgram
-  - Rely on robustness of the torch.export implementation
-  - Reduce complexity in the exporter
-  - This does not solve dynamo limitations, but it avoids introducing additional breakage by running fx passes
-- Flat graph; Scope info as metadata, not functions
-  - Because existing tools are not good at handling them
-- Eager optimization where appropriate
-  - Because exsiting tools are not good at optimizing
-- Drop in replacement for torch.onnx.export
-  - Minimum migration effort
-- Build graph eagerly in the exporter
-  - Give the exporter full control over the graph being built
+Native implementations receive an explicit `TranslationContext` and create
+ONNX IR nodes directly. Operators own promotion; no FX FakeTensor graph rerun
+is used. Constants/caches, subgraphs and captures belong to their graph builder.
 
-## Why is this doable?
+```python
+@torch_onnx.register_custom_translation(torch.ops.aten.add.Tensor)
+def custom_add(op: torch_onnx.TranslationContext, self, other, alpha=1):
+    if alpha != 1:
+        other = op.Mul(other, alpha)
+    return op.Add(self, other)
 
-- We need to verify torch.export coverage on Huggingface Optimum https://github.com/huggingface/optimum/tree/main/optimum/exporters/onnx; and they are not patching torch.onnx itself.
-- Patch torch.onnx.export such that packages do not need to change a single line to use dynamo
-- We have all operators implemented and portable
+torch_onnx.unregister_custom_translation(torch.ops.aten.add.Tensor)
+```
+
+Custom translations must cast tensor inputs explicitly. Export-local
+`custom_translation_table` entries override global registrations, which override
+built-ins. Exports take locked snapshots of global registrations. Real and
+complex variants are dispatched directly. `get_translation_builder` is only
+for explicit raw-builder activation; native functions use their context.
+
+## Breaking changes and provenance
+
+0.2.0 removes pre-2.15 compatibility, the prototype TorchScript converter,
+legacy `dynamo_export`/`ExportOptions`, and legacy fallback. `dynamo=False` is
+unsupported; use unpatched PyTorch for its legacy exporter.
+
+See [upstream synchronization and complete migration inventory](docs/upstream-sync.md)
+for pinned source commits, included operator families and test coverage.
+No package registry publication is part of this synchronization.

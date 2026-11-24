@@ -2,23 +2,28 @@
 from __future__ import annotations
 
 import dataclasses
-import os
 import re
-
-import torch
-from onnxscript import ir
+from typing import TYPE_CHECKING
 
 from torch_onnx import _analysis, _registration, _verification
+
+if TYPE_CHECKING:
+    import os
+
+    import onnx_ir as ir  # type: ignore[import-untyped]
+    import torch
 
 
 @dataclasses.dataclass
 class ExportStatus:
-    # Whether torch.export.export.export() succeeds
-    torch_export: bool | None = None
-    # Whether torch.export.export.export(..., strict=False) succeeds
+    # Whether torch.export.export(..., strict=True) succeeds
+    torch_export_strict: bool | None = None
+    # Whether torch.export.export(..., strict=False) succeeds
     torch_export_non_strict: bool | None = None
-    # Whether torch.jit.trace succeeds
-    torch_jit: bool | None = None
+    # Whether torch.export.draft_export() succeeds
+    torch_export_draft_export: bool | None = None
+    # Whether decomposition succeeds
+    decomposition: bool | None = None
     # Whether ONNX translation succeeds
     onnx_translation: bool | None = None
     # Whether ONNX model passes onnx.checker.check_model
@@ -38,9 +43,10 @@ def _status_emoji(status: bool | None) -> str:
 def _format_export_status(status: ExportStatus) -> str:
     return (
         f"```\n"
-        f"{_status_emoji(status.torch_export)} Obtain model graph with `torch.export.export`\n"
         f"{_status_emoji(status.torch_export_non_strict)} Obtain model graph with `torch.export.export(..., strict=False)`\n"
-        f"{_status_emoji(status.torch_jit)} Obtain model graph with `torch.jit.trace`\n"
+        f"{_status_emoji(status.torch_export_strict)} Obtain model graph with `torch.export.export(..., strict=True)`\n"
+        f"{_status_emoji(status.torch_export_draft_export)} Obtain model graph with `torch.export.draft_export`\n"
+        f"{_status_emoji(status.decomposition)} Decompose operators for ONNX compatibility\n"
         f"{_status_emoji(status.onnx_translation)} Translate the graph into ONNX\n"
         f"{_status_emoji(status.onnx_checker)} Run `onnx.checker` on the ONNX model\n"
         f"{_status_emoji(status.onnx_runtime)} Execute the model with ONNX Runtime\n"
@@ -69,9 +75,15 @@ def _format_exported_program(exported_program: torch.export.ExportedProgram) -> 
 
 def construct_report_file_name(timestamp: str, status: ExportStatus) -> str:
     # Status could be None. So we need to check for False explicitly.
-    if not (status.torch_export or status.torch_export_non_strict or status.torch_jit):
+    if not (
+        status.torch_export_non_strict
+        or status.torch_export_strict
+        or status.torch_export_draft_export
+    ):
         # All strategies failed
         postfix = "pt_export"
+    elif status.decomposition is False:
+        postfix = "decomp"
     elif status.onnx_translation is False:
         postfix = "conversion"
     elif status.onnx_checker is False:
@@ -80,7 +92,11 @@ def construct_report_file_name(timestamp: str, status: ExportStatus) -> str:
         postfix = "runtime"
     elif status.output_accuracy is False:
         postfix = "accuracy"
-    elif status.torch_export is False or status.torch_export_non_strict is False:
+    elif (
+        status.torch_export_strict is False
+        or status.torch_export_non_strict is False
+        or status.torch_export_draft_export is False
+    ):
         # Some strategies failed
         postfix = "strategies"
     else:
@@ -95,8 +111,8 @@ def format_decomp_comparison(
     """Format the decomposition comparison result.
 
     Args:
-        unique_ops_in_a: The unique ops in the first program.
-        unique_ops_in_b: The unique ops in the second program.
+        pre_decomp_unique_ops: The unique ops in the first program.
+        post_decomp_unique_ops: The unique ops in the second program.
 
     Returns:
         The formatted comparison result.
@@ -118,7 +134,11 @@ def format_verification_infos(
     Returns:
         The formatted verification result.
     """
-    return "\n".join(f"`{info.asdict()}`" for info in verification_infos)
+    return "\n".join(
+        f"`{info.name}`: `max_abs_diff={info.max_abs_diff:e}`, `max_rel_diff={info.max_rel_diff:e}`, "
+        f"`abs_diff_hist={info.abs_diff_hist}`, `rel_diff_hist={info.rel_diff_hist}`"
+        for info in verification_infos
+    )
 
 
 def create_torch_export_error_report(
@@ -127,7 +147,7 @@ def create_torch_export_error_report(
     *,
     export_status: ExportStatus,
     profile_result: str | None,
-):
+) -> None:
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Error Report\n\n")
         f.write(_format_export_status(export_status))
@@ -153,7 +173,7 @@ def create_onnx_export_report(
     model: ir.Model | None = None,
     registry: _registration.ONNXRegistry | None = None,
     verification_result: str | None = None,
-):
+) -> None:
     with open(filename, "w", encoding="utf-8") as f:
         f.write("# PyTorch ONNX Conversion Report\n\n")
         f.write(_format_export_status(export_status))

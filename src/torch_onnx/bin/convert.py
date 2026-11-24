@@ -1,4 +1,4 @@
-#!/usr/bin/env python  # noqa: EXE001
+#!/usr/bin/env python
 """Convert a pt2 PyTorch model to ONNX format."""
 
 import argparse

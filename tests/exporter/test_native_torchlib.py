@@ -308,6 +308,55 @@ class TestNativeTorchlib(common_utils.TestCase):
         )
         self.assertEqual(result, expected)
 
+    @common_utils.parametrize("input_dtype", [torch.float16, torch.float32])
+    @common_utils.parametrize(
+        "output_dtype,ir_dtype,zero_point,quant_min,quant_max",
+        [
+            (torch.int8, ir.DataType.INT8, 0, -128, 127),
+            (torch.uint8, ir.DataType.UINT8, 128, 0, 255),
+        ],
+    )
+    @common_utils.parametrize("tensor_parameters", [False, True])
+    def test_quantization_reciprocal_rounding(
+        self,
+        input_dtype,
+        output_dtype,
+        ir_dtype,
+        zero_point,
+        quant_min,
+        quant_max,
+        tensor_parameters,
+    ):
+        grid = torch.arange(-20, 21, dtype=torch.float32) * 0.2
+        x = (grid[:, None] + grid[None, :]).flatten().to(input_dtype)
+        if tensor_parameters:
+            scale = torch.tensor(0.4, dtype=torch.float32)
+            zero = torch.tensor(zero_point, dtype=torch.int64)
+            expected = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                x, scale, zero, quant_min, quant_max, output_dtype
+            )
+            result = self.evaluate(
+                quantized_decomposed.quantized_decomposed_quantize_per_tensor,
+                [x.numpy(), scale.numpy(), zero.numpy()],
+                quant_min=quant_min,
+                quant_max=quant_max,
+                dtype=ir_dtype,
+            )[0]
+        else:
+            expected = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                x, 0.4, zero_point, quant_min, quant_max, output_dtype
+            )
+            result = self.evaluate(
+                quantized_decomposed.quantized_decomposed_quantize_per_tensor,
+                [x.numpy()],
+                scale=0.4,
+                zero_point=zero_point,
+                quant_min=quant_min,
+                quant_max=quant_max,
+                dtype=ir_dtype,
+            )[0]
+        self.assertEqual(result, expected.numpy(), rtol=0, atol=0)
+
     def test_per_channel_quantization(self):
         x = np.array([[-1.0, 0.0, 1.0], [-4.0, 0.0, 4.0]], dtype=np.float32)
         scales = np.array([0.5, 2.0], dtype=np.float32)

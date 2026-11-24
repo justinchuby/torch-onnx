@@ -228,6 +228,51 @@ def _adapt_model(model):
     return adapted
 
 
+def _quantized_reference_diagnostics(original, adapted, value):
+    class Recorder(torch.fx.Interpreter):
+        def __init__(self, module):
+            super().__init__(module)
+            self.values = {}
+
+        def run_node(self, node):
+            result = super().run_node(node)
+            if isinstance(result, torch.Tensor):
+                self.values[node.name] = result.detach()
+            return result
+
+    reference = Recorder(torch.fx.symbolic_trace(original))
+    actual = Recorder(adapted)
+    reference.run(value)
+    actual.run(value)
+    differences = [
+        f"Quantized reference backend: {torch.backends.quantized.engine}.",
+        "First divergent tensor nodes (before ONNX export):",
+    ]
+    for name, reference_value in reference.values.items():
+        result = actual.values.get(name)
+        if result is None or result.shape != reference_value.shape:
+            continue
+        qparams = (
+            f" qparams=({reference_value.q_scale()}, {reference_value.q_zero_point()})"
+            if reference_value.is_quantized
+            else ""
+        )
+        expected = (
+            reference_value.dequantize()
+            if reference_value.is_quantized
+            else reference_value
+        )
+        if not torch.equal(result, expected):
+            differences.append(
+                f"{name}: max_abs={(result - expected).abs().max().item()}"
+                f" mismatched={(result != expected).sum().item()}/{result.numel()}"
+                f"{qparams}"
+            )
+        if len(differences) == 12:
+            break
+    return "\n".join(differences)
+
+
 def _load_pretrained_model(name, weights):
     factory = getattr(quantization, name)
     kwargs = {"transform_input": True} if name in {"googlenet", "inception_v3"} else {}
@@ -294,7 +339,14 @@ def test_pretrained_quantized_model(name, weights):
             flipped = image.flip(-1)
             for value in (image, flipped):
                 torch.testing.assert_close(
-                    adapted(value), original(value), rtol=0, atol=0
+                    adapted(value),
+                    original(value),
+                    rtol=0,
+                    atol=0,
+                    msg=lambda message, value=value: (
+                        f"{message}\n"
+                        f"{_quantized_reference_diagnostics(original, adapted, value)}"
+                    ),
                 )
             harness = RecoveredRuntimeHarness()
             program = harness.run_test(

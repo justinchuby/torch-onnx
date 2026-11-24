@@ -476,11 +476,19 @@ def aten_bitwise_right_shift(
     # Compute the arithmetic shifted value assuming the sign bit was set
     negative_shifted = op.BitwiseOr(shifted, mask)
     # Choose the shifted value based on the sign bit
-    return op.Where(
-        negative,
-        op.Cast(negative_shifted, to=signed_dtype),
-        op.Cast(shifted, to=signed_dtype),
-    )
+    negative_result = op.Cast(negative_shifted, to=signed_dtype)
+    positive_result = op.Cast(shifted, to=signed_dtype)
+    if signed_dtype == ir.DataType.INT16:
+        # Sign-extend before selection: ORT has no int16 Where kernel.
+        return op.Cast(
+            op.Where(
+                negative,
+                op.Cast(negative_result, to=ir.DataType.INT32),
+                op.Cast(positive_result, to=ir.DataType.INT32),
+            ),
+            to=signed_dtype,
+        )
+    return op.Where(negative, negative_result, positive_result)
 
 
 @onnx_impl((aten.bitwise_right_shift.Tensor_Scalar, aten.__rshift__.Scalar))

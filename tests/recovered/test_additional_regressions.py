@@ -14,6 +14,14 @@ from torch import Tensor
 
 
 class TestRecoveredAdditional(RecoveredRuntimeHarness):
+    def test_reference_preserves_non_leaf_input(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        x = torch.ones(2, requires_grad=True) * 2
+        self.run_test(Model(), (x,))
+
     def test_scalar_output_initializer_name_collision(self):
         class Model(torch.nn.Module):
             def __init__(self):

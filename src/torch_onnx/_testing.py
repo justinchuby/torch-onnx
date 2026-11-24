@@ -67,9 +67,16 @@ def assert_onnx_program(
         kwargs = {}
     torch_module = exported_program.module()
     memo: dict[int, object] = {}
-    reference_args, reference_kwargs = _pytree.tree_map(
-        lambda value: copy.deepcopy(value, memo), (args, kwargs)
-    )
+
+    def copy_input(value: object) -> object:
+        if isinstance(value, torch.Tensor) and not value.is_leaf:
+            if id(value) not in memo:
+                detached = value.detach().requires_grad_(value.requires_grad)
+                memo[id(value)] = copy.deepcopy(detached, memo)
+            return memo[id(value)]
+        return copy.deepcopy(value, memo)
+
+    reference_args, reference_kwargs = _pytree.tree_map(copy_input, (args, kwargs))
     torch_outputs, _ = _pytree.tree_flatten(
         torch_module(*reference_args, **reference_kwargs)
     )

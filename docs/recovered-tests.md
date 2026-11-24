@@ -9,13 +9,13 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 371 original runtime test bodies/comments, four control-flow
+retired frontend. 381 original runtime test bodies/comments, four control-flow
 regressions and 12 model methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 433, 'inapplicable': 55, 'migrated': 387}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 423, 'inapplicable': 55, 'migrated': 397}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -77,6 +77,15 @@ TopK, copy broadcasting, ceil-mode pooling padding, Python scalar argument/outpu
 contracts and keyword-input naming collisions. Ceil padding normalization is
 for statically known spatial dimensions; this does not claim that all dynamic
 ceil-mode inference behavior has been repaired.
+
+An additional parameterized batch restores ten original methods with 70
+executions: scalar-to-5D atleast-ND list/tensor inputs, average pooling padding
+and denominator choices, signed shifts across all four integer widths,
+dynamic scatter-add index combinations, scalar/tensor padding arguments,
+2D/3D affine grids, and bilinear/nearest/bicubic grid sampling with all padding
+modes and alignment choices. The original volumetric grid-sampling checks
+remain enabled. This caught a missing ORT int16 Where kernel in signed shifts;
+selection now sign-extends to int32 and casts back without changing results.
 
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
@@ -197,8 +206,8 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:700::test_all_optional_default_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_all_optional_default_tensor |
 | `test_pytorch_onnx_onnxruntime.py:726::test_all_optional_default_tensor_script` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:755::test_logit` | blocked | Uses legacy harness helpers or opset state requiring a dedicated modern rewrite. |
-| `test_pytorch_onnx_onnxruntime.py:794::test_atleast_nd_list_input` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:819::test_atleast_nd_single_tensor_input` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:794::test_atleast_nd_list_input` | migrated | tests/recovered/test_parameterized_regressions.py::test_atleast_nd_list_input; original parameter matrix |
+| `test_pytorch_onnx_onnxruntime.py:819::test_atleast_nd_single_tensor_input` | migrated | tests/recovered/test_parameterized_regressions.py::test_atleast_nd_single_tensor_input; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:826::test_mixed_optional` | migrated | tests/recovered/test_additional_regressions.py::test_mixed_optional |
 | `test_pytorch_onnx_onnxruntime.py:840::test_tuple_of_optional` | migrated | tests/recovered/test_additional_regressions.py::test_tuple_of_optional |
 | `test_pytorch_onnx_onnxruntime.py:855::test_tuple_of_optional_default_tensor` | migrated | tests/recovered/test_additional_regressions.py::test_tuple_of_optional_default_tensor |
@@ -260,7 +269,7 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:1579::test_avgpool_default_stride` | migrated | `test_runtime_regressions.py::test_avgpool_default_stride`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:1588::test_avgpool` | migrated | tests/recovered/test_additional_regressions.py::test_avgpool |
 | `test_pytorch_onnx_onnxruntime.py:1593::test_avgpool_1d_ceil` | migrated | tests/recovered/test_additional_regressions.py::test_avgpool_1d_ceil |
-| `test_pytorch_onnx_onnxruntime.py:1609::test_avgpool_2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:1609::test_avgpool_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_avgpool_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:1625::test_avgpool_3d_ceil` | migrated | tests/recovered/test_additional_regressions.py::test_avgpool_3d_ceil |
 | `test_pytorch_onnx_onnxruntime.py:1638::test_avgpool_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:1665::test_floating_point` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -370,8 +379,8 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:3703::test_std_mean_keepdim` | migrated | `test_runtime_regressions.py::test_std_mean_keepdim`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3720::test_std_mean_correction` | migrated | tests/recovered/test_additional_regressions.py::test_std_mean_correction |
 | `test_pytorch_onnx_onnxruntime.py:3729::test_bitshift` | migrated | tests/recovered/test_additional_regressions.py::test_bitshift |
-| `test_pytorch_onnx_onnxruntime.py:3745::test_bitshift_signed` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:3757::test_bitwise_right_shift_signed` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:3745::test_bitshift_signed` | migrated | tests/recovered/test_parameterized_regressions.py::test_bitshift_signed; original parameter matrix |
+| `test_pytorch_onnx_onnxruntime.py:3757::test_bitwise_right_shift_signed` | migrated | tests/recovered/test_parameterized_regressions.py::test_bitwise_right_shift_signed; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:3766::test_bitwise_and` | migrated | tests/recovered/test_additional_regressions.py::test_bitwise_and |
 | `test_pytorch_onnx_onnxruntime.py:3782::test_bitshift_uint8` | migrated | tests/recovered/test_additional_regressions.py::test_bitshift_uint8 |
 | `test_pytorch_onnx_onnxruntime.py:3796::test_narrow` | migrated | `test_runtime_regressions.py::test_narrow`; original numerical body, modern standalone harness |
@@ -416,7 +425,7 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:4205::test_scatter_add` | blocked | Mixed scripted/traced body needs frontend-specific branches separated before migration. |
 | `test_pytorch_onnx_onnxruntime.py:4230::test_scatter_add_index_not_unique` | blocked | Mixed scripted/traced body needs frontend-specific branches separated before migration. |
 | `test_pytorch_onnx_onnxruntime.py:4255::test_scatter_add_different_size_index_src` | migrated | `test_runtime_regressions.py::test_scatter_add_different_size_index_src`; original numerical body, modern standalone harness |
-| `test_pytorch_onnx_onnxruntime.py:4287::test_scatter_add_dynamic_index` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:4287::test_scatter_add_dynamic_index` | migrated | tests/recovered/test_parameterized_regressions.py::test_scatter_add_dynamic_index; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:4301::test_scatter_reduce` | migrated | tests/recovered/test_additional_regressions.py::test_scatter_reduce |
 | `test_pytorch_onnx_onnxruntime.py:4323::test_scatter_reduce_self_rank_zero` | migrated | tests/recovered/test_additional_regressions.py::test_scatter_reduce_self_rank_zero |
 | `test_pytorch_onnx_onnxruntime.py:4344::test_bucketize` | migrated | `test_runtime_regressions.py::test_bucketize`; original numerical body, modern standalone harness |
@@ -650,7 +659,7 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:8241::test_stft_normalize` | migrated | tests/recovered/test_additional_regressions.py::test_stft_normalize |
 | `test_pytorch_onnx_onnxruntime.py:8257::test_stft_not_onesided` | migrated | tests/recovered/test_additional_regressions.py::test_stft_not_onesided |
 | `test_pytorch_onnx_onnxruntime.py:8272::test_constant_pad` | migrated | tests/recovered/test_additional_regressions.py::test_constant_pad |
-| `test_pytorch_onnx_onnxruntime.py:8295::test_pad_types` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8295::test_pad_types` | migrated | tests/recovered/test_parameterized_regressions.py::test_pad_types; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:8305::test_pad_circular` | migrated | tests/recovered/test_additional_regressions.py::test_pad_circular |
 | `test_pytorch_onnx_onnxruntime.py:8315::test_pad_circular_negative` | migrated | tests/recovered/test_additional_regressions.py::test_pad_circular_negative |
 | `test_pytorch_onnx_onnxruntime.py:8326::test_pad_circular_dynamic_axes` | migrated | tests/recovered/test_additional_regressions.py::test_pad_circular_dynamic_axes |
@@ -853,9 +862,9 @@ ceil-mode inference behavior has been repaired.
 | `test_pytorch_onnx_onnxruntime.py:13469::test_qat_upsample_nearest2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13481::test_0d_tensor_broadcast` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13493::test_convolution_allow_tf32` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_2d; original parameter matrix |
+| `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_3d; original parameter matrix |
+| `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | migrated | tests/recovered/test_parameterized_regressions.py::test_grid_sample; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |

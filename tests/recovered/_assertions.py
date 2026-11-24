@@ -77,7 +77,7 @@ def assert_program_outputs(
     reference: Callable[..., Any] | None = None,
     rtol: float | None = None,
     atol: float | None = None,
-) -> None:
+) -> tuple[torch.Tensor, ...]:
     """Assert ONNXProgram outputs match an eager reference callable or expected value."""
     if (expected is _MISSING) == (reference is None):
         raise ValueError("Specify exactly one of 'expected' or 'reference'.")
@@ -96,6 +96,7 @@ def assert_program_outputs(
         equal_nan=True,
         check_device=False,
     )
+    return actual_tensors
 
 
 def assert_program_roundtrip(

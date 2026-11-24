@@ -67,8 +67,8 @@ class RecoveredRuntimeHarness(common_utils.TestCase):
         rtol: float | None = None,
         atol: float | None = None,
         **expectation,
-    ) -> None:
-        assert_program_outputs(
+    ) -> tuple[torch.Tensor, ...]:
+        return assert_program_outputs(
             program,
             args,
             kwargs,

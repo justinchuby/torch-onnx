@@ -103,9 +103,11 @@ class TestRecoveredModuleState(RecoveredRuntimeHarness):
                 call_args = (*values, state) if persistent_bias else values
                 if persistent_bias:
                     expected = (expected, oracle.conv.bias)
-                self.assert_program_outputs(candidate, call_args, expected=expected)
+                actual = self.assert_program_outputs(
+                    candidate, call_args, expected=expected
+                )
                 if persistent_bias:
-                    state = candidate(*values, state)[-1]
+                    state = actual[-1]
 
     def test_set_attr(self):
         class MyModule(torch.nn.Module):

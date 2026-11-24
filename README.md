@@ -2,10 +2,10 @@
 
 [![PyPI version](https://badge.fury.io/py/torch-onnx.svg)](https://badge.fury.io/py/torch-onnx)
 
-Standalone native ONNX exporter, synchronized with the modern PyTorch exporter
-and the native ONNX migration stack. **Version 0.2.0 targets PyTorch 2.15.x**
-(latest stable: 2.15.0), Python 3.11+, not older releases or nightly/main.
-This remains an experimental project.
+Standalone native ONNX exporter synchronized with the modern `torch.export`-based
+PyTorch exporter. **Version 0.2.0 targets PyTorch 2.15.x** (`2.15.0`) and
+Python 3.11+ (older releases and nightly/main are not supported). This project is
+experimental.
 
 ## Installation
 
@@ -13,57 +13,155 @@ This remains an experimental project.
 pip install --upgrade torch-onnx
 ```
 
-ONNX Runtime is optional for execution and verification. ONNX Script is used for
-optimization and legacy custom translation compatibility, not native built-ins.
+Install `onnxruntime` as well to execute or numerically verify exported
+`ONNXProgram` instances locally.
 
-## Usage
+## Quick start
+
+`torch_onnx.export` returns a `torch.onnx.ONNXProgram` (also exposed as
+`torch_onnx.ONNXProgram`) with graph optimization enabled by default:
 
 ```python
 import torch
 import torch_onnx
-import onnx_ir as ir
 
-model = torch.nn.ReLU().eval()
-inputs = (torch.randn(2, 3),)
-onnx_program = torch_onnx.export(model, inputs)
-onnx_program.optimize()
+model = torch.nn.Sequential(torch.nn.Linear(32, 16), torch.nn.ReLU()).eval()
+x = torch.randn(4, 8, 32)
+
+onnx_program = torch_onnx.export(model, (x,))
 onnx_program.save("model.onnx")
 
-# Convert an existing ExportedProgram directly to ONNX IR.
-exported = torch.export.export(model, inputs)
+# Execute with ONNX Runtime and compare against the captured PyTorch program
+outputs = onnx_program(x)
+torch_onnx.testing.assert_onnx_program(onnx_program)
+onnx_program.release()
+```
+
+## Dynamic shapes
+
+### Explicit constraints with `torch.export.Dim`
+
+Use `torch.export.Dim` (or string axis names / `torch.export.Dim.DYNAMIC`) to
+mark variable dimensions:
+
+```python
+import torch
+import torch_onnx
+
+
+class MLP(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = torch.nn.Sequential(torch.nn.Linear(32, 16), torch.nn.ReLU())
+
+    def forward(self, x):
+        return self.net(x)
+
+
+model = MLP().eval()
+x = torch.randn(4, 8, 32)
+
+batch = torch.export.Dim("batch", min=1, max=64)
+seq_len = torch.export.Dim("seq_len", min=1)
+
+onnx_program = torch_onnx.export(
+    model,
+    (x,),
+    input_names=["x"],
+    output_names=["y"],
+    dynamic_shapes={"x": {0: batch, 1: seq_len}},
+)
+onnx_program.save("mlp_dynamic.onnx")
+
+# String axis names are also accepted as shorthand:
+# dynamic_shapes=({0: "batch", 1: "seq_len"},)
+torch_onnx.testing.assert_onnx_program(onnx_program, args=(torch.randn(7, 13, 32),))
+onnx_program.release()
+```
+
+### Automatic inference with `InputObserver`
+
+`InputObserver` records sample forward calls and infers `dynamic_shapes` and
+export arguments automatically:
+
+```python
+observer = torch_onnx.InputObserver()
+with observer(model):
+    model(torch.randn(2, 8, 32))
+    model(torch.randn(5, 12, 32))
+
+onnx_program = torch_onnx.export(
+    model,
+    observer.infer_arguments(),
+    dynamic_shapes=observer.infer_dynamic_shapes(),
+)
+onnx_program.save("mlp_observed.onnx")
+onnx_program.release()
+```
+
+## Common workflows
+
+### Opset selection, verification, and diagnostics
+
+```python
+onnx_program = torch_onnx.export(
+    model,
+    (x,),
+    opset_version=24,
+    verify=True,  # numerically check outputs during export
+    report=True,  # write an export report to artifacts_dir
+)
+ref_outputs = onnx_program.call_reference(x)  # evaluate with the ONNX reference runtime
+onnx_program.release()
+```
+
+Pass `profile=True` (requires `pyinstrument`) to capture an HTML timing profile
+alongside the export report.
+
+### Fake tensors and deferred weights for large models
+
+Export without materializing full weights in memory by disabling eager
+optimization until real weights are applied:
+
+```python
+from torch._subclasses.fake_tensor import FakeTensorMode
+
+state_dict = model.state_dict()
+with FakeTensorMode():
+    fake_model = MLP().eval()
+    fake_x = torch.randn(4, 8, 32)
+    onnx_program = torch_onnx.export(fake_model, (fake_x,), optimize=False)
+
+onnx_program.apply_weights(state_dict)
+onnx_program.optimize()
+onnx_program.save("large_model.onnx", external_data=True)
+onnx_program.release()
+```
+
+### `ExportedProgram` conversion and `torch.onnx` patching
+
+```python
+import onnx_ir as ir
+
+# Convert an existing ExportedProgram directly to an onnx_ir.Model
+exported = torch.export.export(model, (x,))
+torch_onnx.analyze(exported)
 ir_model = torch_onnx.exported_program_to_ir(exported)
 proto = ir.to_proto(ir_model)
 
-# Opt-in routing of the modern PyTorch API to this standalone exporter.
-torch_onnx.patch_torch(report=True, verify=True)
-onnx_program = torch.onnx.export(model, inputs)
-onnx_program.save("model.onnx")
+# Route torch.onnx.export calls to torch_onnx
+torch_onnx.patch_torch()
+onnx_program = torch.onnx.export(model, (x,))
+onnx_program.save("patched.onnx")
+onnx_program.release()
 torch_onnx.unpatch_torch()
-
-torch_onnx.analyze(exported)
 ```
 
-The modern export options include dynamic shapes, export-local custom
-translations, optimization, verification, profiling and reports. `ONNXProgram`,
-`ExportableModule`, `InputObserver`, `testing` and `verification` are available.
-`torch_onnx.ops` exposes PyTorch's symbolic operators without duplicate dispatcher
-registration.
+### Custom operator translations
 
-Exports return the exact `torch.onnx.ONNXProgram` class, also exposed as
-`torch_onnx.ONNXProgram`, for downstream compatibility. See
-[opset support and extensibility](docs/opsets.md) for native newer operators,
-custom opset extensibility, and schema requirements, and the
-[recovered regression inventory](docs/recovered-tests.md) for historical coverage.
-
-Python scalar arguments remain in ONNX input order for compatibility with the
-upstream program's callable interface. Their values and control flow are still
-specialized by `torch.export`; retaining an input does not make it dynamic.
-
-## Native translations
-
-Native implementations receive an explicit `TranslationContext` and create
-ONNX IR nodes directly. Operators own promotion; no FX FakeTensor graph rerun
-is used. Constants/caches, subgraphs and captures belong to their graph builder.
+Register native ONNX IR translations globally with `TranslationContext`. Native
+translations own type promotion and must cast mismatched tensor inputs
+explicitly:
 
 ```python
 @torch_onnx.register_custom_translation(torch.ops.aten.add.Tensor)
@@ -72,21 +170,26 @@ def custom_add(op: torch_onnx.TranslationContext, self, other, alpha=1):
         other = op.Mul(other, alpha)
     return op.Add(self, other)
 
+
 torch_onnx.unregister_custom_translation(torch.ops.aten.add.Tensor)
 ```
 
-Custom translations must cast tensor inputs explicitly. Export-local
-`custom_translation_table` entries override global registrations, which override
-built-ins. Exports take locked snapshots of global registrations. Real and
-complex variants are dispatched directly. `get_translation_builder` is only
-for explicit raw-builder activation; native functions use their context.
+For per-export overrides, `custom_translation_table` accepts ONNX Script
+functions and takes precedence over global native registrations, which override
+built-in translations. `torch_onnx.ops` also re-exports PyTorch's symbolic ONNX
+operators (`torch.onnx.ops.symbolic`).
 
-## Breaking changes and provenance
+## Limitations and documentation
 
-0.2.0 removes pre-2.15 compatibility, the prototype TorchScript converter,
-legacy `dynamo_export`/`ExportOptions`, and legacy fallback. `dynamo=False` is
-unsupported; use unpatched PyTorch for its legacy exporter.
-
-See [upstream synchronization and complete migration inventory](docs/upstream-sync.md)
-for pinned source commits, included operator families and test coverage.
-No package registry publication is part of this synchronization.
+- **Modern exporter only**: `dynamo=False`, the legacy TorchScript exporter, and
+  pre-0.2 `dynamo_export` / `ExportOptions` are unsupported. Use unpatched
+  `torch.onnx.export(..., dynamo=False)` when legacy export is required.
+- **Python scalar inputs**: Preserved in ONNX input order for `ONNXProgram`
+  callable compatibility, though `torch.export` specializes scalar values and
+  Python control flow during capture.
+- [Opset support and custom-opset extensibility](docs/opsets.md) — built-in
+  opsets 18–29, custom domains, and unbounded opset targets.
+- [Recovered regression inventory](docs/recovered-tests.md) — migrated PyTorch
+  ONNX regression suites.
+- [Upstream synchronization and migration inventory](docs/upstream-sync.md) —
+  pinned PyTorch commits, operator coverage, and architecture details.

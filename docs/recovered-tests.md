@@ -10,12 +10,12 @@ PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
 retired frontend. 446 original runtime test bodies/comments, four control-flow
-regressions and 28 model methods were ported to the modern standalone exporter. Each exports real models and compares
+regressions, 28 model methods and 22 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 342, 'inapplicable': 55, 'migrated': 478}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 320, 'inapplicable': 55, 'migrated': 500}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -123,6 +123,21 @@ encoder, unconverted quantization-ready MobileNetV3 and dynamic ShuffleNet.
 The latter captures at batch3 to avoid frontend zero/one specialization but
 still executes both original batches1/3 against the same graph. This does not
 claim converted quantized-model or CUDA coverage.
+
+Twenty-two optimizer/utility methods preserve constant-folding predicates for
+transpose, norms, indexing, squeezing, concatenation, recurrent weights,
+matrix multiplication, arithmetic and shape computations. Native initializer
+storage replaces legacy Constant-node accounting; numerical checks also use
+different input values and serialized/reloaded graphs. These static optimizer
+examples do not claim unrestricted dynamic dimensions where constant operands
+or recurrent weights fix sizes. The historically named LSTM utility case
+actually contains GRU and exposed an unnecessary single-layer hidden-state
+Slice, now avoided in the native lowering without changing multilayer handling.
+The noisy high-rank PReLU case checks intermediate noise and the final output
+from one upstream ONNXProgram.compute_values execution, rather than assuming
+Torch and ONNX Runtime generate identical random numbers. Upsampling constants
+are checked not to become model parameters; native initializers may contain
+ordinary constants.
 
 | Original source test | Disposition | Mapping or limitation |
 | --- | --- | --- |
@@ -944,28 +959,28 @@ claim converted quantized-model or CUDA coverage.
 | `test_utility_funs.py:102::test_is_in_onnx_export` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:120::test_validate_dynamic_axes_invalid_input_output_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:141::test_split_to_slice` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:162::test_constant_fold_transpose` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:182::test_constant_fold_reduceL2` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:200::test_constant_fold_reduceL1` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:217::test_constant_fold_slice` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:236::test_constant_fold_slice_index_exceeds_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:258::test_constant_fold_slice_negative_index` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:281::test_constant_fold_gather` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:299::test_constant_fold_unsqueeze` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:318::test_constant_fold_unsqueeze_multi_axies` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:340::test_constant_fold_squeeze_without_axes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:357::test_constant_fold_squeeze_with_axes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:375::test_constant_fold_concat` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:411::test_constant_fold_lstm` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:442::test_constant_fold_transpose_matmul` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:462::test_constant_fold_reshape` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:485::test_constant_fold_div` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:508::test_constant_fold_mul` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:531::test_constant_fold_add` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:562::test_constant_fold_sub` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:593::test_constant_fold_sqrt` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:615::test_constant_fold_shape` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:635::test_constant_fold_upsample_scale_fold_as_constant` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:162::test_constant_fold_transpose` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_transpose`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:182::test_constant_fold_reduceL2` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reduceL2`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:200::test_constant_fold_reduceL1` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reduceL1`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:217::test_constant_fold_slice` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_slice`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:236::test_constant_fold_slice_index_exceeds_dim` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_slice_index_exceeds_dim`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:258::test_constant_fold_slice_negative_index` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_slice_negative_index`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:281::test_constant_fold_gather` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_gather`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:299::test_constant_fold_unsqueeze` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_unsqueeze`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:318::test_constant_fold_unsqueeze_multi_axies` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_unsqueeze_multi_axies`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:340::test_constant_fold_squeeze_without_axes` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_squeeze_without_axes`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:357::test_constant_fold_squeeze_with_axes` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_squeeze_with_axes`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:375::test_constant_fold_concat` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_concat`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:411::test_constant_fold_lstm` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_lstm`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:442::test_constant_fold_transpose_matmul` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_transpose_matmul`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:462::test_constant_fold_reshape` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_reshape`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:485::test_constant_fold_div` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_div`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:508::test_constant_fold_mul` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_mul`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:531::test_constant_fold_add` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_add`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:562::test_constant_fold_sub` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_sub`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:593::test_constant_fold_sqrt` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_sqrt`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:615::test_constant_fold_shape` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_shape`; native IR invariant and actual numerical/runtime checks |
+| `test_utility_funs.py:635::test_constant_fold_upsample_scale_fold_as_constant` | migrated | `tests/recovered/test_optimizer_regressions.py::test_constant_fold_upsample_scale_fold_as_constant`; native IR invariant and actual numerical/runtime checks |
 | `test_utility_funs.py:645::test_verbose` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:677::test_error_on_data_parallel` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:692::test_sequence_dim` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |

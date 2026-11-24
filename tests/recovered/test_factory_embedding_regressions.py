@@ -12,6 +12,49 @@ from torch import Tensor
 
 
 class TestRecoveredFactoryEmbedding(RecoveredRuntimeHarness):
+    def test_dynamic_arange_out(self):
+        class ArangeOutModel(torch.nn.Module):
+            def forward(self, end):
+                # Export needs the resized result's non-singleton size domain.
+                torch._check(end.item() >= 2)
+                out_t = torch.tensor([1], dtype=torch.int64)
+                return torch.arange(end, out=out_t)
+
+        self.run_test(
+            ArangeOutModel(),
+            torch.tensor(8),
+            additional_test_inputs=[torch.tensor(11), torch.tensor(2)],
+        )
+
+    def test_dynamic_arange_start_out(self):
+        class ArangeStartOutModel(torch.nn.Module):
+            def forward(self, start, end):
+                # Bind the actual output count so capture can prove resize guards.
+                length = (end - start.size(0)).item()
+                torch._check(length >= 2)
+                out_t = torch.tensor([1], dtype=torch.int64)
+                return torch.arange(start.size(0), start.size(0) + length, out=out_t)
+
+        model = ArangeStartOutModel()
+        original = (torch.randn(2, 3, 4), torch.tensor(8))
+        alternates = [
+            (torch.randn(3, 5, 6), torch.tensor(11)),
+            (torch.randn(4, 3, 4), torch.tensor(6)),
+        ]
+        for start, end in [original, *alternates]:
+            expected = torch.arange(
+                start.size(0), end, out=torch.tensor([1], dtype=torch.int64)
+            )
+            self.assertEqual(model(start, end), expected)
+        self.run_test(
+            model,
+            original,
+            input_names=["x", "y"],
+            dynamic_axes={"x": [0, 1, 2]},
+            additional_test_inputs=alternates,
+        )
+        self.run_test(model, original, remained_onnx_input_idx=[1])
+
     def test_gather_constant_fold(self):
         class GatherModule(torch.nn.Module):
             def __init__(self) -> None:

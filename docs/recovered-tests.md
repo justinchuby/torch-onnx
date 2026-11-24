@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 554 original runtime test bodies/comments, four control-flow
+retired frontend. 560 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 178, 'inapplicable': 55, 'migrated': 642}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 172, 'inapplicable': 55, 'migrated': 648}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -445,15 +445,15 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:2124::test_slice_dynamic_to_end` | migrated | tests/recovered/test_additional_regressions.py::test_slice_dynamic_to_end |
 | `test_pytorch_onnx_onnxruntime.py:2139::test_square` | migrated | `test_runtime_regressions.py::test_square`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:2148::test_arange_dynamic` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_dynamic_operator_regressions.py |
-| `test_pytorch_onnx_onnxruntime.py:2177::test_dynamic_arange_out` | blocked | torch.export cannot capture tensor-valued arange bounds while resizing an out= buffer (GuardOnDataDependentSymNode) |
-| `test_pytorch_onnx_onnxruntime.py:2187::test_dynamic_arange_start_out` | blocked | torch.export cannot capture tensor-valued arange bounds while resizing an out= buffer (GuardOnDataDependentSymNode) |
-| `test_pytorch_onnx_onnxruntime.py:2204::test_linspace` | blocked | torch.export cannot specialize the data-dependent tensor-valued linspace step count |
-| `test_pytorch_onnx_onnxruntime.py:2215::test_linspace_negative_start` | blocked | torch.export cannot specialize the data-dependent tensor-valued linspace step count |
-| `test_pytorch_onnx_onnxruntime.py:2226::test_arange_with_floats_out` | blocked | torch.export cannot capture tensor-valued arange bounds while resizing an out= buffer (GuardOnDataDependentSymNode) |
+| `test_pytorch_onnx_onnxruntime.py:2177::test_dynamic_arange_out` | migrated | Original resized INT64 out= buffer and tensor end; explicit output-count>=2 capture domain, original example and changed bounds 11/2, strict runtime values/shapes/dtypes and save/reload; no zero/singleton-domain claim |
+| `test_pytorch_onnx_onnxruntime.py:2187::test_dynamic_arange_start_out` | migrated | Original resized INT64 out= buffer, tensor end and shape-derived start; bind symbolic output count>=2, independent original arange oracle, changed shapes/bounds and unused-input check in tests/recovered/test_factory_embedding_regressions.py; no zero/singleton-domain claim |
+| `test_pytorch_onnx_onnxruntime.py:2204::test_linspace` | blocked | Actual torch.export integer-specialization failure for tensor-valued step count; explicit steps>=0 and steps>=2 domains both fail before ONNX lowering |
+| `test_pytorch_onnx_onnxruntime.py:2215::test_linspace_negative_start` | blocked | Actual torch.export integer-specialization failure for tensor-valued step count; explicit positive-size domain still fails before ONNX lowering |
+| `test_pytorch_onnx_onnxruntime.py:2226::test_arange_with_floats_out` | blocked | Exact original probe fails torch.export on data-derived floating bound zuf0 before ONNX lowering; integer out= cases restored separately, not substituted for this float contract |
 | `test_pytorch_onnx_onnxruntime.py:2251::test_arange_with_floats` | migrated | tests/recovered/test_additional_regressions.py::test_arange_with_floats |
 | `test_pytorch_onnx_onnxruntime.py:2302::test_arange_with_floats_override` | migrated | tests/recovered/test_additional_regressions.py::test_arange_with_floats_override |
-| `test_pytorch_onnx_onnxruntime.py:2325::test_arange_out` | blocked | torch.export cannot capture tensor-valued arange bounds while resizing an out= buffer (GuardOnDataDependentSymNode) |
-| `test_pytorch_onnx_onnxruntime.py:2335::test_arange_start_out` | blocked | torch.export cannot capture tensor-valued arange bounds while resizing an out= buffer (GuardOnDataDependentSymNode) |
+| `test_pytorch_onnx_onnxruntime.py:2325::test_arange_out` | blocked | Exact original float-bound out= probe fails torch.export guarding data-derived zuf0 before ONNX lowering |
+| `test_pytorch_onnx_onnxruntime.py:2335::test_arange_start_out` | blocked | Exact original float-bound out= probe fails torch.export guarding data-derived CeilToInt output count before ONNX lowering |
 | `test_pytorch_onnx_onnxruntime.py:2352::test_arange_no_type` | migrated | tests/recovered/test_additional_regressions.py::test_arange_no_type |
 | `test_pytorch_onnx_onnxruntime.py:2361::test_size` | migrated | tests/recovered/test_additional_regressions.py::test_size |
 | `test_pytorch_onnx_onnxruntime.py:2376::test_as_strided` | migrated | tests/recovered/test_additional_regressions.py::test_as_strided |
@@ -737,7 +737,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:7290::test_frobenius_norm` | migrated | `test_runtime_regressions.py::test_frobenius_norm`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7298::test_frobenius_norm_keepdim` | migrated | `test_runtime_regressions.py::test_frobenius_norm_keepdim`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7306::test_unfold` | migrated | tests/recovered/test_additional_regressions.py::test_unfold |
-| `test_pytorch_onnx_onnxruntime.py:7321::test_unfold_infer_shape` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:7321::test_unfold_infer_shape` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:7336::test_unfold_dynamic_inputs` | migrated | tests/recovered/test_additional_regressions.py::test_unfold_dynamic_inputs |
 | `test_pytorch_onnx_onnxruntime.py:7352::test_mv` | migrated | `test_runtime_regressions.py::test_mv`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:7366::test_dot` | migrated | `test_runtime_regressions.py::test_dot`; original numerical body, modern standalone harness |
@@ -766,7 +766,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:7663::test_cumsum_with_cast` | migrated | tests/recovered/test_additional_regressions.py::test_cumsum_with_cast |
 | `test_pytorch_onnx_onnxruntime.py:7676::test_embedding_bag` | migrated | tests/recovered/test_additional_regressions.py::test_embedding_bag |
 | `test_pytorch_onnx_onnxruntime.py:7692::test_embedding_bag_1d_per_sample_weights` | migrated | tests/recovered/test_additional_regressions.py::test_embedding_bag_1d_per_sample_weights |
-| `test_pytorch_onnx_onnxruntime.py:7721::test_embedding_bag_2d_per_sample_weights` | blocked | torch.export rejects the recovered dynamic two-dimensional per-sample-weight shape constraints before ONNX lowering |
+| `test_pytorch_onnx_onnxruntime.py:7721::test_embedding_bag_2d_per_sample_weights` | migrated | Original 2D indices/weights and additional batch2-to4 executions retained with one shared torch.export.Dim for both batch axes; old ORT1.17 skip removed, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:7749::test_embedding_bag_dynamic_input` | migrated | tests/recovered/test_additional_regressions.py::test_embedding_bag_dynamic_input |
 | `test_pytorch_onnx_onnxruntime.py:7813::test_meshgrid` | migrated | tests/recovered/test_additional_regressions.py::test_meshgrid |
 | `test_pytorch_onnx_onnxruntime.py:7825::test_meshgrid_indexing` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_math_shape_regressions.py |
@@ -901,8 +901,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:10785::test_instancenorm_eval_mode_train_layer` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10823::test_dropout_training` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:10868::test_dropout_training_zero` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10933::test_conv_bn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10958::test_multiple_conv_bn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10933::test_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
+| `test_pytorch_onnx_onnxruntime.py:10958::test_multiple_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:11001::test_nms` | migrated | tests/recovered/test_additional_regressions.py::test_nms |
 | `test_pytorch_onnx_onnxruntime.py:11014::test_batched_nms` | migrated | tests/recovered/test_additional_regressions.py::test_batched_nms |
 | `test_pytorch_onnx_onnxruntime.py:11029::test_clip_boxes_to_image` | blocked | Captured torchvision wrapper guards size[0] == 200 and rejects the supplied 300x400 additional input; dynamic behavior is not restored |

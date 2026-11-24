@@ -246,6 +246,38 @@ def aten_convolution(
     return result
 
 
+@onnx_impl((aten._convolution.default, aten._convolution.deprecated))
+def aten__convolution(
+    op: TranslationContext,
+    input: ir.Value,
+    weight: ir.Value,
+    bias: ir.Value | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    transposed: bool,
+    output_padding: Sequence[int],
+    groups: int,
+    benchmark: bool,
+    deterministic: bool,
+    cudnn_enabled: bool,
+    allow_tf32: bool = True,
+) -> ir.Value:
+    # Backend execution-policy flags are not properties of an ONNX Conv.
+    return aten_convolution(
+        op,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+    )
+
+
 def _conv_kernel_shape(
     op: TranslationContext, weight: ir.Value, complex: bool = False
 ) -> Sequence[int] | None:

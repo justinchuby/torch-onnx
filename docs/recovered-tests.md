@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 601 original runtime test bodies/comments, four control-flow
+retired frontend. 605 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 44
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 127, 'inapplicable': 55, 'migrated': 693}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 123, 'inapplicable': 55, 'migrated': 697}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -70,6 +70,18 @@ serialization and actual ONNX Runtime `com.microsoft` kernels. The inverse uses
 well-conditioned matrices of the original 2x3x3 size. Legacy spelling aliases
 and descriptor parsing are not restored; malformed native calls must fail.
 
+Recovered fake-quantization cases retain the original signed scalar range and
+exercise changing Tensor scale/zero-point inputs on the same graph. The original
+frozen activation fixture checks overflow, negative values and half-step rounding
+against the untouched eager module. Only its disabled-observer inference hook is
+expressed with the equivalent affine operation, following the recovered model
+adapter; observer updates are not claimed. These cases retain the original fixed
+input sizes: dynamic scalar-parameter fake quantization still lacks a PyTorch
+fake/meta kernel. The low-level convolution regression exposed missing default
+and deprecated-overload registrations. Both now reuse native Conv/ConvTranspose,
+including bias/groups/output padding; backend policy flags are not ONNX graph
+properties. CPU checks do not claim CUDA TF32 execution.
+
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
 the ONNX model before comparing values, shapes and dtypes. Legacy byte indexing
@@ -107,7 +119,7 @@ SqueezeNet 1.0 uses ceil-mode pooling to make its fixed 13x13 classifier valid
 for 224x224 inputs; the original test accidentally instantiated 1.1 twice.
 The fake-quantization model uses the same frozen affine inference parameters,
 checks equivalence with the original module, and avoids tensor-valued observer
-flags unsupported by torch.export. Observer-updating activation coverage remains
+flags unsupported by torch.export. Observer-updating quantization remains
 explicitly blocked. External-data reload materializes the saved tensor data
 before constructing the exact upstream ONNXProgram.
 
@@ -939,10 +951,10 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:10108::test_embedding` | migrated | `tests/recovered/test_capture_regressions.py::test_embedding`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:10136::test_embedding_module` | migrated | Original models/examples/axis matrices and comments in tests/recovered/test_factory_embedding_regressions.py; regular modules replace scripted frontend, strict runtime values/shapes/dtypes and save/reload |
 | `test_pytorch_onnx_onnxruntime.py:10171::test_embedding_renorm` | migrated | tests/recovered/test_additional_regressions.py::test_embedding_renorm |
-| `test_pytorch_onnx_onnxruntime.py:10525::test_fake_quantize_per_tensor` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:10540::test_fake_quantize_per_tensor_dynamic_scale_zeropoint` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:10525::test_fake_quantize_per_tensor` | migrated | test_additional_regressions.py preserves signed scalar-parameter affine quantization and checks additional saturation values on the same graph |
+| `test_pytorch_onnx_onnxruntime.py:10540::test_fake_quantize_per_tensor_dynamic_scale_zeropoint` | migrated | test_additional_regressions.py changes input values plus Tensor scale/zero-point on the same graph; original fixed input size retained |
 | `test_pytorch_onnx_onnxruntime.py:10555::test_fake_quantize_per_channel` | migrated | tests/recovered/test_additional_regressions.py::test_fake_quantize_per_channel |
-| `test_pytorch_onnx_onnxruntime.py:10576::test_fake_quantize_activation` | blocked | FakeQuantize observer flag/state causes data-dependent Python control flow in torch.export; inference-only fake quantization is covered by the recovered model variant |
+| `test_pytorch_onnx_onnxruntime.py:10576::test_fake_quantize_activation` | migrated | test_additional_regressions.py preserves original frozen-observer fixture and range0..127; equivalent inference hook checked against untouched eager module at overflow/negative/half-step inputs; fixed shapes, no observer-updating claim |
 | `test_pytorch_onnx_onnxruntime.py:10602::test_batchnorm_training` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10638::test_batchnorm_training_mode_fix_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:10675::test_batchnorm_eval_mode_train_layer` | migrated | Original models, affine variants and train/eval/PRESERVE transitions retained; explicit mixed-layer modes and nonmutation checks in tests/recovered/test_normalization_mode_regressions.py, strict runtime numerical/shape/dtype and save/reload checks |
@@ -1055,7 +1067,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13456::test_qat_avg_pool2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13469::test_qat_upsample_nearest2d` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13481::test_0d_tensor_broadcast` | migrated | `tests/recovered/test_capture_regressions.py::test_0d_tensor_broadcast`; modern Module capture, schema/save/reload/runtime |
-| `test_pytorch_onnx_onnxruntime.py:13493::test_convolution_allow_tf32` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13493::test_convolution_allow_tf32` | migrated | test_convolution_shape_regressions.py preserves224x224 fixture and both original signatures; fixes native _convolution overload dispatch, with extra grouped/bias/transposed checks; CPU only, not CUDA TF32 execution |
 | `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_3d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | migrated | tests/recovered/test_parameterized_regressions.py::test_grid_sample; original parameter matrix |

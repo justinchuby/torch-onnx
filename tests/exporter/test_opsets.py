@@ -347,8 +347,61 @@ def test_future_and_custom_opset_extensibility():
         )
 
 
+@pytest.mark.parametrize("conversion_error", [False, True])
+def test_future_local_function_opset_alignment(conversion_error):
+    class Model(torch.nn.Module):
+        def forward(self, x):
+            return -x
+
+    def translate(op: torch_onnx.TranslationContext, x: ir.Value) -> ir.Value:
+        opset = 20 if conversion_error else op.builder.opset
+        formal = ir.Value(name="x", type=x.type, shape=x.shape)
+        body = ir.Graph(
+            [formal], [], nodes=[], name="future_negate", opset_imports={"": opset}
+        )
+        builder = torch_onnx.GraphBuilder(body, opset=opset)
+        body.outputs.append(builder.call("Neg", formal)[0])
+        function = ir.Function("acme.future", "Negate", "", graph=body, attributes=[])
+        return op.builder.call_function(function, x, version=1)[0]
+
+    def export():
+        target = torch.ops.aten.neg.default
+        torch_onnx.register_custom_translation(target, translate, opset_version=35)
+        try:
+            return torch_onnx.export(
+                Model().eval(),
+                (torch.randn(3),),
+                opset_version=35,
+                optimize=False,
+                verbose=False,
+            )
+        finally:
+            torch_onnx.unregister_custom_translation(target, opset_version=35)
+
+    if conversion_error:
+        with (
+            mock.patch(
+                "onnxscript.version_converter.convert_version",
+                side_effect=ValueError("unsupported future conversion"),
+            ),
+            pytest.raises(
+                torch_onnx.errors.ConversionError,
+                match="Construct the function using the active translation builder",
+            ),
+        ):
+            export()
+    else:
+        program = export()
+        assert program.model.opset_imports[""] == 35
+        assert next(iter(program.model.functions.values())).opset_imports[""] == 35
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        torch_onnx.testing.assert_onnx_program(program, backend="reference")
+
+
 @pytest.mark.opset29
-@pytest.mark.parametrize("operator", ["expm1", "log1p", "logcumsumexp"])
+@pytest.mark.parametrize(
+    "operator", ["expm1", "special.expm1", "log1p", "special.log1p", "logcumsumexp"]
+)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("optimize", [False, True])
 def test_29_precision_preserving_operators(operator, dtype, optimize):
@@ -356,6 +409,8 @@ def test_29_precision_preserving_operators(operator, dtype, optimize):
         def forward(self, x):
             if operator == "logcumsumexp":
                 return torch.logcumsumexp(x, -1)
+            if operator.startswith("special."):
+                return getattr(torch.special, operator.removeprefix("special."))(x)
             return getattr(torch, operator)(x)
 
     x = torch.tensor([-1e-8, -0.0, 0.0, 1e-8, 0.25], dtype=dtype)
@@ -365,7 +420,7 @@ def test_29_precision_preserving_operators(operator, dtype, optimize):
         Model().eval(), (x,), opset_version=29, optimize=optimize, verbose=False
     )
     expected_op = {"expm1": "Expm1", "log1p": "Log1p", "logcumsumexp": "LogCumSumExp"}[
-        operator
+        operator.rsplit(".", 1)[-1]
     ]
     assert any(node.op_type == expected_op for node in program.model.graph)
     onnx.checker.check_model(program.model_proto, full_check=True)

@@ -50,3 +50,11 @@ pytest tests/exporter/test_opsets.py -m opset29
 ```
 
 Default exports still use PyTorch's established default opset, not development 29.
+
+## Semantic normalization operators
+
+Batch normalization uses ONNX `BatchNormalization` in inference and training
+translations. Training supplies the computed batch mean and biased variance to
+the inference-mode operator, while separately preserving PyTorch's saved
+statistics and unbiased running-variance update. This retains a fusible
+normalization operator without requiring a training-capable runtime.

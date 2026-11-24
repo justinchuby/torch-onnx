@@ -147,22 +147,33 @@ class TestNativeNeuralOps(common_utils.TestCase):
                 mean,
                 var,
             )
+
+        def translate(op, a, w, b, m, v):
+            outputs = normalization.aten__native_batch_norm_legit_functional(
+                op,
+                a,
+                w if affine else None,
+                b if affine else None,
+                m,
+                v,
+                training,
+                momentum,
+                1e-5,
+            )
+            batch_norms = [
+                node
+                for node in op.builder.graph
+                if node.op_type == "BatchNormalization"
+            ]
+            self.assertEqual(len(batch_norms), 1)
+            self.assertEqual(batch_norms[0].attributes["training_mode"].as_int(), 0)
+            return outputs
+
         actual = _evaluate(
-            lambda op, a, w, b, m, v: (
-                normalization.aten__native_batch_norm_legit_functional(
-                    op,
-                    a,
-                    w if affine else None,
-                    b if affine else None,
-                    m,
-                    v,
-                    training,
-                    momentum,
-                    1e-5,
-                )
-            ),
+            translate,
             [x, weight, bias, mean, var],
             expected,
+            runtime=True,
         )
         self.assertEqual(actual, list(expected), atol=2e-6, rtol=2e-5)
 
@@ -179,6 +190,29 @@ class TestNativeNeuralOps(common_utils.TestCase):
             expected,
         )
         self.assertEqual(actual, list(expected))
+
+    @common_utils.parametrize("eps", [1e-5, 0.5])
+    @common_utils.parametrize("dtype", [torch.float32, torch.float64])
+    def test_batch_norm_small_variance(self, device, eps, dtype):
+        x = torch.randn(2, 3, 4, device=device, dtype=dtype) * 1e-4 + 0.125
+        weight = torch.tensor([0.75, -0.5, 2.0], device=device, dtype=dtype)
+        bias = torch.randn(3, device=device, dtype=dtype)
+        mean = torch.zeros(3, device=device, dtype=dtype)
+        var = torch.ones(3, device=device, dtype=dtype)
+        expected = torch.ops.aten._native_batch_norm_legit_functional(
+            x, weight, bias, mean, var, True, 0.3, eps
+        )
+        actual = _evaluate(
+            lambda op, a, w, b, m, v: (
+                normalization.aten__native_batch_norm_legit_functional(
+                    op, a, w, b, m, v, True, 0.3, eps
+                )
+            ),
+            [x, weight, bias, mean, var],
+            expected,
+            runtime=True,
+        )
+        self.assertEqual(actual, list(expected), atol=2e-6, rtol=2e-5)
 
     @common_utils.parametrize(
         "impl",

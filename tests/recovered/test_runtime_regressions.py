@@ -29,11 +29,14 @@ def test_batch_norm_no_stats_half_precision(mixed_weights):
     model = torch.nn.BatchNorm1d(3, track_running_stats=False).eval()
     if not mixed_weights:
         model = model.half()
-    export_and_assert(
+    program = export_and_assert(
         model,
         (torch.randn(4, 3, dtype=torch.float16),),
         rtol=2e-3,
         atol=1e-3,
+    )
+    assert (
+        sum(node.op_type == "BatchNormalization" for node in program.model.graph) == 1
     )
 
 

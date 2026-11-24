@@ -26,6 +26,19 @@ from torchvision.models.detection.roi_heads import (
 import torch_onnx
 
 
+class _ClipBoxes(torch.nn.Module):
+    def forward(self, boxes, size):
+        height = torch.scalar_tensor(
+            size.shape[0], dtype=boxes.dtype, device=boxes.device
+        )
+        width = torch.scalar_tensor(
+            size.shape[1], dtype=boxes.dtype, device=boxes.device
+        )
+        x = boxes[..., 0::2].clamp_min(0).clamp_max(width)
+        y = boxes[..., 1::2].clamp_min(0).clamp_max(height)
+        return torch.stack((x, y), dim=-1).flatten(start_dim=-2)
+
+
 class _BatchedMaskPaste(torch.nn.Module):
     def forward(self, masks, boxes, canvas):
         padded, scale = torchvision.models.detection.roi_heads.expand_masks(
@@ -98,7 +111,14 @@ class _BatchedHeatmapKeypoints(torch.nn.Module):
 
 class TestRecoveredDetectionPostprocessing(RecoveredRuntimeHarness):
     def _check_postprocessing(
-        self, model, reference, arguments, dimensions, *, capture_index=0
+        self,
+        model,
+        reference,
+        arguments,
+        dimensions,
+        *,
+        capture_index=0,
+        required_operator="GridSample",
     ):
         for args in arguments:
             torch.testing.assert_close(
@@ -107,7 +127,7 @@ class TestRecoveredDetectionPostprocessing(RecoveredRuntimeHarness):
         program = self.run_test(
             model, arguments[capture_index], dynamic_shapes=dimensions
         )
-        self.assertIn("GridSample", {node.op_type for node in program.model.graph})
+        self.assertIn(required_operator, {node.op_type for node in program.model.graph})
         with TemporaryDirectory() as directory:
             path = Path(directory) / "postprocessing.onnx"
             program.save(path, external_data=False)
@@ -118,6 +138,40 @@ class TestRecoveredDetectionPostprocessing(RecoveredRuntimeHarness):
                     torch.testing.assert_close(
                         list(candidate(*args)), expected, rtol=1e-3, atol=1e-7
                     )
+
+    def test_clip_boxes_to_image(self):
+        class Module(torch.nn.Module):
+            def forward(self, boxes, size):
+                shape = (size.shape[0], size.shape[1])
+                return torchvision.ops.boxes.clip_boxes_to_image(boxes, shape)
+
+        boxes = torch.randn(5, 4) * 500
+        boxes[:, 2:] += boxes[:, :2]
+        size = torch.randn(200, 300)
+        size_2 = torch.randn(300, 400)
+        arguments = [
+            (boxes, size),
+            (boxes, size_2),
+            (
+                torch.tensor([[-2.0, -3.0, 20.0, 30.0], [1.0, 2.0, 5.0, 6.0]]),
+                torch.empty(7, 11),
+            ),
+            (torch.empty(0, 4), torch.empty(7, 11)),
+            (boxes, torch.empty(0, 11)),
+        ]
+        self._check_postprocessing(
+            _ClipBoxes(),
+            Module(),
+            arguments,
+            (
+                {0: torch.export.Dim("box_count")},
+                {
+                    0: torch.export.Dim("clip_height"),
+                    1: torch.export.Dim("clip_width"),
+                },
+            ),
+            required_operator="Clip",
+        )
 
     def test_paste_mask_in_image(self):
         arguments = []

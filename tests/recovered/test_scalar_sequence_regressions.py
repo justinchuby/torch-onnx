@@ -5,8 +5,15 @@ Removed in 6dca9f63bc4975ac323044a440c2c7e5f8512408. Ordinary Modules
 replace ScriptModules; original examples and scalar/dtype contracts remain.
 """
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import onnx_ir as ir
 import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
+
+import torch_onnx
+from torch_onnx._torchlib.ops import sequences
 
 
 class _Arange(torch.nn.Module):
@@ -34,6 +41,75 @@ class _Arange(torch.nn.Module):
 
 
 class TestRecoveredScalarSequences(RecoveredRuntimeHarness):
+    def test_getitem(self):
+        class GetItemModel(torch.nn.Module):
+            def forward(self, x, y, z, ind):
+                # this will create prim::ListConstruct(x, y, z) + aten::__getitem__
+                arr = [x, y, z]
+                return arr[ind]
+
+        class NativeGetItem(torch.nn.Module):
+            def forward(self, x, y, z, ind):
+                return torch.ops.recovered_getitem.select.default(x, y, z, ind)
+
+        def implementation(x, y, z, ind):
+            return GetItemModel()(x, y, z, ind).clone()
+
+        def fake(x, y, z, ind):
+            count = torch.library.get_ctx().new_dynamic_size(min=1, max=3)
+            return x.new_empty((count, *x.shape[1:]))
+
+        def translation(
+            op: torch_onnx.TranslationContext,
+            x: ir.Value,
+            y: ir.Value,
+            z: ir.Value,
+            ind: ir.Value,
+        ) -> ir.Value:
+            return sequences.aten_getitem(op, [x, y, z], ind)
+
+        x = torch.randn(3, 4, 5)
+        y = torch.randn(1, 4, 5)
+        z = torch.randn(2, 4, 5)
+        examples = [
+            (x, y, z, torch.tensor(index, dtype=torch.long))
+            for index in (1, -2, 0, 2, -1, -3)
+        ]
+        with torch.library._scoped_library("recovered_getitem", "FRAGMENT") as library:
+            qualified = "recovered_getitem::select"
+            torch.library.define(
+                qualified,
+                "(Tensor x, Tensor y, Tensor z, Tensor ind) -> Tensor",
+                lib=library,
+            )
+            torch.library.impl(qualified, "CompositeExplicitAutograd", lib=library)(
+                implementation
+            )
+            torch.library.register_fake(qualified, lib=library)(fake)
+            target = torch.ops.recovered_getitem.select.default
+            torch_onnx.register_custom_translation(target, translation)
+            try:
+                program = self.run_test(
+                    NativeGetItem(),
+                    examples[0],
+                    additional_test_inputs=examples[1:],
+                )
+                self.assertIn(
+                    "SequenceAt", {node.op_type for node in program.model.graph}
+                )
+                self.assertNotIsInstance(program.model.graph.outputs[0].shape[0], int)
+                with TemporaryDirectory() as directory:
+                    path = Path(directory) / "sequence-getitem.onnx"
+                    program.save(path, external_data=False)
+                    reloaded = torch_onnx.ONNXProgram(
+                        ir.load(path), program.exported_program
+                    )
+                    for candidate in (program, reloaded):
+                        for args in examples:
+                            self.assertEqual(candidate(*args)[0], GetItemModel()(*args))
+            finally:
+                torch_onnx.unregister_custom_translation(target)
+
     def test_list_set(self):
         class ListModel(torch.nn.Module):
             def forward(self, x, y):

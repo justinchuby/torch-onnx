@@ -9,15 +9,15 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 661 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 48
+retired frontend. 664 original runtime test bodies/comments, four control-flow
+regressions, 37 model methods, seven autograd forward-inlining methods and 51
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 61, 'inapplicable': 57, 'migrated': 757}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 55, 'inapplicable': 57, 'migrated': 763}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -73,11 +73,45 @@ checks their structure; ordinary ONNXProgram optimization is then exercised with
 a fresh inference session and unchanged numerical outputs. This maps the intent
 to native registration/functions, not automatic `export_modules_as_functions`
 module extraction.
+Three further utility fixtures retain the original shape-building module,
+three-LayerNorm attribute model and frozen-Embedding model that lacks a `freeze`
+attribute. Explicit native functions preserve shape constants inside their
+owning function and serialize nested M/LayerNorm calls with the original
+`num_layers`, `eps` and `elementwise_affine` attributes, including a real epsilon
+attribute reference. The Embedding fixture uses ordinary native model export.
+Original, negative, changed-shape/value inputs, save/reload and normal subsequent
+optimization are checked against untouched source bodies. These are native API
+mappings, not a reinstatement of automatic module extraction.
+
+The full recurrent source method covers 192 eval configurations: ReLU/tanh RNN,
+LSTM and GRU; one/three layers; both directions/state options; unpacked,
+time-first packed and batch-first packed inputs; and dropout 0/0.2. There are 96
+exports: each checks both dropout configurations against independently constructed
+original modules with matching weights, since dropout is disabled in eval mode.
+A masked cell recurrence preserves every layer/direction's states and packed
+padding semantics through real dynamic ONNX Loops. Original batch seven/eight
+fixtures and an additional shorter-time, batch-nine fixture execute before and
+after serialization. Time and batch metadata remain symbolic. This explicitly
+adapts PackedSequence and does not claim automatic capture of that Python type
+or training/dropout execution.
+
+Shape-driven box clipping retains the original five boxes, 200x300 image and
+300x400 additional image. Explicit tensor bounds avoid the upstream wrapper's
+specialized Python scalar clamp. Native Clip also checks boundary/negative boxes,
+a smaller nonsquare image, empty boxes and zero image height against untouched
+TorchVision, before and after serialization.
 
 Fixed-arity list mutation and prefix-sum indexing retain the original 12x4
 fixtures and independent imperative oracles. Tensorized list storage replaces
 Python's data-dependent list index, including changed, negative and boundary
 indices; this does not claim variable output arity or general Python-list capture.
+The original differently shaped three-tensor getitem fixture also executes all
+six valid positive/negative indices. A scoped custom-op boundary avoids Python's
+Tensor-index specialization while exercising the builtin native getitem
+translation. This exposed its missing SequenceConstruct element type, now
+explicitly supplied and schema-checked. SequenceAt preserves the data-dependent
+leading output dimension before and after serialization; automatic capture of
+Python-list Tensor indexing is not claimed.
 
 Quantization recovery uses explicit integer-storage inputs/outputs and native
 decomposed Q/DQ, not deprecated QTensor export. Untouched eager quantized modules
@@ -891,7 +925,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:5753::test_flatten2d` | migrated | `test_runtime_regressions.py::test_flatten2d`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5761::test_flatten2d_neg` | migrated | `test_runtime_regressions.py::test_flatten2d_neg`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:5774::test_flatten_dynamic_axes` | migrated | `tests/recovered/test_capture_regressions.py::test_flatten_dynamic_axes`; modern Module capture, schema/save/reload/runtime |
-| `test_pytorch_onnx_onnxruntime.py:5793::test_getitem` | blocked | torch.export cannot extract the runtime Tensor index for a Python list of differently shaped tensors (GuardOnDataDependentSymNode); no specialized-index substitute is counted as restored |
+| `test_pytorch_onnx_onnxruntime.py:5793::test_getitem` | migrated | tests/recovered/test_scalar_sequence_regressions.py::test_getitem; original3x4x5/1x4x5/2x4x5 tensors and six positive/negative runtime indices; scoped custom boundary exercises builtin native getitem, repaired explicit sequence typing, variable leading output shape and save/reload; no automatic Python-list capture claim |
 | `test_pytorch_onnx_onnxruntime.py:5811::test_item` | migrated | Original finite item-to-int value contract verified against Python int for positive/negative fractions; typed INT64 scalar output avoids unbacked Python-int capture and removes original dtype suppression |
 | `test_pytorch_onnx_onnxruntime.py:5823::test_nonzero` | migrated | tests/recovered/test_additional_regressions.py::test_nonzero |
 | `test_pytorch_onnx_onnxruntime.py:5831::test_unbind` | migrated | `test_runtime_regressions.py::test_unbind`; original numerical body, modern standalone harness |
@@ -1147,7 +1181,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:10958::test_multiple_conv_bn` | migrated | Original model and all train/eval cases retained in tests/recovered/test_convolution_embedding_regressions.py; regular module replaces scripted frontend, strict numerical/shape/dtype and save/reload checks |
 | `test_pytorch_onnx_onnxruntime.py:11001::test_nms` | migrated | tests/recovered/test_additional_regressions.py::test_nms |
 | `test_pytorch_onnx_onnxruntime.py:11014::test_batched_nms` | migrated | tests/recovered/test_additional_regressions.py::test_batched_nms |
-| `test_pytorch_onnx_onnxruntime.py:11029::test_clip_boxes_to_image` | blocked | Captured torchvision wrapper guards size[0] == 200 and rejects the supplied 300x400 additional input; dynamic behavior is not restored |
+| `test_pytorch_onnx_onnxruntime.py:11029::test_clip_boxes_to_image` | migrated | tests/recovered/test_detection_postprocessing_regressions.py::test_clip_boxes_to_image; original five-box/200x300/300x400 fixtures plus boundary, empty-box and zero-height cases; explicit shape-derived tensor bounds avoid frontend scalar specialization, native Clip and save/reload checked against untouched TorchVision |
 | `test_pytorch_onnx_onnxruntime.py:11053::test_roi_align` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align |
 | `test_pytorch_onnx_onnxruntime.py:11063::test_roi_align_aligned` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align_aligned |
 | `test_pytorch_onnx_onnxruntime.py:11088::test_roi_pool` | blocked | Latest torchvision ROI pool returns pooled values and argmax with a six-argument native signature; current MaxRoiPool lowering lacks the argmax contract |
@@ -1216,7 +1250,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:12789::test_sequence_to_int` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_int |
 | `test_pytorch_onnx_onnxruntime.py:12799::test_sequence_to_float` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_float |
 | `test_pytorch_onnx_onnxruntime.py:12811::test_sequence_to_bool` | migrated | tests/recovered/test_additional_regressions.py::test_sequence_to_bool |
-| `test_pytorch_onnx_onnxruntime.py:12822::test_tuple_output_from_if_with_raised_exception` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:12822::test_tuple_output_from_if_with_raised_exception` | blocked | Exact original body/zero input fails torch.export on data-dependent float(t) expression zuf0 before ONNX lowering; constant-output specialization would not preserve the negative-input exception |
 | `test_pytorch_onnx_onnxruntime.py:12837::test_quantized_linear` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_linear`; original weights/nonzero bias/input offset, explicit integer-storage Q/DQ, exact original oracle before/after serialization |
 | `test_pytorch_onnx_onnxruntime.py:12853::test_quantized_conv1d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv1d`; original 3x16x32 input/33x16x3 weights/stride/bias, exact original quantized oracle and sign-changed inputs with save/reload |
 | `test_pytorch_onnx_onnxruntime.py:12867::test_quantized_conv2d` | migrated | `tests/recovered/test_quantized_storage_regressions.py::test_quantized_conv2d`; original 3x16x32x32 input/weights/stride/bias, native Q/DQ/Conv, exact original oracle at changed inputs |
@@ -1251,13 +1285,13 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | migrated | tests/recovered/test_parameterized_regressions.py::test_affine_grid_3d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | migrated | tests/recovered/test_parameterized_regressions.py::test_grid_sample; original parameter matrix |
-| `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Optional None output is not restored: minimal valid native Optional(empty) model passes full schema checking and ordinary ORT returns None, but exact reused torch.onnx.ONNXProgram crashes this Windows Torch2.15/ORT1.32 process in _from_ort_value/OrtValue.element_type; no replacement class, monkeypatch or new skip |
+| `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Exact original Tensor fixture exports but specializes away the singleton branch: 1x4 input returns ones instead of fives; None-capable Optional input/output and dynamic branch behavior are not restored by that export |
 | `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | migrated | `tests/recovered/test_capture_regressions.py::test_device_eq`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13846::test_lerp` | migrated | tests/recovered/test_additional_regressions.py::test_lerp |
 | `test_pytorch_onnx_onnxruntime.py:13863::test_print_tensor_within_torch_nn_module` | migrated | test_additional_regressions.py preserves print/tolist comments and 10x5 float/complex fixtures; float numerical slicing and changed values pass, complex retains expected error with explicit scalar-extraction diagnosis |
 | `test_pytorch_onnx_onnxruntime.py:13894::test_sage_conv` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:13974::test_rnn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13974::test_rnn` | migrated | tests/recovered/test_recurrent_matrix_regressions.py::test_rnn; all192 original eval configurations via96 exports with independently checked paired dropout settings; explicit masked cell recurrence preserves packed/unpacked, one/three layers, both directions, optional initial states and dynamic time/batch; original batch7/8 and shorter-time batch9 compared to unchanged nn modules before/after serialization |
 | `test_pytorch_onnx_onnxruntime_cuda.py:39::test_gelu_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |
 | `test_pytorch_onnx_onnxruntime_cuda.py:58::test_layer_norm_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |
 | `test_pytorch_onnx_onnxruntime_cuda.py:82::test_softmaxCrossEntropy_fusion_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |
@@ -1322,9 +1356,9 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:773::test_export_does_not_fail_on_frozen_scripted_module` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:801::test_local_function` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:921::test_local_function_overloads` | migrated | Original optional-argument model, three source-named functions and one/two-output signatures mapped to explicit native registration; original/negative inputs, structure/save-reload and ordinary optimized fresh-session execution in test_export_utility_regressions.py; no automatic module extraction claim |
-| `test_utility_funs.py:963::test_local_function_infer_scopes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:988::test_local_function_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1049::test_local_function_subset_of_predefined_attributes` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:963::test_local_function_infer_scopes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_infer_scopes; original4x5 shape concatenation/view, explicit M function with owned constants, symbolic rows/columns, changed7x3 input, save/reload and normal optimization; not automatic module extraction |
+| `test_utility_funs.py:988::test_local_function_predefined_attributes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_predefined_attributes; original three-LayerNorm model, explicit nested M/LayerNorm functions and exact num_layers/eps/elementwise_affine attributes, epsilon reference, numerical/save/reload/optimization checks |
+| `test_utility_funs.py:1049::test_local_function_subset_of_predefined_attributes` | migrated | tests/recovered/test_function_scope_regressions.py::test_local_function_subset_of_predefined_attributes; original frozen2x3 Embedding and three-LayerNorm body lacks freeze attribute yet exports natively; independent numerical/save/reload/optimization checks, no automatic module extraction claim |
 | `test_utility_funs.py:1082::test_node_scope` | migrated | test_export_utility_regressions.py; original GELU/LayerNorm/nested ReLU model; exact native module-scope set |
 | `test_utility_funs.py:1142::test_scope_of_constants_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared native initializer and valid source-module ownership after CSE, rather than three JIT Constants |
 | `test_utility_funs.py:1190::test_scope_of_nodes_when_combined_by_cse_pass` | migrated | test_export_utility_regressions.py; one shared Add owned by first layer and three distinct Mul owners, plus real runtime/save/reload |

@@ -225,7 +225,13 @@ def aten_getitem(
 ) -> ir.Value:
     if not isinstance(self, ir.Value):
         if not isinstance(i, int):
-            self = op.SequenceConstruct(*self)
+            if not self:
+                raise ValueError(
+                    "aten::getitem cannot select from an empty tensor list. "
+                    "Supply a nonempty list and an index within its bounds."
+                )
+            sequence_type = ir.SequenceType(common_ops.require_type(op, self[0]))
+            self = op.SequenceConstruct(*self, output_types=[sequence_type])
         else:
             return self[i]
     return op.SequenceAt(

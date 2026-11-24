@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 596 original runtime test bodies/comments, four control-flow
+retired frontend. 601 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 136, 'inapplicable': 55, 'migrated': 684}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 131, 'inapplicable': 55, 'migrated': 689}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -55,6 +55,11 @@ with changed values and separately exported branch shapes. Fixed-trip list
 accumulation retains its original stack/transpose computation, without claiming
 a runtime Sequence loop. Custom-autograd Clip/ReLU forward bodies are inlined
 directly; obsolete `prim::PythonOp` symbolic registration is not reinstated.
+Five further fixed-arity list-block cases retain original matmul/nested-loop
+bodies and changed values. Scripted `return list.append(...)` is spelled as
+append followed by return for Python modules: independent original scripted
+probes confirmed the list-return semantics, and direct matmul oracles check the
+pop/delete outputs. These recovered cases do not depend on scripting.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -964,11 +969,11 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11667::test_index_put_if_3` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested zero/one/other state mutations, actual nested If semantics, empty and changed-size direct/serialized ORT results checked against original imperative module; EP guards retain min2 capture limitation |
 | `test_pytorch_onnx_onnxruntime.py:11713::test_index_put_if_4` | migrated | tests/recovered/test_branch_alias_regressions.py; original rebinding and in-place assignment order retained, actual If and empty/nonempty changed-size direct/serialized ORT checks against original module; EP guards retain min2 capture limitation |
 | `test_pytorch_onnx_onnxruntime.py:11760::test_index_put_if_5` | migrated | tests/recovered/test_branch_alias_regressions.py; original state_ref alias setup and rebinding retained, actual If across empty/nonempty states, exact direct/serialized ORT values/shapes/dtypes against original module; EP guards retain min2 capture limitation |
-| `test_pytorch_onnx_onnxruntime.py:11809::test_list_append_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11823::test_list_append_in_nested_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11838::test_list_pop_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11858::test_list_del_in_block` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11878::test_list_unpack` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11809::test_list_append_in_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original fixed-arity matmul append loop and examples plus changed values, numerical/shape/dtype and serialization checks; not dynamic-length sequences |
+| `test_pytorch_onnx_onnxruntime.py:11823::test_list_append_in_nested_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original two-level fixed-loop matmul/list body and examples plus changed values, serialization/runtime checks; not dynamic-length sequences |
+| `test_pytorch_onnx_onnxruntime.py:11838::test_list_pop_in_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original pop/reappend loops with scripted append-return semantics preserved as explicit Python return, changed inputs and independent final-matmul oracle, serialization/runtime checks |
+| `test_pytorch_onnx_onnxruntime.py:11858::test_list_del_in_block` | migrated | tests/recovered/test_list_mutation_regressions.py; original delete/reappend loops with scripted append-return semantics preserved as explicit Python return, changed inputs and independent first-matmul oracle, serialization/runtime checks |
+| `test_pytorch_onnx_onnxruntime.py:11878::test_list_unpack` | migrated | tests/recovered/test_list_mutation_regressions.py; original three-element matmul-list unpack and two outputs, changed inputs, serialization/runtime checks; unused original calculations retained with private variable names |
 | `test_pytorch_onnx_onnxruntime.py:11894::test_index_put_inplace_ops` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11942::test_input_mask_model` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11998::test_unsafe_chunk` | migrated | tests/recovered/test_additional_regressions.py::test_unsafe_chunk |

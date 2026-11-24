@@ -185,3 +185,115 @@ class TestRecoveredListMutations(RecoveredRuntimeHarness):
         x = torch.randn(4, 4, 3, 4)
         y = torch.randn(4, 5)
         self.run_test(model, (x, y))
+
+    def test_list_append_in_block(self):
+        class ListModel(torch.nn.Module):
+            def forward(self, x, y):
+                res = []
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                return res
+
+        model = ListModel()
+        x = torch.randn(16, 3, 4)
+        y = torch.randn(4, 5)
+        self.run_test(
+            model,
+            (x, y),
+            additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
+        )
+
+    def test_list_append_in_nested_block(self):
+        class ListModel(torch.nn.Module):
+            def forward(self, x, y):
+                res = []
+                for i in range(x.size(0)):
+                    for j in range(x.size(1)):
+                        res.append(torch.matmul(x[i][j], y))
+                return res
+
+        model = ListModel()
+        x = torch.randn(4, 4, 3, 4)
+        y = torch.randn(4, 5)
+        self.run_test(
+            model,
+            (x, y),
+            additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
+        )
+
+    def test_list_pop_in_block(self):
+        class ListModel(torch.nn.Module):
+            def forward(self, x, y):
+                res = []
+                elem = torch.matmul(x[0], y)
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                for _ in range(x.size(0)):
+                    elem = res.pop()
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                    elem = res.pop()
+                # Scripted append returned the list; Python append returns None.
+                res.append(elem)
+                return res
+
+        model = ListModel()
+        x = torch.randn(16, 3, 4)
+        y = torch.randn(4, 5)
+        program = self.run_test(
+            model,
+            (x, y),
+            additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
+        )
+
+        actual = program(x, y)
+        self.assertEqual(len(actual), 1)
+        torch.testing.assert_close(actual[0], x[-1] @ y)
+
+    def test_list_del_in_block(self):
+        class ListModel(torch.nn.Module):
+            def forward(self, x, y):
+                res = []
+                elem = torch.matmul(x[0], y)
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                for _ in range(x.size(0)):
+                    del res[0]
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                    del res[0]
+                # Scripted append returned the list; Python append returns None.
+                res.append(elem)
+                return res
+
+        model = ListModel()
+        x = torch.randn(16, 3, 4)
+        y = torch.randn(4, 5)
+        program = self.run_test(
+            model,
+            (x, y),
+            additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
+        )
+
+        actual = program(x, y)
+        self.assertEqual(len(actual), 1)
+        torch.testing.assert_close(actual[0], x[0] @ y)
+
+    def test_list_unpack(self):
+        class ListModel(torch.nn.Module):
+            def forward(self, x, y):
+                res = []
+                _elem = torch.matmul(x[0], y)
+                for i in range(x.size(0)):
+                    res.append(torch.matmul(x[i], y))
+                a, b, _c = res
+                return a, b
+
+        model = ListModel()
+        x = torch.randn(3, 3, 4)
+        y = torch.randn(4, 5)
+        self.run_test(
+            model,
+            (x, y),
+            additional_test_inputs=[(torch.randn_like(x), torch.randn_like(y))],
+        )

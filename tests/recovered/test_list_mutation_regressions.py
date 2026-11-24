@@ -12,6 +12,21 @@ from test_runtime_regressions import RecoveredRuntimeHarness
 
 
 class TestRecoveredListMutations(RecoveredRuntimeHarness):
+    def test_sequance_loopcarried(self):
+        class SequanceLoopModel(torch.nn.Module):
+            def forward(self, x):
+                outputs = []
+                for _ in range(3):
+                    outputs += [x]
+                return torch.stack(outputs).transpose(0, 1)
+
+        x = torch.ones((3, 4), dtype=torch.int)
+        self.run_test(
+            SequanceLoopModel(),
+            x,
+            additional_test_inputs=[torch.arange(12, dtype=torch.int).reshape(3, 4)],
+        )
+
     def test_loop_multi_dim(self):
         class LoopMultiDimModel(torch.nn.Module):
             def forward(self, x, y):

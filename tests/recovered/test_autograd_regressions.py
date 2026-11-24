@@ -15,6 +15,44 @@ import torch_onnx
 
 
 class TestRecoveredAutograd(RecoveredRuntimeHarness):
+    def test_auto_grad(self):
+        class MyClip(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, input, scalar):
+                ctx.save_for_backward(input)
+                return input.clamp(min=scalar)
+
+        class MyRelu(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, input):
+                ctx.save_for_backward(input)
+                return input.clamp(min=0)
+
+        class MyClipModule(torch.nn.Module):
+            def forward(self, x, min):
+                return MyClip.apply(x, min)
+
+        x = torch.randn(3, 3)
+        min = torch.tensor([0.0])
+        self.run_test(
+            MyClipModule(),
+            (x, min),
+            additional_test_inputs=[
+                (torch.arange(9.0).reshape(3, 3) - 4, torch.tensor([1.5]))
+            ],
+        )
+
+        class MyReluModule(torch.nn.Module):
+            def forward(self, x):
+                return MyRelu.apply(x)
+
+        x = torch.randn(3, 3)
+        self.run_test(
+            MyReluModule(),
+            x,
+            additional_test_inputs=[torch.arange(9.0).reshape(3, 3) - 4],
+        )
+
     def test_single_output(self):
         class SingleOut(torch.autograd.Function):
             @staticmethod

@@ -9,14 +9,14 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 592 original runtime test bodies/comments, four control-flow
+retired frontend. 596 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 40
 optimizer/utility methods were ported to the modern standalone exporter. Each exports real models and compares
 numerical results including shape/dtype; private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 140, 'inapplicable': 55, 'migrated': 680}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 136, 'inapplicable': 55, 'migrated': 684}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -49,6 +49,12 @@ domain. This does not claim that PyTorch's guard limitation has been repaired.
 Two attribute-mutation loops also retain their original per-call reset behavior,
 with buffer registration at initialization and changed runtime inputs. They do
 not claim automatic persistence of arbitrary module mutations across ONNX calls.
+
+Static uninitialized-return regressions cover both Tensor and fixed-list outputs
+with changed values and separately exported branch shapes. Fixed-trip list
+accumulation retains its original stack/transpose computation, without claiming
+a runtime Sequence loop. Custom-autograd Clip/ReLU forward bodies are inlined
+directly; obsolete `prim::PythonOp` symbolic registration is not reinstated.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -570,7 +576,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:3898::test_topk_int32_k` | migrated | tests/recovered/test_additional_regressions.py::test_topk_int32_k |
 | `test_pytorch_onnx_onnxruntime.py:3908::test_topk_smallest_unsorted` | migrated | tests/recovered/test_additional_regressions.py::test_topk_smallest_unsorted |
 | `test_pytorch_onnx_onnxruntime.py:3922::test_topk_script` | migrated | `tests/recovered/test_capture_regressions.py::test_topk_script`; modern Module capture, schema/save/reload/runtime |
-| `test_pytorch_onnx_onnxruntime.py:3934::test_auto_grad` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:3934::test_auto_grad` | migrated | tests/recovered/test_autograd_regressions.py; original custom Clip/ReLU forward bodies and examples plus changed inputs/threshold, native forward inlining with serialization/runtime checks; obsolete prim::PythonOp symbolic wiring intentionally not resurrected |
 | `test_pytorch_onnx_onnxruntime.py:3977::test_clip_int` | migrated | `test_runtime_regressions.py::test_clip_int`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3984::test_relu_int` | migrated | `test_runtime_regressions.py::test_relu_int`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3987::test_pad_int` | migrated | `test_runtime_regressions.py::test_pad_int`; original numerical body, modern standalone harness |
@@ -839,13 +845,13 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:8326::test_pad_circular_dynamic_axes` | migrated | tests/recovered/test_additional_regressions.py::test_pad_circular_dynamic_axes |
 | `test_pytorch_onnx_onnxruntime.py:8342::test_unsupported_pad` | migrated | tests/recovered/test_additional_regressions.py::test_unsupported_pad |
 | `test_pytorch_onnx_onnxruntime.py:8360::test_if_fold` | migrated | tests/recovered/test_additional_regressions.py::test_if_fold |
-| `test_pytorch_onnx_onnxruntime.py:8479::test_uninitialized` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8479::test_uninitialized` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested return body and input, changed values on same graph, separately exported singleton/other branch shapes and serialization/runtime checks; not dynamic branching |
 | `test_pytorch_onnx_onnxruntime.py:8493::test_uninitialized_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:8515::test_uninitialized_tensorList` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8515::test_uninitialized_tensorList` | migrated | tests/recovered/test_branch_alias_regressions.py; original fixed-list return body/input, changed values, separately exported branch shapes and serialization/runtime checks; not variable-length sequences |
 | `test_pytorch_onnx_onnxruntime.py:8530::test_uninitialized_tensorList_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:8550::test_uninitialized_intList` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:8572::test_uninitialized_tensorList_shape` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:8596::test_sequance_loopcarried` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8596::test_sequance_loopcarried` | migrated | tests/recovered/test_list_mutation_regressions.py; original fixed-trip list accumulation and stack/transpose, original/changed int32 values, serialization/runtime checks; no dynamic Sequence-loop claim |
 | `test_pytorch_onnx_onnxruntime.py:8607::test_reflection_pad` | migrated | tests/recovered/test_additional_regressions.py::test_reflection_pad |
 | `test_pytorch_onnx_onnxruntime.py:8616::test_replication_pad` | migrated | tests/recovered/test_additional_regressions.py::test_replication_pad |
 | `test_pytorch_onnx_onnxruntime.py:8626::test_im2col` | migrated | tests/recovered/test_additional_regressions.py::test_im2col |

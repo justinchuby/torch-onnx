@@ -21,6 +21,49 @@ import torch_onnx
 
 
 class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
+    def test_uninitialized(self):
+        class UninitializedModel(torch.nn.Module):
+            def forward(self, y):
+                if y.shape[1] < 5:
+                    if y.size(0) == 1:
+                        y = y + 4
+                    else:
+                        return y
+                return y
+
+        x = torch.ones((3, 4), dtype=torch.int)
+        self.run_test(
+            UninitializedModel(),
+            x,
+            additional_test_inputs=[torch.arange(12, dtype=torch.int).reshape(3, 4)],
+        )
+        for shape in [(1, 4), (2, 6)]:
+            self.run_test(
+                UninitializedModel(), torch.randint(-5, 5, shape, dtype=torch.int)
+            )
+
+    def test_uninitialized_tensorList(self):
+        class UninitializedTensorListModel(torch.nn.Module):
+            def forward(self, x):
+                if x[0].shape[0] < 5:
+                    if x.size(0) == 1:
+                        x = x + 4
+                    else:
+                        return [x]
+                return [x]
+
+        x = torch.ones((3, 4), dtype=torch.int)
+        self.run_test(
+            UninitializedTensorListModel(),
+            x,
+            additional_test_inputs=[torch.arange(12, dtype=torch.int).reshape(3, 4)],
+        )
+        for shape in [(1, 4), (2, 6)]:
+            self.run_test(
+                UninitializedTensorListModel(),
+                torch.randint(-5, 5, shape, dtype=torch.int),
+            )
+
     def _check_conditional_state(self, original, hidden_size, *, threshold=1):
         class ConditionalExample(torch.nn.Module):
             def __init__(self):

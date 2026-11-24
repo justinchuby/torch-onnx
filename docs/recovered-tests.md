@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 647 original runtime test bodies/comments, four control-flow
+retired frontend. 656 original runtime test bodies/comments, four control-flow
 regressions, 37 model methods, seven autograd forward-inlining methods and 47
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,10 +17,21 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 76, 'inapplicable': 57, 'migrated': 742}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 67, 'inapplicable': 57, 'migrated': 751}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
+
+Seven tensor-field assignment regressions retain the original bodies, optional
+checks, nested fixed loops and 30-element list. Cloned tensor buffers make the
+original TorchScript-permitted assignments executable as an independent eager
+oracle. Persistent bias updates use explicit input/output state with
+`torch.func.functional_call`, checked over three consecutive original, negative
+and random-input calls before and after serialization. This does not claim
+implicit ONNXProgram state mutation, gradient-bearing Parameter reassignment,
+dynamic loop trips or variable list arity. Original GeneralizedRCNN image
+resizing, normalization and two-image padding fixtures also execute, including
+the 10x20 to 100x150 spatial-size change; image-list cardinality remains fixed.
 
 Fixed-arity list mutation and prefix-sum indexing retain the original 12x4
 fixtures and independent imperative oracles. Tensorized list storage replaces
@@ -1099,20 +1110,20 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:11053::test_roi_align` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align |
 | `test_pytorch_onnx_onnxruntime.py:11063::test_roi_align_aligned` | migrated | tests/recovered/test_additional_regressions.py::test_roi_align_aligned |
 | `test_pytorch_onnx_onnxruntime.py:11088::test_roi_pool` | blocked | Latest torchvision ROI pool returns pooled values and argmax with a six-argument native signature; current MaxRoiPool lowering lacks the argmax contract |
-| `test_pytorch_onnx_onnxruntime.py:11097::test_resize_images` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11118::test_transform_images` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11149::test_rpn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11097::test_resize_images` | migrated | Original transform parameters and 3x10x20 to 3x100x150 dynamic resize fixtures; actual export/schema/numerical/save-reload checks in test_nested_contract_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11118::test_transform_images` | migrated | Original two-image normalization/resize/padding fixtures and changed values; actual export/schema/numerical/save-reload checks in test_nested_contract_regressions.py; fixed image-list cardinality |
+| `test_pytorch_onnx_onnxruntime.py:11149::test_rpn` | blocked | Exact original two-image, five-level RPN probe fails torch.export in torchvision batched_nms: data-dependent boxes.numel() heuristic cannot guard 4*u1 > 4000 after proposal filtering; no reduced/static fixture counted |
 | `test_pytorch_onnx_onnxruntime.py:11188::test_multi_scale_roi_align` | migrated | tests/recovered/test_nested_contract_regressions.py; original two-level feature-pyramid architecture/shapes and changed features/boxes, nested dict/list inputs, serialization/runtime checks; old opset-16 exclusion retired |
 | `test_pytorch_onnx_onnxruntime.py:11230::test_set_` | blocked | torch.export decomposition rejects set_ on an input together with other mutations |
 | `test_pytorch_onnx_onnxruntime.py:11251::test_set_attr_modules` | migrated | `tests/recovered/test_branch_alias_regressions.py::test_set_attr_modules`; original nested mutable embedding oracle, explicit persistent weight state across three calls and shapes, fixed-input elimination and save/reload; no implicit buffer-mutation claim |
 | `test_pytorch_onnx_onnxruntime.py:11311::test_set_attr_modules_2` | migrated | `tests/recovered/test_branch_alias_regressions.py::test_set_attr_modules_2`; original nested embedding/attribute-reset body, dynamic batch/sequence dimensions, 3x256 / 4x17 / 2x2 inputs, input-use elimination and save/reload |
-| `test_pytorch_onnx_onnxruntime.py:11350::test_set_attr` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11373::test_set_attr_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11398::test_set_attr_3` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11425::test_set_attr_4` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11457::test_set_attr_5` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11488::test_set_attr_in_loop` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
-| `test_pytorch_onnx_onnxruntime.py:11516::test_set_attr_in_loop_with_list` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:11350::test_set_attr` | migrated | Original reset/optional tensor-field body with cloned buffer-state eager oracle; export/numerical/save-reload checks in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11373::test_set_attr_2` | migrated | Original persistent bias accumulation; explicit functional_call state checked over three consecutive calls against original body before/after serialization in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11398::test_set_attr_3` | migrated | Original tensor-field resets and optional bias branch with buffer-state eager oracle; export/numerical/save-reload in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11425::test_set_attr_4` | migrated | Original optional checks and persistent bias updates; explicit functional_call state over three consecutive calls and save/reload in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11457::test_set_attr_5` | migrated | Original nested tensor-field updates and persistent bias; three-call explicit state/original-body oracle plus save/reload in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11488::test_set_attr_in_loop` | migrated | Original fixed nested-loop tensor-field assignments and buffer-state eager oracle; export/numerical/save-reload in test_module_state_regressions.py |
+| `test_pytorch_onnx_onnxruntime.py:11516::test_set_attr_in_loop_with_list` | migrated | Original fixed nested loops and 30-element tensor list with buffer-state eager oracle; export/numerical/save-reload in test_module_state_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:11547::test_index_put_if` | migrated | tests/recovered/test_branch_alias_regressions.py; original state/copy mutation bodies and original empty input, actual If with zero/singleton/nonempty counts and changed dimensions, original imperative oracle plus serialized ORT execution; EP guards retain min2 capture limitation |
 | `test_pytorch_onnx_onnxruntime.py:11600::test_index_put_if_2` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:11667::test_index_put_if_3` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested zero/one/other state mutations, actual nested If semantics, empty and changed-size direct/serialized ORT results checked against original imperative module; EP guards retain min2 capture limitation |

@@ -17,7 +17,54 @@ from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
 
 
+def _init_test_generalized_rcnn_transform():
+    min_size = 100
+    max_size = 200
+    image_mean = [0.485, 0.456, 0.406]
+    image_std = [0.229, 0.224, 0.225]
+    transform = torchvision.models.detection.transform.GeneralizedRCNNTransform(
+        min_size, max_size, image_mean, image_std
+    )
+    return transform
+
+
 class TestRecoveredNestedContracts(RecoveredRuntimeHarness):
+    def test_resize_images(self):
+        class TransformModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.transform = _init_test_generalized_rcnn_transform()
+
+            def forward(self, images):
+                return self.transform.resize(images, None)[0]
+
+        input = torch.rand(3, 10, 20)
+        input_test = torch.rand(3, 100, 150)
+        self.run_test(
+            TransformModule(),
+            (input,),
+            input_names=["input1"],
+            dynamic_axes={"input1": [0, 1, 2]},
+            additional_test_inputs=[(input,), (input_test,)],
+        )
+
+    def test_transform_images(self):
+        class TransformModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.transform = _init_test_generalized_rcnn_transform()
+
+            def forward(self, images: list[Tensor]):
+                return self.transform(images)[0].tensors
+
+        input = torch.rand(3, 100, 200), torch.rand(3, 200, 200)
+        input_test = torch.rand(3, 100, 200), torch.rand(3, 200, 200)
+        self.run_test(
+            TransformModule(),
+            (input,),
+            additional_test_inputs=[(input,), (input_test,)],
+        )
+
     def test_multi_scale_roi_align(self):
         class TransformModule(torch.nn.Module):
             def __init__(self) -> None:

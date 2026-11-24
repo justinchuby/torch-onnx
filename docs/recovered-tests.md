@@ -9,7 +9,7 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 671 original runtime test bodies/comments, four control-flow
+retired frontend. 672 original runtime test bodies/comments, four control-flow
 regressions, 43 model methods, seven autograd forward-inlining methods and 53
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
@@ -17,7 +17,7 @@ cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 40, 'inapplicable': 57, 'migrated': 778}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 39, 'inapplicable': 57, 'migrated': 779}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests belong to the configured suites; the backend-specific FBGEMM cohort runs
 explicitly in Linux CI.
@@ -28,6 +28,15 @@ flattens Python list outputs, so an explicitly registered native translation
 preserves SequenceConstruct inside a real export rather than requiring the
 retired scripted-list output convention. Independent list-output oracles cover
 original and changed widths, serialization and subsequent optimization.
+
+The GraphSAGE regression uses the original PyG `SAGEConv(2, 512, normalize=True)`
+forward and six-node, two-neighbor self-loop fixture, plus four/eight-node
+dynamic inputs and save/reload comparisons against the unchanged eager model.
+The source's invalid, unused `nn.Seq(Lin(...))` and other dead layers are removed.
+Equivalent two-nearest-neighbor input generation uses `torch.cdist` outside the
+exported graph, avoiding a torch-cluster binary dependency. `torch-geometric`
+is an explicit development dependency; this is actual PyG model coverage, not
+a replacement aggregation implementation or a dependency-conditioned skip.
 
 Two complete quantized ResNet fixtures retain the original pretrained V1
 checkpoints, source image, Resize/CenterCrop/ImageNet normalization and exact
@@ -1369,7 +1378,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | migrated | `tests/recovered/test_capture_regressions.py::test_device_eq`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13846::test_lerp` | migrated | tests/recovered/test_additional_regressions.py::test_lerp |
 | `test_pytorch_onnx_onnxruntime.py:13863::test_print_tensor_within_torch_nn_module` | migrated | test_additional_regressions.py preserves print/tolist comments and 10x5 float/complex fixtures; float numerical slicing and changed values pass, complex retains expected error with explicit scalar-extraction diagnosis |
-| `test_pytorch_onnx_onnxruntime.py:13894::test_sage_conv` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13894::test_sage_conv` | migrated | `test_runtime_model_regressions.py::test_sage_conv`; actual PyG SAGEConv(2,512,normalize=True), original six-node/two-neighbor input topology and unchanged forward; invalid unused source layers removed, four/eight-node dynamic graph, independent eager and serialization oracle; torch-geometric development dependency, no torch-cluster requirement |
 | `test_pytorch_onnx_onnxruntime.py:13974::test_rnn` | migrated | tests/recovered/test_recurrent_matrix_regressions.py::test_rnn; all192 original eval configurations via96 exports with independently checked paired dropout settings; explicit masked cell recurrence preserves packed/unpacked, one/three layers, both directions, optional initial states and dynamic time/batch; original batch7/8 and shorter-time batch9 compared to unchanged nn modules before/after serialization |
 | `test_pytorch_onnx_onnxruntime_cuda.py:39::test_gelu_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |
 | `test_pytorch_onnx_onnxruntime_cuda.py:58::test_layer_norm_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |

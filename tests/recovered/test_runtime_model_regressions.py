@@ -1,5 +1,7 @@
 # Copyright: PyTorch contributors. See LICENSE-PYTORCH.
-"""Runtime models from test_models_onnxruntime.py at e2c2673d00500d268fcb1cc63fa7cc3173876505.
+"""Runtime models recovered from PyTorch e2c2673d00500d268fcb1cc63fa7cc3173876505.
+
+Sources: test_models_onnxruntime.py and test_pytorch_onnx_onnxruntime.py.
 
 Removed in 6dca9f63bc4975ac323044a440c2c7e5f8512408. ShuffleNet captures
 batch3 to avoid zero/one specialization and still executes original batches1/3.
@@ -10,8 +12,65 @@ import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import nn
 
+import torch_onnx
+
 
 class TestRecoveredRuntimeModels(RecoveredRuntimeHarness):
+    def test_sage_conv(self):
+        from torch_geometric import nn as torch_geometric_nn
+
+        class MySAGEConv(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.SAGEConvBlock1 = torch_geometric_nn.SAGEConv(
+                    2, 512, normalize=True
+                )
+                # The source's invalid nn.Seq(Lin(...)) and other unused layers
+                # do not participate in this forward path.
+
+            def forward(self, coords0, coords1, edge_from, edge_to):
+                adj = torch.cat((edge_from, edge_to), dim=0)
+                gra = torch.transpose(torch.cat((coords0, coords1), dim=0), 0, 1)
+                x1 = self.SAGEConvBlock1(gra, edge_index=adj)
+                x = torch.unsqueeze(torch.sum(x1), dim=0)
+                return x
+
+        def inputs_for(nodes):
+            coords0 = torch.randn(1, nodes)
+            coords1 = torch.randn(1, nodes)
+            coords = torch.transpose(torch.cat((coords0, coords1), dim=0), 0, 1)
+            # Equivalent loop=True, k=2 topology without a torch-cluster binary
+            # dependency; neighbor construction is outside the exported model.
+            nearest = torch.cdist(coords, coords).topk(2, largest=False).indices
+            edge_from = nearest.reshape(1, -1)
+            edge_to = torch.arange(nodes).repeat_interleave(2).reshape(1, -1)
+            return coords0, coords1, edge_from, edge_to
+
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(0)
+            inputs = inputs_for(6)
+            model = MySAGEConv().eval()
+            nodes = torch.export.Dim("nodes", min=3)
+            program = torch_onnx.export(
+                model,
+                inputs,
+                dynamic_shapes=(
+                    {1: nodes},
+                    {1: nodes},
+                    {1: 2 * nodes},
+                    {1: 2 * nodes},
+                ),
+                input_names=["coords0", "coords1", "edge_from", "edge_to"],
+                output_names=["outputs"],
+                verbose=False,
+            )
+            self.assert_program_roundtrip(
+                program,
+                examples=[inputs, inputs_for(4), inputs_for(8)],
+                reference=model,
+            )
+            program.release()
+
     def test_transformer_encoder(self):
         class MyModule(torch.nn.Module):
             def __init__(self, ninp, nhead, nhid, dropout, nlayers):

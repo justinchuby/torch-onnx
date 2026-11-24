@@ -41,6 +41,56 @@ class _FunctionalBiasState(torch.nn.Module):
 
 
 class TestRecoveredModuleState(RecoveredRuntimeHarness):
+    def test_inplace_sequence_with_loop(self):
+        class M(torch.nn.Module):
+            def __init__(self, tensor_flags):
+                super().__init__()
+                self.tensor_flags = tensor_flags
+
+            def process(self, beam_hyps: list[Tensor], done, x):
+                batch_size = x.shape[0]
+                for i in range(batch_size):
+                    if done[i]:
+                        continue
+
+                    beam_idx = 0
+                    for _, token in enumerate(x[i]):
+                        beam_hyps.append(token)
+                        beam_idx += 1  # noqa: SIM113
+
+                        if beam_idx == 6:
+                            break
+
+                    done[i] = len(beam_hyps) > 4
+
+                return beam_hyps, done
+
+            def forward(self, x):
+                beam_hyps: list[Tensor] = []
+                batch_size = x.shape[0]
+                cur_len = 0
+                max_len = x.shape[1]
+                done = (
+                    torch.zeros(batch_size, dtype=torch.bool)
+                    if self.tensor_flags
+                    else [False] * batch_size
+                )
+                while cur_len < max_len:
+                    beam_hyps, done = self.process(beam_hyps, done, x[:, 0, :])
+                    cur_len = cur_len + 1
+                return beam_hyps
+
+        x = torch.randn(8, 4, 3)
+        reference = M(tensor_flags=True)
+        program = self.run_test(M(tensor_flags=False), (x,))
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "beam-sequence.onnx"
+            program.save(path, external_data=False)
+            reloaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            for candidate in (program, reloaded):
+                for values in (x, -x, torch.zeros_like(x), torch.randn_like(x)):
+                    self.assertEqual(list(candidate(values)), reference(values))
+
     def run_state_test(self, model, input_args, *, persistent_bias=False):
         args = input_args if isinstance(input_args, tuple) else (input_args,)
         reference = copy.deepcopy(model)

@@ -1,3 +1,10 @@
+"""Public exceptions and warnings for the standalone exporter."""
+
+
+class OnnxExporterWarning(UserWarning):
+    """Warning during ONNX export."""
+
+
 class OnnxExporterError(RuntimeError):
     """Error during export."""
 
@@ -17,7 +24,7 @@ class ConversionError(OnnxExporterError):
 
 
 class DispatchError(ConversionError):
-    """Error during ONNX Funtion dispatching."""
+    """Error during ONNX Function dispatching."""
 
     pass
 

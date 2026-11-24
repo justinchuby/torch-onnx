@@ -1,12 +1,14 @@
 expecttest==0.1.6
 hypothesis
 onnxruntime
+pandas
 parameterized
 pyinstrument
 pytest
 pytest-cov
 pytest-subtests
 pytest-xdist
+pyrefly==0.58.0
 pyyaml
 torchvision
 transformers

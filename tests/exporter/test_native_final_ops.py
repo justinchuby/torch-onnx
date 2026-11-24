@@ -957,14 +957,18 @@ class TestNativeFinalOps(common_utils.TestCase):
             ),
             torch.tensor([[[[7.5]]]]),
         )
+        pooled = (
+            torch.tensor([[[[15.0]]]]),
+            torch.tensor([[[[15]]]], dtype=torch.int32),
+        )
         self.assertEqual(
             _evaluate(
-                lambda op, a, r: vision.torchvision_roi_pool(op, a, r, [1, 1]),
+                lambda op, a, r: vision.torchvision_roi_pool(op, a, r, 1.0, 1, 1),
                 [x, rois],
-                torch.tensor([[[[15.0]]]]),
+                pooled,
                 runtime=True,
             ),
-            torch.tensor([[[[15.0]]]]),
+            list(pooled),
         )
         graph = ir.Graph([], [], nodes=[], name="deform_conv", opset_imports={"": 19})
         builder = _ir_builder.GraphBuilder(graph, opset=19)

@@ -111,7 +111,13 @@ def torchvision_roi_pool(
         to=ir.DataType.INT64,
     )
 
-    def bins(start_index: int, end_index: int, count: int, limit: ir.Value):
+    def bins(
+        op: TranslationContext,
+        start_index: int,
+        end_index: int,
+        count: int,
+        limit: ir.Value,
+    ) -> tuple[ir.Value, ir.Value, ir.Value]:
         start = op.Gather(coordinates, start_index, axis=1)
         end = op.Gather(coordinates, end_index, axis=1)
         extent = op.Max(op.Add(op.Sub(end, start), 1), 1)
@@ -135,8 +141,8 @@ def torchvision_roi_pool(
         )
         return first, last, op.Range(0, largest, 1)
 
-    top, bottom, rows = bins(1, 3, pooled_height, height)
-    left, right, columns = bins(0, 2, pooled_width, width)
+    top, bottom, rows = bins(op, 1, 3, pooled_height, height)
+    left, right, columns = bins(op, 0, 2, pooled_width, width)
     rows = op.Add(op.Unsqueeze(top, [2, 3, 4]), op.Unsqueeze(rows, [0, 1, 2, 4]))
     columns = op.Add(op.Unsqueeze(left, [1, 3, 4]), op.Unsqueeze(columns, [0, 1, 2, 3]))
     valid = op.And(

@@ -20,6 +20,7 @@ import onnx_ir as ir
 import torch
 import torch.fx
 from onnx_ir import convenience as ir_convenience
+from onnx_ir.passes import common as ir_common_passes
 from torch.export import graph_signature
 
 from torch_onnx import (
@@ -1850,8 +1851,15 @@ def export(
     if onnx_program.exported_program is None:
         raise AssertionError("exported_program must be non-None")
 
+    # Keep unused lifted parameter aliases out of unoptimized exports.
+    ir_common_passes.RemoveUnusedNodesPass()(onnx_program.model)
+
     # Converter opset version and optimize
-    if opset_version is not None:
+    # Even no-op version conversion inlines local functions.
+    if (
+        opset_version is not None
+        and onnx_program.model.opset_imports.get("") != opset_version
+    ):
         onnx_program.model = onnxscript_apis.convert_version(
             onnx_program.model, opset_version
         )

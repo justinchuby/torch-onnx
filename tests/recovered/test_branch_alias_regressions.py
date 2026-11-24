@@ -21,6 +21,61 @@ import torch_onnx
 
 
 class TestRecoveredBranchesAndAliases(RecoveredRuntimeHarness):
+    def test_uninitialized_dynamic(self):
+        class UninitializedModel(torch.nn.Module):
+            def forward(self, y):
+                if y.shape[1] < 5:
+                    if y.size(0) == 1:
+                        y = y + 4
+                    else:
+                        return y
+                return y
+
+        class DynamicModel(torch.nn.Module):
+            def forward(self, y):
+                rows = torch.scalar_tensor(y.shape[0], dtype=torch.int64)
+                columns = torch.scalar_tensor(y.shape[1], dtype=torch.int64)
+                return torch.cond(
+                    (rows == 1) & (columns < 5),
+                    lambda value: value + 4,
+                    lambda value: value.clone(),
+                    (y,),
+                )
+
+        x = torch.ones((3, 4), dtype=torch.int)
+        y = torch.ones((6, 7), dtype=torch.int)
+        program = self.run_test(
+            DynamicModel(),
+            x,
+            input_names=["input_1"],
+            dynamic_shapes=(
+                {
+                    0: torch.export.Dim("rows", min=2),
+                    1: torch.export.Dim("columns", min=2),
+                },
+            ),
+            additional_test_inputs=[y],
+        )
+        self.assertIn("If", {node.op_type for node in program.model.graph})
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "dynamic-return.onnx"
+            program.save(path, external_data=False)
+            loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+        original = UninitializedModel()
+        # As in the conditional-state cases, ONNX execution covers 0/1 even
+        # though the attached ExportedProgram's capture guards exclude them.
+        for value in (
+            x,
+            y,
+            torch.arange(4, dtype=torch.int).reshape(1, 4),
+            torch.ones(1, 6, dtype=torch.int),
+            torch.empty(0, 4, dtype=torch.int),
+        ):
+            for candidate in (program, loaded):
+                output = candidate(value)
+                self.assertEqual(len(output), 1)
+                torch.testing.assert_close(output[0], original(value), rtol=0, atol=0)
+
     def test_uninitialized(self):
         class UninitializedModel(torch.nn.Module):
             def forward(self, y):

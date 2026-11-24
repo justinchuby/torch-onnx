@@ -10,6 +10,8 @@ import torch
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
 
+import torch_onnx
+
 BATCH_SIZE = 2
 RNN_SEQUENCE_LENGTH = 11
 RNN_INPUT_SIZE = 5
@@ -42,6 +44,21 @@ class _LSTMWithInitialState(torch.nn.Module):
 class TestRecoveredRecurrentModels(RecoveredRuntimeHarness):
     def test_lstm_no_hidden(self):
         self.run_test(torch.nn.LSTM(16, 16), torch.randn(10, 16, 16))
+
+    def test_lstm_proj_no_hidden(self):
+        class LSTMModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.rnn = torch.nn.LSTM(input_size=16, hidden_size=16, proj_size=8)
+
+            def forward(self, x):
+                return self.rnn(x)
+
+        with self.assertRaisesRegex(
+            torch_onnx.errors.ConversionError,
+            "LSTM projections are not supported.*proj_size=0",
+        ):
+            self.run_test(LSTMModel(), torch.randn(10, 16, 16))
 
     def test_lstm(self):
         input = torch.randn(RNN_SEQUENCE_LENGTH, BATCH_SIZE, RNN_INPUT_SIZE)

@@ -13,6 +13,8 @@ import torchvision
 from test_runtime_regressions import RecoveredRuntimeHarness
 from torch import Tensor
 
+import torch_onnx
+
 
 class TestRecoveredAdditional(RecoveredRuntimeHarness):
     def test_reference_preserves_non_leaf_input(self):
@@ -2461,6 +2463,20 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         with self.assertRaises(RuntimeError):
             self.run_test(STFT(), x)
 
+    def test_stft_wrong_return_complex(self):
+        class STFT(torch.nn.Module):
+            def forward(self, x):
+                n_fft = 16
+                return torch.stft(x, n_fft=n_fft, center=False, return_complex=True)
+
+        x = torch.randn((1, 32), requires_grad=True)
+        self.run_test(
+            STFT(),
+            x,
+            atol=1e-6,
+            additional_test_inputs=[torch.linspace(-1, 1, 32).reshape(1, 32)],
+        )
+
     def test_stft_normalize(self):
         class STFT(torch.nn.Module):
             def forward(self, x):
@@ -3835,6 +3851,34 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
 
         x = torch.randn(10, 5)
         self.run_test(M(), (x,))
+
+    def test_print_tensor_within_torch_nn_module(self):
+        class PrintTensorOnMyModel(torch.nn.Module):
+            def forward(self, x):
+                # 'print' has side effect calling 'resolve_conj' and 'resolve_neg'.
+                x_firsts = x[:, 0]
+                print(f"x_firsts: {x_firsts}")
+                # 'tolist' has side effect calling 'resolve_conj' and 'resolve_neg'.
+                # Annotation added to pass torch script.
+                _: list[float] = x.tolist()
+                return x_firsts
+
+        for input_dtype in (torch.cfloat, torch.float):
+            with self.subTest(input_dtype=input_dtype):
+                m = PrintTensorOnMyModel()
+                x = torch.randn(10, 5, dtype=input_dtype)
+                if input_dtype == torch.cfloat:
+                    with self.assertRaisesRegex(
+                        torch_onnx.errors.TorchExportError,
+                        r"local_scalar_dense/item NYI for torch\.complex64",
+                    ):
+                        self.run_test(m, x)
+                else:
+                    self.run_test(
+                        m,
+                        x,
+                        additional_test_inputs=[torch.randn_like(x)],
+                    )
 
     def test_lerp(self):
         class LerpModel(torch.nn.Module):

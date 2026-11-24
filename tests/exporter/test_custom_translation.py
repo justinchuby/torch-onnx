@@ -400,7 +400,7 @@ if any(n == 'onnxscript' or n.startswith('onnxscript.') or 'torch_lib' in n for 
         self.assertIn(function.identifier(), program.model.functions)
         self.assertEqual(program.model.graph.opset_imports["native.test"], 1)
         onnx.checker.check_model(program.model_proto, full_check=True)
-        converted = self.export()
+        converted = self.export(optimize=True)
         self.assertIn("Neg", [n.op_type for n in converted.model.graph])
         onnx.checker.check_model(converted.model_proto, full_check=True)
 
@@ -504,7 +504,7 @@ if any(n == 'onnxscript' or n.startswith('onnxscript.') or 'torch_lib' in n for 
                     x.sum() > 0, lambda a, b: a + b, lambda a, b: a - b, (x, y)
                 )
 
-        program = self.export(Conditional().eval())
+        program = self.export(Conditional().eval(), optimize=True)
         onnx.checker.check_model(program.model_proto, full_check=True)
         if_node = next(n for n in program.model.graph if n.op_type == "If")
         then_graph = if_node.attributes["then_branch"].value
@@ -540,6 +540,7 @@ if any(n == 'onnxscript' or n.startswith('onnxscript.') or 'torch_lib' in n for 
         program = self.export(
             LeakyRelu().eval(),
             custom_translation_table={torch.ops.aten.leaky_relu.default: scripted_relu},
+            optimize=True,
         )
         self.assertIn("LeakyRelu", [n.op_type for n in program.model.graph])
         onnx.checker.check_model(program.model_proto, full_check=True)

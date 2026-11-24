@@ -9,15 +9,15 @@ Original source is recoverable with `git show <parent>:test/onnx/<file>`.
 PyTorch's redistribution license is retained in LICENSE-PYTORCH.
 
 This is a **partial, explicit migration**, not exhaustive restoration of a
-retired frontend. 605 original runtime test bodies/comments, four control-flow
-regressions, 37 model methods, seven autograd forward-inlining methods and 44
+retired frontend. 609 original runtime test bodies/comments, four control-flow
+regressions, 37 model methods, seven autograd forward-inlining methods and 45
 optimizer/utility methods were ported to the modern standalone exporter. Numerical
 cases export real models and compare values including shape/dtype; error-contract
 cases exercise actual export failures. Private JIT graphs and old symbolic
 registration are not resurrected. Source decorators that only selected old
 opsets/frontends are replaced by the package's current supported configuration.
 
-Inventory totals: {'already-covered': 1, 'blocked': 123, 'inapplicable': 55, 'migrated': 697}. Blocked means not yet ported/validated; these cases
+Inventory totals: {'already-covered': 1, 'blocked': 116, 'inapplicable': 57, 'migrated': 702}. Blocked means not yet ported/validated; these cases
 are recorded, not silently skipped or represented as passing. Runnable migrated
 tests are part of the default suite.
 
@@ -81,6 +81,34 @@ fake/meta kernel. The low-level convolution regression exposed missing default
 and deprecated-overload registrations. Both now reuse native Conv/ConvTranspose,
 including bias/groups/output padding; backend policy flags are not ONNX graph
 properties. CPU checks do not claim CUDA TF32 execution.
+
+Dynamic uninitialized-return recovery executes both original matrix sizes and
+the singleton arithmetic branch through a genuine ONNX If. Original, changed,
+singleton and empty results are compared with the untouched imperative module
+before and after serialization; the same narrower ExportedProgram guard caveat
+applies. Projected LSTM retains its original expected-error intent and now checks
+the actionable unsupported-projection diagnosis rather than claiming support.
+
+The original two-output custom-layer regression uses a scoped native operator
+and explicit local ONNX function, retaining its custom namespace, two outputs
+and original singleton shape. Both outputs execute numerically at changed shapes
+against the original autograd forward body, including save/reload. This exposed
+unnecessary same-opset version conversion that inlined functions even with
+`optimize=False`; conversion now runs only when the standard-domain version must
+change. The native IR unused-node pass still removes inactive lifted parameter
+aliases without deduplicating equal-but-distinct parameters. Tests that require
+inlining request optimization explicitly. Real opset
+conversion and the upstream ONNXProgram optimizer are unchanged. The old
+interpolate-trace (opset <=8) and prim-fallthrough (opset <=10) cases are separately
+inapplicable to the supported >=18 range, not counted as recovered tests.
+
+Complex-return STFT now requires successful modern export rather than the old
+symbolic error, using the existing real/imaginary ONNX representation and the
+adjacent original float32 FFT tolerance of 1e-6. The print/tolist regression
+retains its original comments and both dtypes: float slicing executes with changed
+values, while complex `tolist` retains the expected capture error and explicitly
+checks PyTorch's unsupported complex scalar-extraction diagnosis. This does not
+claim that Python print side effects are serialized into ONNX.
 
 The harness preserves dynamic-axis declarations and runs all supplied additional
 inputs against the same exported graph. Every recovered runtime-harness method also saves and reloads
@@ -551,7 +579,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:2932::test_reshape_allowzero` | migrated | tests/recovered/test_additional_regressions.py::test_reshape_allowzero |
 | `test_pytorch_onnx_onnxruntime.py:2941::test_reshape_different_rank` | migrated | `test_runtime_regressions.py::test_reshape_different_rank`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:3064::test_interpolate_upsample` | migrated | Original interpolation size/scale/half-pixel/function/submodule intent; 1D/2D/3D modes and actual dynamic additional inputs, numerical parity and save/reload in tests/recovered/test_interpolation_regressions.py |
-| `test_pytorch_onnx_onnxruntime.py:3069::test_interpolate_upsample_trace` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:3069::test_interpolate_upsample_trace` | inapplicable | Original decorator restricts this legacy Upsample trace case to opset<=8, below supported>=18; the separate modern interpolate_upsample case is migrated, not double-counted |
 | `test_pytorch_onnx_onnxruntime.py:3073::test_interpolate_function_substitution` | migrated | Original interpolation size/scale/half-pixel/function/submodule intent; 1D/2D/3D modes and actual dynamic additional inputs, numerical parity and save/reload in tests/recovered/test_interpolation_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:3104::test_interpolate_downsample` | migrated | Original interpolation size/scale/half-pixel/function/submodule intent; 1D/2D/3D modes and actual dynamic additional inputs, numerical parity and save/reload in tests/recovered/test_interpolation_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:3108::test_interpolate_half_pixel` | migrated | Original interpolation size/scale/half-pixel/function/submodule intent; 1D/2D/3D modes and actual dynamic additional inputs, numerical parity and save/reload in tests/recovered/test_interpolation_regressions.py |
@@ -654,7 +682,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:4660::test_logsoftmax_dtype` | migrated | `test_runtime_regressions.py::test_logsoftmax_dtype`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:4668::test_softplus` | migrated | `test_runtime_regressions.py::test_softplus`; original numerical body, modern standalone harness |
 | `test_pytorch_onnx_onnxruntime.py:4691::test_lstm_no_hidden` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_recurrent_model_regressions.py |
-| `test_pytorch_onnx_onnxruntime.py:4704::test_lstm_proj_no_hidden` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:4704::test_lstm_proj_no_hidden` | migrated | test_recurrent_model_regressions.py preserves original negative test and 16/16/8 projection dimensions; requires ConversionError explaining unsupported LSTM projection and proj_size=0 remedy |
 | `test_pytorch_onnx_onnxruntime.py:4718::test_lstm` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_recurrent_model_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:4735::test_lstm_cell` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_recurrent_model_regressions.py |
 | `test_pytorch_onnx_onnxruntime.py:4753::test_lstm_default_init_state` | migrated | Original operator/model inputs and configuration matrices; modern numerical/shape/dtype checks, save/reload and additional dynamic inputs in tests/recovered/test_recurrent_model_regressions.py |
@@ -861,7 +889,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:8185::test_stft_window_size_with_win_len` | migrated | tests/recovered/test_additional_regressions.py::test_stft_window_size_with_win_len |
 | `test_pytorch_onnx_onnxruntime.py:8204::test_stft_one_dimension` | migrated | tests/recovered/test_additional_regressions.py::test_stft_one_dimension |
 | `test_pytorch_onnx_onnxruntime.py:8219::test_stft_wrong_input_size` | migrated | tests/recovered/test_additional_regressions.py::test_stft_wrong_input_size |
-| `test_pytorch_onnx_onnxruntime.py:8230::test_stft_wrong_return_complex` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8230::test_stft_wrong_return_complex` | migrated | test_additional_regressions.py preserves 1x32/n_fft16/center=False/return_complex=True and requires successful numerical modern export plus changed waveform, not obsolete symbolic failure; packed real/imaginary representation and adjacent FFT atol1e-6 |
 | `test_pytorch_onnx_onnxruntime.py:8241::test_stft_normalize` | migrated | tests/recovered/test_additional_regressions.py::test_stft_normalize |
 | `test_pytorch_onnx_onnxruntime.py:8257::test_stft_not_onesided` | migrated | tests/recovered/test_additional_regressions.py::test_stft_not_onesided |
 | `test_pytorch_onnx_onnxruntime.py:8272::test_constant_pad` | migrated | tests/recovered/test_additional_regressions.py::test_constant_pad |
@@ -872,7 +900,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:8342::test_unsupported_pad` | migrated | tests/recovered/test_additional_regressions.py::test_unsupported_pad |
 | `test_pytorch_onnx_onnxruntime.py:8360::test_if_fold` | migrated | tests/recovered/test_additional_regressions.py::test_if_fold |
 | `test_pytorch_onnx_onnxruntime.py:8479::test_uninitialized` | migrated | tests/recovered/test_branch_alias_regressions.py; original nested return body and input, changed values on same graph, separately exported singleton/other branch shapes and serialization/runtime checks; not dynamic branching |
-| `test_pytorch_onnx_onnxruntime.py:8493::test_uninitialized_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:8493::test_uninitialized_dynamic` | migrated | test_branch_alias_regressions.py genuine If covers original 3x4/6x7 plus singleton arithmetic/other branch and empty results against original imperative oracle before/after serialization; EP min2 guard caveat explicit |
 | `test_pytorch_onnx_onnxruntime.py:8515::test_uninitialized_tensorList` | migrated | tests/recovered/test_branch_alias_regressions.py; original fixed-list return body/input, changed values, separately exported branch shapes and serialization/runtime checks; not variable-length sequences |
 | `test_pytorch_onnx_onnxruntime.py:8530::test_uninitialized_tensorList_dynamic` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:8550::test_uninitialized_intList` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
@@ -1075,7 +1103,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | migrated | `tests/recovered/test_capture_regressions.py::test_device_eq`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13846::test_lerp` | migrated | tests/recovered/test_additional_regressions.py::test_lerp |
-| `test_pytorch_onnx_onnxruntime.py:13863::test_print_tensor_within_torch_nn_module` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
+| `test_pytorch_onnx_onnxruntime.py:13863::test_print_tensor_within_torch_nn_module` | migrated | test_additional_regressions.py preserves print/tolist comments and 10x5 float/complex fixtures; float numerical slicing and changed values pass, complex retains expected error with explicit scalar-extraction diagnosis |
 | `test_pytorch_onnx_onnxruntime.py:13894::test_sage_conv` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime.py:13974::test_rnn` | blocked | Historical runtime case not yet individually migrated; source may depend on JIT, legacy harness state, dynamic_axes, optional fixtures or parameter decorators |
 | `test_pytorch_onnx_onnxruntime_cuda.py:39::test_gelu_fp16` | blocked | CUDA-specific runtime/device behavior requires a CUDA validation host; not replaced by CPU claims |
@@ -1154,8 +1182,8 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_utility_funs.py:1335::test_register_aten_custom_op_symbolic` | migrated | tests/recovered/test_export_utility_regressions.py; native direct aten.gelu overload registration overrides builtins at default/18/24, exact custom domain/version and actual runtime/serialization checked; obsolete symbolic API not reinstated |
 | `test_utility_funs.py:1354::test_custom_opsets_inverse` | migrated | tests/recovered/test_export_utility_regressions.py; original inverse-plus-input model and 2x3x3 shapes, conditioned matrices, native override/com.microsoft::Inverse version1 at default/18/24 with actual runtime and serialization checks |
 | `test_utility_funs.py:1383::test_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1402::test_prim_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
-| `test_utility_funs.py:1426::test_custom_layer_tuple` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
+| `test_utility_funs.py:1402::test_prim_fallthrough` | inapplicable | Original explicitly restricted to opset<=10 because SequenceConstruct replaces prim::ListConstruct from11; retired JIT fallthrough contract is outside supported>=18, not a restored regression |
+| `test_utility_funs.py:1426::test_custom_layer_tuple` | migrated | test_export_utility_regressions.py public native registration preserves CustomNamespace::Custom with two outputs/local function under optimize=False; original singleton and changed shapes execute against original autograd forward before/after serialization |
 | `test_utility_funs.py:1449::test_autograd_onnx_fallthrough` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1480::test_autograd_module_name` | blocked | Legacy export utility/serialization assertion needs individual modern API mapping; modern serialization is separately covered, not claimed equivalent |
 | `test_utility_funs.py:1515::test_unused_initializers` | migrated | test_export_utility_regressions.py; unused linear weights absent, exactly two live transpose-convolution parameters remain; actual runtime/save/reload |

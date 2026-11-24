@@ -37,6 +37,91 @@ def _custom_inverse(op: torch_onnx.TranslationContext, value: ir.Value) -> ir.Va
 
 
 class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
+    def test_custom_layer_tuple(self):
+        class CustomFunction(torch.autograd.Function):
+            @staticmethod
+            def forward(ctx, input):
+                return input, input
+
+        formal = ir.Value(name="input", type=ir.TensorType(ir.DataType.FLOAT))
+        body = ir.Graph(
+            [formal], [], nodes=[], name="custom_tuple", opset_imports={"": 20}
+        )
+        builder = torch_onnx.GraphBuilder(body, opset=20)
+        body.outputs.extend(
+            [builder.call("Identity", formal)[0], builder.call("Identity", formal)[0]]
+        )
+        function = ir.Function(
+            "CustomNamespace", "Custom", "", graph=body, attributes=[]
+        )
+
+        def custom(
+            op: torch_onnx.TranslationContext, value: ir.Value
+        ) -> tuple[ir.Value, ir.Value]:
+            left, right = op.builder.call_function(function, value, version=1)
+            return left, right
+
+        with torch.library._scoped_library("recovered_tuple", "FRAGMENT") as library:
+            torch.library.define(
+                "recovered_tuple::custom",
+                "(Tensor input) -> (Tensor, Tensor)",
+                lib=library,
+            )
+
+            @torch.library.impl(
+                "recovered_tuple::custom", "CompositeExplicitAutograd", lib=library
+            )
+            def implementation(
+                value: torch.Tensor,
+            ) -> tuple[torch.Tensor, torch.Tensor]:
+                return value.clone(), value.clone()
+
+            @torch.library.register_fake("recovered_tuple::custom", lib=library)
+            def fake(value: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                return value.clone(), value.clone()
+
+            class Custom(torch.nn.Module):
+                def forward(self, input):
+                    return torch.ops.recovered_tuple.custom.default(input)
+
+            target = torch.ops.recovered_tuple.custom.default
+            torch_onnx.register_custom_translation(target, custom)
+            self.addCleanup(torch_onnx.unregister_custom_translation, target)
+            program = torch_onnx.export(
+                Custom().eval(),
+                (torch.randn(2, 3),),
+                opset_version=20,
+                optimize=False,
+                verbose=False,
+                input_names=["batch"],
+                dynamic_shapes=(
+                    {
+                        0: torch.export.Dim("rows", min=2),
+                        1: torch.export.Dim("columns", min=2),
+                    },
+                ),
+            )
+            nodes = [
+                node for node in program.model.graph if node.domain == "CustomNamespace"
+            ]
+            self.assertEqual(len(nodes), 1)
+            self.assertEqual(nodes[0].op_type, "Custom")
+            self.assertEqual(len(nodes[0].outputs), 2)
+            self.assertIn(function.identifier(), program.model.functions)
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            with common_utils.TemporaryDirectoryName() as directory:
+                path = Path(directory) / "custom-tuple.onnx"
+                program.save(path, external_data=False)
+                loaded = torch_onnx.ONNXProgram(ir.load(path), program.exported_program)
+            # Retain the original singleton fixture despite narrower EP guards.
+            for value in (torch.randn(1, 3), torch.randn(2, 3), torch.randn(3, 5)):
+                expected = CustomFunction.apply(value)
+                for candidate in (program, loaded):
+                    actual = candidate(value)
+                    self.assertEqual(len(actual), 2)
+                    for got, want in zip(actual, expected, strict=True):
+                        torch.testing.assert_close(got, want, rtol=0, atol=0)
+
     def _check_custom_domain(self, model, args, opname):
         for opset in [None, 18, 24]:
             program = torch_onnx.export(model, args, opset_version=opset, verbose=False)

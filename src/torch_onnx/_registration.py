@@ -13,6 +13,8 @@ https://github.com/pytorch/pytorch/blob/6aa5bb1a76dee8112f1a9e7c194c790b5cdc6462
 from __future__ import annotations
 
 import dataclasses
+import importlib
+import importlib.util
 import logging
 import math
 import operator
@@ -171,6 +173,19 @@ class ONNXRegistry:
         from torch_onnx._ir_builder import validate_opset_version
 
         validate_opset_version(opset_version)
+        # Probe on every export: an optional package may be installed after import.
+        for package in ("torchao", "torchvision"):
+            if importlib.util.find_spec(package) is not None:
+                try:
+                    importlib.import_module(package)
+                    if package == "torchao":
+                        importlib.import_module("torch_onnx._torchlib.ops.torchao")
+                except Exception as error:
+                    raise RuntimeError(
+                        f"Failed to import installed optional package {package!r}. "
+                        "Install a version compatible with the installed PyTorch, "
+                        "or uninstall the optional package if it is not needed."
+                    ) from error
         if custom_translations is None:
             custom_translations = _custom_translation.snapshot()
         registry = cls()

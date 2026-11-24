@@ -86,6 +86,44 @@ def torchvision_roi_align(
     )
 
 
+@onnx_impl("torchvision::ps_roi_align", opset_introduced=18)
+def torchvision_ps_roi_align(
+    op: TranslationContext,
+    input: ir.Value,
+    rois: ir.Value,
+    spatial_scale: float,
+    pooled_height: int,
+    pooled_width: int,
+    sampling_ratio: int,
+):
+    channels = input.shape[1] if input.shape is not None else None
+    bins = pooled_height * pooled_width
+    if not isinstance(channels, int) or channels % bins:
+        raise NotImplementedError(
+            "torchvision ps_roi_align requires a static channel count divisible by "
+            "pooled_height * pooled_width. Export with a static channel dimension."
+        )
+    aligned = torchvision_roi_align(
+        op,
+        input,
+        rois,
+        spatial_scale,
+        pooled_height,
+        pooled_width,
+        sampling_ratio,
+        True,
+    )
+    indices = [channel * bins + channel % bins for channel in range(channels)]
+    selected = op.Gather(op.Flatten(aligned, axis=1), indices, axis=1)
+    shape = [-1, channels // bins, pooled_height, pooled_width]
+    result = op.Reshape(selected, shape)
+    mapping = op.Reshape(
+        op.Constant(value=ir.tensor(list(range(channels)), dtype=ir.DataType.INT32)),
+        [1, channels // bins, pooled_height, pooled_width],
+    )
+    return result, op.Expand(mapping, op.Shape(result))
+
+
 @onnx_impl("torchvision::roi_pool", opset_introduced=18)
 def torchvision_roi_pool(
     op: TranslationContext,

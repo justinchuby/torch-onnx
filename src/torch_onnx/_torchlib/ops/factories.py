@@ -879,7 +879,8 @@ def _window(
         _output_types=[ir.TensorType(ir.DataType(dtype))],
     )[0]
     result = op.Slice(window, [0], op.Reshape(length, [1]))
-    return op.Where(op.Equal(length, 1), 1, result)
+    one = builder.constant(1, dtype=ir.DataType(dtype))
+    return op.Where(op.Equal(length, 1), one, result)
 
 
 @onnx_impl(aten.bernoulli.default)

@@ -117,6 +117,7 @@ def test_range_27_new_half_schema():
         graph = ir.Graph(inputs, [], nodes=[], name="half_range")
         builder = torch_onnx.GraphBuilder(graph, opset=opset)
         (output,) = builder.call("Range", *inputs)
+        output.dtype = ir.DataType.FLOAT16
         output.shape = ir.Shape([None])
         graph.outputs.append(output)
         return ir.Model(graph, ir_version=10)
@@ -151,6 +152,7 @@ def test_einsum_28_bfloat16_schema():
         (output,) = torch_onnx.GraphBuilder(graph, opset=opset).call(
             "Einsum", *inputs, equation="ij,jk->ik"
         )
+        output.dtype = ir.DataType.BFLOAT16
         output.shape = ir.Shape([2, 2])
         graph.outputs.append(output)
         return ir.Model(graph, ir_version=10)
@@ -171,16 +173,18 @@ def test_missing_standard_schema_warns_once_and_exports():
     builder = torch_onnx.GraphBuilder(graph, opset=30)
     op = torch_onnx.TranslationContext(builder)
     x = ir.Value(name="x", type=ir.TensorType(ir.DataType.FLOAT), shape=ir.Shape([2]))
+    with pytest.warns(
+        UserWarning,
+        match="Standard ONNX operator 'NotARealFutureOnnxOperator' at opset 30",
+    ):
+        default_out = op.NotARealFutureOnnxOperator(x)
+    assert isinstance(default_out, ir.Value)
+    assert default_out.type is None
     with pytest.raises(
         ValueError,
         match="Cannot determine output arity for standard ONNX operator",
     ):
-        op.NotARealFutureOnnxOperator(x)
-    with pytest.raises(
-        ValueError,
-        match="Cannot determine output arity for standard ONNX operator",
-    ):
-        builder.call("NotARealFutureOnnxOperator", x)
+        builder.call("AnotherUnregisteredFutureOp", x)
 
     real_get_schema = onnx.defs.get_schema
     scatter_18 = onnx.defs.get_schema("ScatterElements", 18, "")
@@ -196,6 +200,7 @@ def test_missing_standard_schema_warns_once_and_exports():
         def forward(self, v, idx, src):
             y = torch.expm1(v) + torch.expm1(v * 2.0)
             y = torch.log1p(torch.abs(y))
+            y = torch.logcumsumexp(y, 0)
             return y.scatter_reduce(0, idx, src, reduce="mean", include_self=True)
 
     with (
@@ -206,9 +211,9 @@ def test_missing_standard_schema_warns_once_and_exports():
         program = torch_onnx.export(
             MultiOpset29Model().eval(),
             (
-                torch.tensor([0.2, 0.4]),
+                torch.tensor([0.2, 0.4], dtype=torch.float64),
                 torch.tensor([0, 1]),
-                torch.tensor([1.0, 3.0]),
+                torch.tensor([1.0, 3.0], dtype=torch.float64),
             ),
             opset_version=29,
             optimize=False,
@@ -219,13 +224,17 @@ def test_missing_standard_schema_warns_once_and_exports():
         str(w.message) for w in record if issubclass(w.category, UserWarning)
     ]
     missing_warnings = [msg for msg in user_warnings if "Standard ONNX operator" in msg]
-    assert len(missing_warnings) == 3
-    for expected_op in ("'Expm1'", "'Log1p'", "'ScatterElements'"):
+    assert len(missing_warnings) == 4
+    for expected_op in ("'Expm1'", "'Log1p'", "'LogCumSumExp'", "'ScatterElements'"):
         assert sum(expected_op in msg for msg in missing_warnings) == 1
     assert program.model.opset_imports[""] == 29
+    # ExportedProgram metadata populates returned ONNX values without ONNX schema inference.
+    assert program.model.graph.outputs[0].dtype == ir.DataType.DOUBLE
+    assert tuple(program.model.graph.outputs[0].shape) == (2,)
     op_types = [node.op_type for node in program.model.graph]
     assert op_types.count("Expm1") == 2
     assert op_types.count("Log1p") == 1
+    assert op_types.count("LogCumSumExp") == 1
     scatter_nodes = [
         node for node in program.model.graph if node.op_type == "ScatterElements"
     ]
@@ -270,7 +279,7 @@ def test_future_and_custom_opset_extensibility():
         return op.Add(scaled, 1.0)
 
     def custom_expm1_35(op, x):
-        return op.FutureStdExpm1(x, output_types=[x.type], approx=0)
+        return op.FutureStdExpm1(x, approx=0)
 
     torch_onnx.register_custom_translation(
         torch.ops.torch_onnx_test.affine_scale.default,
@@ -390,7 +399,9 @@ def test_future_local_function_opset_alignment(conversion_error):
             [formal], [], nodes=[], name="future_negate", opset_imports={"": opset}
         )
         builder = torch_onnx.GraphBuilder(body, opset=opset)
-        body.outputs.append(builder.call("Neg", formal)[0])
+        (negated,) = builder.call("Neg", formal)
+        negated.type = formal.type
+        body.outputs.append(negated)
         function = ir.Function("acme.future", "Negate", "", graph=body, attributes=[])
         return op.builder.call_function(function, x, version=1)[0]
 

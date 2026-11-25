@@ -45,13 +45,18 @@ def current_builder() -> GraphBuilder:
 
 
 class TranslationContext:
-    r"""Schema-aware ONNX operators bound to an explicitly supplied builder.
+    r"""ONNX operator call helpers bound to an explicitly supplied builder.
 
-    Fixed single-output operators return an :class:`onnx_ir.Value`; multiple
-    outputs return a tuple. Operators with optional or variadic outputs require
-    ``outputs=`` or ``output_types=``. Python literals use schema-guided conversion,
-    never tensor promotion. Use ``builder`` for raw tuple-returning calls, custom
-    domains, functions, and explicit subgraph construction.
+    Named calls default to returning a single :class:`onnx_ir.Value` unless the
+    operator is known to have multiple/optional/variadic outputs or ``outputs=`` /
+    ``output_types=`` is passed. Output ``ir.Value`` dtypes and shapes are not
+    inferred from ONNX schemas (final ATen return values receive captured
+    ``ExportedProgram`` metadata in ``_core.py``). When a default-domain operator
+    schema is missing from the installed ``onnx`` package, named calls warn once
+    per operator per builder and construct a single untyped output node unless
+    ``outputs=`` or ``output_types=`` specifies otherwise. Use ``builder`` for
+    raw tuple-returning calls, custom domains, functions, and explicit subgraph
+    construction.
 
     No activation or ambient builder lookup is needed. Exporter injection is
     separate from this construction API; helpers receive the context explicitly.
@@ -88,10 +93,14 @@ class TranslationContext:
                     f"{name} outputs must be a nonnegative integer, got {outputs!r}. "
                     "Specify the number of ONNX output values."
                 )
+            explicit_outputs = outputs is not None or output_types is not None
+            effective_outputs = (
+                1 if schema is None and not explicit_outputs else outputs
+            )
             values = self.builder.call(
                 name,
                 *inputs,
-                _num_outputs=outputs,
+                _num_outputs=effective_outputs,
                 _output_types=output_types,
                 **attributes,
             )
@@ -99,7 +108,9 @@ class TranslationContext:
                 if schema.min_output == schema.max_output == 1:
                     return values[0]
                 return values
-            if outputs == 1 or (outputs is None and len(values) == 1):
+            if not explicit_outputs or (
+                outputs is None and output_types is not None and len(values) == 1
+            ):
                 return values[0]
             return values
 
@@ -304,7 +315,7 @@ class GraphBuilder:
                 op_type,
                 inputs,
                 version=version,
-                num_outputs=num_outputs,
+                num_outputs=num_outputs if num_outputs is not None else 1,
                 output_types=output_types,
                 attributes=attributes,
                 stale_since_version=schema.since_version,
@@ -321,17 +332,98 @@ class GraphBuilder:
                 attributes=attributes,
             )
         except (TypeError, ValueError):
-            if not domain and version > onnx.defs.onnx_opset_version():
+            if (
+                not domain
+                and version > onnx.defs.onnx_opset_version()
+                and self._can_fallback_stale_schema(
+                    schema, inputs, num_outputs, output_types
+                )
+            ):
+                fallback_outputs = (
+                    num_outputs
+                    if num_outputs is not None
+                    else (
+                        schema.min_output
+                        if schema.min_output == schema.max_output
+                        else None
+                    )
+                )
                 return self._call_without_schema(
                     op_type,
                     inputs,
                     version=version,
-                    num_outputs=num_outputs,
+                    num_outputs=fallback_outputs,
                     output_types=output_types,
                     attributes=attributes,
                     stale_since_version=schema.since_version,
                 )
             raise
+
+    @staticmethod
+    def _can_fallback_stale_schema(
+        schema: onnx.defs.OpSchema,
+        inputs: tuple[Any, ...],
+        num_outputs: int | None,
+        output_types: Sequence[ir.TypeProtocol | None] | None,
+    ) -> bool:
+        if num_outputs is not None and (
+            type(num_outputs) is not int or num_outputs < 0
+        ):
+            return False
+        if (
+            output_types is not None
+            and num_outputs is not None
+            and num_outputs != len(output_types)
+        ):
+            return False
+        signature = ir.schemas.OpSignature.from_op_schema(schema)
+        parameters = [
+            p for p in signature.params if isinstance(p, ir.schemas.Parameter)
+        ]
+        for index, value in enumerate(inputs):
+            if value is None and index < len(parameters) and parameters[index].required:
+                return False
+        return True
+
+    @staticmethod
+    def _attribute_output_dtype(
+        op_type: str,
+        domain: str,
+        attributes: Mapping[str, Any],
+    ) -> ir.DataType | None:
+        if domain:
+            return None
+        if op_type in ("Cast", "BitCast") and attributes.get("to") is not None:
+            to_attr = attributes["to"]
+            return ir.DataType(
+                to_attr.as_int() if isinstance(to_attr, ir.Attr) else to_attr
+            )
+        if op_type == "ConstantOfShape":
+            value = attributes.get("value")
+            if value is None:
+                return ir.DataType.FLOAT
+            if isinstance(value, ir.Attr):
+                return value.as_tensor().dtype
+            return value.dtype
+        if op_type == "Constant":
+            value = attributes.get("value")
+            if value is not None:
+                return (
+                    value.as_tensor().dtype
+                    if isinstance(value, ir.Attr)
+                    else value.dtype
+                )
+            for suffix, dtype in (
+                ("int", ir.DataType.INT64),
+                ("float", ir.DataType.FLOAT),
+                ("string", ir.DataType.STRING),
+            ):
+                if (
+                    attributes.get(f"value_{suffix}") is not None
+                    or attributes.get(f"value_{suffix}s") is not None
+                ):
+                    return dtype
+        return None
 
     def _warn_missing_standard_schema(
         self,
@@ -358,8 +450,8 @@ class GraphBuilder:
                 f"schemas available through opset {available})."
             )
         warnings.warn(
-            f"{detail} Constructing the node without schema validation using explicit "
-            "output metadata. Upgrade the 'onnx' package if you need onnx.checker or "
+            f"{detail} Constructing the node without target-opset schema validation. "
+            "Upgrade the 'onnx' package if you need onnx.checker or "
             "reference-evaluator validation for this operator.",
             UserWarning,
             stacklevel=3,
@@ -383,30 +475,54 @@ class GraphBuilder:
                 f"{op_type} _num_outputs must be a nonnegative integer, "
                 f"got {num_outputs!r}."
             )
+        attribute_dtype = self._attribute_output_dtype(op_type, "", attributes)
+        default_type = (
+            ir.TensorType(attribute_dtype) if attribute_dtype is not None else None
+        )
         if output_types is not None:
             if num_outputs is not None and num_outputs != len(output_types):
                 raise ValueError(
                     "_num_outputs disagrees with _output_types. Supply matching lengths."
                 )
-            resolved_output_types: Sequence[ir.TypeProtocol | None] = output_types
+            resolved_output_types: Sequence[ir.TypeProtocol | None] = [
+                explicit if explicit is not None else default_type
+                for explicit in output_types
+            ]
+            if default_type is not None:
+                for index, explicit in enumerate(output_types):
+                    if explicit is not None and explicit != default_type:
+                        raise TypeError(
+                            f"{op_type} output {index} type {explicit} conflicts with "
+                            f"attribute dtype {default_type}. Correct _output_types."
+                        )
         elif num_outputs is not None:
-            resolved_output_types = [None] * num_outputs
+            resolved_output_types = [default_type] * num_outputs
         else:
             available = onnx.defs.onnx_opset_version()
             raise ValueError(
                 f"Cannot determine output arity for standard ONNX operator {op_type!r} "
                 f"at opset {version} because installed ONNX {onnx.__version__} only "
                 f"provides default-domain schemas through opset {available}. Pass "
-                "outputs= / output_types= on TranslationContext (or _num_outputs= / "
-                "_output_types= on GraphBuilder.call, or GraphBuilder.node() with "
-                "explicit output_types), or check the operator spelling."
+                "_num_outputs= / _output_types= on GraphBuilder.call (or use "
+                "TranslationContext, which defaults to 1 output), or check the "
+                "operator spelling."
             )
+        bound_dtype = next(
+            (
+                value.dtype
+                for value in inputs
+                if isinstance(value, ir.Value) and value.dtype is not None
+            ),
+            None,
+        )
         prepared: list[ir.Value | tuple[Any, ir.DataType] | None] = []
         for index, value in enumerate(inputs):
             if value is None or isinstance(value, ir.Value):
                 prepared.append(value)
                 continue
-            dtype = self._constant_dtype(value, op_type, f"input[{index}]")
+            dtype = bound_dtype or self._constant_dtype(
+                value, op_type, f"input[{index}]"
+            )
             prepared.append((value, dtype))
         self._warn_missing_standard_schema(
             op_type,
@@ -463,10 +579,7 @@ class GraphBuilder:
             if not isinstance(value, ir.Value):
                 continue
             if value.type is None:
-                raise ValueError(
-                    f"{op_type} input {param.name!r} has unknown type. Set its IR type "
-                    "before schema-guided construction, or use node() with explicit types."
-                )
+                continue
             constraint = param.type_constraint
             if value.type not in constraint.allowed_types:
                 raise TypeError(
@@ -560,51 +673,29 @@ class GraphBuilder:
             for name, value in attributes.items()
             if value is not None
         }
-        attribute_dtype = None
-        if not domain and op_type in ("Cast", "BitCast"):
-            attribute_dtype = ir.DataType(attributes["to"])
-        elif not domain and op_type == "ConstantOfShape":
-            attribute_dtype = (
-                typed_attributes["value"].as_tensor().dtype
-                if "value" in typed_attributes
-                else ir.DataType.FLOAT
-            )
-        elif not domain and op_type == "Constant":
-            if "value" in typed_attributes:
-                attribute_dtype = typed_attributes["value"].as_tensor().dtype
-            else:
-                for suffix, dtype in (
-                    ("int", ir.DataType.INT64),
-                    ("float", ir.DataType.FLOAT),
-                    ("string", ir.DataType.STRING),
-                ):
-                    if (
-                        f"value_{suffix}" in typed_attributes
-                        or f"value_{suffix}s" in typed_attributes
-                    ):
-                        attribute_dtype = dtype
-                        break
-        inferred = []
+        # Do not infer output types from ONNX schemas (matching upstream PyTorch
+        # torch/onnx/_internal/exporter/_building.py:_construct_node and
+        # _core.py:_set_shape_type). Only explicit _output_types or explicit
+        # dtype-defining attributes (Cast, BitCast, Constant, ConstantOfShape)
+        # populate intermediate output dtypes.
+        attribute_dtype = self._attribute_output_dtype(
+            op_type, domain, typed_attributes
+        )
+        default_type = (
+            ir.TensorType(attribute_dtype) if attribute_dtype is not None else None
+        )
+        resolved_outputs: list[ir.TypeProtocol | None] = []
         for index in range(num_outputs):
-            param = signature.outputs[min(index, len(signature.outputs) - 1)]
-            constraint = param.type_constraint
-            type_ = bindings.get(constraint) if param.homogeneous else None
-            if type_ is None and len(constraint.allowed_types) == 1:
-                type_ = next(iter(constraint.allowed_types))
-            if type_ is None and attribute_dtype is not None:
-                type_ = ir.TensorType(attribute_dtype)
-            if output_types is not None:
+            type_ = default_type
+            if output_types is not None and output_types[index] is not None:
                 explicit = output_types[index]
-                if explicit is not None:
-                    if explicit not in constraint.allowed_types or (
-                        type_ is not None and explicit != type_
-                    ):
-                        raise TypeError(
-                            f"{op_type} output {index} type {explicit} conflicts with "
-                            f"schema/binding {type_}. Correct _output_types."
-                        )
-                    type_ = explicit
-            inferred.append(type_)
+                if type_ is not None and explicit != type_:
+                    raise TypeError(
+                        f"{op_type} output {index} type {explicit} conflicts with "
+                        f"attribute dtype {type_}. Correct _output_types."
+                    )
+                type_ = explicit
+            resolved_outputs.append(type_)
         resolved = [
             self.constant(value[0], dtype=value[1])
             if isinstance(value, tuple)
@@ -617,7 +708,7 @@ class GraphBuilder:
             domain=domain,
             version=version,
             attributes=typed_attributes,
-            output_types=inferred,
+            output_types=resolved_outputs,
         )
 
     @staticmethod
@@ -656,7 +747,11 @@ class GraphBuilder:
                 f"got {len(inputs)}. Supply all function inputs."
             )
         for value, formal in zip(inputs, function.inputs, strict=False):
-            if formal.type is not None and value.type != formal.type:
+            if (
+                formal.type is not None
+                and value.type is not None
+                and value.type != formal.type
+            ):
                 raise TypeError(
                     f"Function {function.name} input {formal.name} expects {formal.type}, "
                     f"got {value.type}. Set types or insert an explicit Cast."

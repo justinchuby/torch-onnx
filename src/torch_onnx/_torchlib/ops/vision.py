@@ -140,12 +140,19 @@ def torchvision_roi_pool(
         pooled_shape=(pooled_height, pooled_width),
         spatial_scale=spatial_scale,
     )
+    input_dtype = common_ops.require_dtype(op, input)
+    boxes_dtype = common_ops.require_dtype(op, boxes)
+    half = op.builder.constant(0.5, dtype=boxes_dtype)
+    one_float = op.builder.constant(1.0, dtype=boxes_dtype)
     shape = op.Shape(input)
     height, width = op.Gather(shape, 2), op.Gather(shape, 3)
-    scaled = op.Mul(op.Slice(boxes, [1], [5], [1]), spatial_scale)
+    scaled = op.Mul(
+        op.Slice(boxes, [1], [5], [1]),
+        op.builder.constant(spatial_scale, dtype=boxes_dtype),
+    )
     # torchvision rounds half away from zero, unlike ONNX Round.
     coordinates = op.Cast(
-        op.Mul(op.Sign(scaled), op.Floor(op.Add(op.Abs(scaled), 0.5))),
+        op.Mul(op.Sign(scaled), op.Floor(op.Add(op.Abs(scaled), half))),
         to=ir.DataType.INT64,
     )
 
@@ -159,7 +166,8 @@ def torchvision_roi_pool(
         start = op.Gather(coordinates, start_index, axis=1)
         end = op.Gather(coordinates, end_index, axis=1)
         extent = op.Max(op.Add(op.Sub(end, start), 1), 1)
-        size = op.Div(op.CastLike(extent, boxes), float(count))
+        count_float = op.builder.constant(float(count), dtype=boxes_dtype)
+        size = op.Div(op.CastLike(extent, boxes), count_float)
         positions = op.CastLike(op.Range(0, count, 1), boxes)
         size = op.Unsqueeze(size, [1])
         start = op.Unsqueeze(start, [1])
@@ -169,7 +177,8 @@ def torchvision_roi_pool(
         last = op.Add(
             start,
             op.Cast(
-                op.Ceil(op.Mul(size, op.Add(positions, 1.0))), to=ir.DataType.INT64
+                op.Ceil(op.Mul(size, op.Add(positions, one_float))),
+                to=ir.DataType.INT64,
             ),
         )
         first, last = op.Clip(first, 0, limit), op.Clip(last, 0, limit)
@@ -219,13 +228,14 @@ def torchvision_roi_pool(
         op.Concat(roi_count, [1, pooled_height, pooled_width], bin_count, axis=0),
     )
     valid = op.Reshape(valid, op.Shape(indices))
+    min_value = op.builder.constant(input_dtype.min, dtype=input_dtype)
     matches = op.And(valid, op.Equal(candidates, op.Unsqueeze(pooled, [-1])))
-    matches = op.And(
-        matches, op.Greater(candidates, common_ops.require_dtype(op, input).min)
-    )
+    matches = op.And(matches, op.Greater(candidates, min_value))
     # The first maximum in row-major order wins; empty bins have index -1.
-    argmax = op.ReduceMin(op.Where(matches, indices, _INT64_MAX), [-1], keepdims=0)
-    argmax = op.Where(op.Equal(argmax, _INT64_MAX), -1, argmax)
+    int64_max = op.builder.constant(_INT64_MAX, dtype=ir.DataType.INT64)
+    minus_one = op.builder.constant(-1, dtype=ir.DataType.INT64)
+    argmax = op.ReduceMin(op.Where(matches, indices, int64_max), [-1], keepdims=0)
+    argmax = op.Where(op.Equal(argmax, int64_max), minus_one, argmax)
     return pooled, op.Cast(argmax, to=ir.DataType.INT32)
 
 

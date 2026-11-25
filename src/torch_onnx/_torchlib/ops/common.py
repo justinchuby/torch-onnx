@@ -112,6 +112,14 @@ def merge_dims(
     if not dims:
         return builder.constant([], dtype=ir.DataType.INT64)
 
+    # Symbolic dimensions must already be INT64 so Concat can be used.
+    for d in dims:
+        if isinstance(d, ir.Value) and d.dtype not in (None, ir.DataType.INT64):
+            raise TypeError(
+                f"Expected an INT64 symbolic dimension, got {d.dtype}. "
+                "Cast dimensions to INT64 before merging them."
+            )
+
     neg_one_1d = builder.constant([-1], dtype=ir.DataType.INT64)
     result_dims = [
         builder.constant([d], dtype=ir.DataType.INT64)
@@ -119,13 +127,6 @@ def merge_dims(
         else op.Reshape(d, neg_one_1d)
         for d in dims
     ]
-    # Symbolic dimensions must already be INT64 so Concat can be used.
-    for dim in result_dims:
-        if dim.dtype != ir.DataType.INT64:
-            raise TypeError(
-                f"Expected an INT64 symbolic dimension, got {dim.dtype}. "
-                "Cast dimensions to INT64 before merging them."
-            )
     return op.Concat(*result_dims, axis=0)
 
 

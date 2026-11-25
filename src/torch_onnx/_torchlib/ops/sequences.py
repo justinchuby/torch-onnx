@@ -30,7 +30,13 @@ def _atleast_sequence(
         function = (core.aten_atleast_1d, core.aten_atleast_2d, core.aten_atleast_3d)[
             ndim - 1
         ]
-        return [function(op, tensor) for tensor in self]
+        results = []
+        for tensor in self:
+            out = function(op, tensor)
+            if out.type is None:
+                out.type = tensor.type
+            results.append(out)
+        return results
 
     builder = op.builder
     tensor_type = common_ops.require_sequence_type(op, self).elem_type

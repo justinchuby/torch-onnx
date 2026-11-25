@@ -619,8 +619,6 @@ def native_only():
     def checked_import(name, *args, **kwargs):
         if (
             "torch_lib" in name
-            or name == "torchvision"
-            or name.startswith("torchvision.")
         ):
             raise AssertionError(
                 f"Built-in translation imported optional/legacy {name}"

@@ -159,8 +159,12 @@ def cast(
     else:
         original = source_dtype(op, value, packed_complex=packed_complex)
         if original == dtype and value.dtype == onnx_dtype:
-            value.meta[_SOURCE_TYPE] = dtype
-            return value
+            if value.meta.get(_SOURCE_TYPE) is dtype:
+                return value
+            result = op.Identity(value)
+            result.shape = value.shape
+            result.meta[_SOURCE_TYPE] = dtype
+            return result
         result = value if value.dtype == onnx_dtype else op.Cast(value, to=onnx_dtype)
         result.shape = value.shape
         if dtype.is_complex and not original.is_complex:

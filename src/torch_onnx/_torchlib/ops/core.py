@@ -2215,7 +2215,7 @@ def aten_cumprod_opset26(
 def aten_log1p_opset29(op: TranslationContext, self: ir.Value) -> ir.Value:
     """Use the precision-preserving operator instead of log(1 + x)."""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Log1p(self)
+    return op.Log1p(self, output_types=[self.type])
 
 
 @onnx_impl(aten.view.dtype, opset_introduced=26)
@@ -3050,7 +3050,14 @@ def aten_scatter_reduce(
         and builder.opset >= 29
         and dtype.is_floating_point()
     ):
-        result = op.ScatterElements(self, index, src, axis=dim, reduction="mean")
+        result = op.ScatterElements(
+            self,
+            index,
+            src,
+            axis=dim,
+            reduction="mean",
+            output_types=[self.type],
+        )
         return op.Squeeze(result) if self_is_scalar else result
     if reduce == "mean":
         original = self
@@ -3449,12 +3456,7 @@ def aten_t(op: TranslationContext, self: ir.Value) -> ir.Value:
     """t(Tensor(a) self) -> Tensor(a)"""
 
     rank = len(common_ops.require_shape(op, self))
-    if rank == 2:
-        result = op.Transpose(self, perm=[1, 0])
-    else:
-        # rank < 2
-        result = self
-    return result
+    return op.Transpose(self, perm=[1, 0]) if rank == 2 else self
 
 
 @onnx_impl(aten.t.default, complex=True)
@@ -3462,12 +3464,7 @@ def aten_t_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
     """t(Tensor(a) self) -> Tensor(a)"""
 
     rank = len(common_ops.require_shape(op, self)) - 1
-    if rank == 2:
-        result = op.Transpose(self, perm=[1, 0, 2])
-    else:
-        # rank < 2
-        result = op.Identity(self)
-    return result
+    return op.Transpose(self, perm=[1, 0, 2]) if rank == 2 else op.Identity(self)
 
 
 @onnx_impl(aten.topk.default)
@@ -4058,10 +4055,10 @@ def aten_index_put(
     onnx_index = op.Concat(*advanced_index_values, axis=-1)
 
     # Check if advanced indices are contiguous:
-    contiguous = True
-    if advanced_indices:
-        if advanced_indices[-1] - advanced_indices[0] + 1 != len(advanced_indices):
-            contiguous = False
+    contiguous = not (
+        advanced_indices
+        and advanced_indices[-1] - advanced_indices[0] + 1 != len(advanced_indices)
+    )
 
     # Bring advanced indices to front:
     perm = advanced_indices + none_indices

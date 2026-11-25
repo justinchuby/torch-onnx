@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import onnx
@@ -70,16 +71,11 @@ class TranslationContext:
         if name.startswith("_"):
             raise AttributeError(name)
         try:
-            schema = onnx.defs.get_schema(name, self.builder.opset, "")
-        except onnx.defs.SchemaError as error:
-            available = onnx.defs.onnx_opset_version()
-            raise AttributeError(
-                f"No ONNX operator {name!r} at opset {self.builder.opset} "
-                f"(installed ONNX {onnx.__version__} provides default-domain "
-                f"schemas through opset {available}). Check the spelling, install "
-                "an ONNX build with that schema, or use builder.node() with "
-                "explicit output_types for custom/unregistered operators."
-            ) from error
+            schema: onnx.defs.OpSchema | None = onnx.defs.get_schema(
+                name, self.builder.opset, ""
+            )
+        except onnx.defs.SchemaError:
+            schema = None
 
         def call(
             *inputs: Any,
@@ -99,7 +95,11 @@ class TranslationContext:
                 _output_types=output_types,
                 **attributes,
             )
-            if schema.min_output == schema.max_output == 1:
+            if schema is not None:
+                if schema.min_output == schema.max_output == 1:
+                    return values[0]
+                return values
+            if outputs == 1 or (outputs is None and len(values) == 1):
                 return values[0]
             return values
 
@@ -136,6 +136,7 @@ class GraphBuilder:
         self.opset = opset
         self.functions: dict[ir.OperatorIdentifier, ir.Function] = {}
         self._constants: dict[tuple[ir.DataType, tuple[int, ...], bytes], ir.Value] = {}
+        self._warned_missing_schemas: set[str] = set()
 
     @contextlib.contextmanager
     def activate(self) -> Iterator[GraphBuilder]:
@@ -267,33 +268,178 @@ class GraphBuilder:
                 f"{existing}. Use the graph's opset version."
             )
         try:
-            schema = onnx.defs.get_schema(op_type, version, domain)
-        except onnx.defs.SchemaError as error:
-            schema_context = (
-                f" (installed ONNX {onnx.__version__} provides default-domain "
-                f"schemas through opset {onnx.defs.onnx_opset_version()})"
-                if not domain
-                else ""
+            schema: onnx.defs.OpSchema | None = onnx.defs.get_schema(
+                op_type, version, domain
             )
-            raise ValueError(
-                f"No ONNX schema for {domain}::{op_type} at version {version}"
-                f"{schema_context}. Correct the operator/opset, install an ONNX "
-                "build with that schema, or use node() with explicit output types."
-            ) from error
+        except onnx.defs.SchemaError as error:
+            if domain:
+                raise ValueError(
+                    f"No ONNX schema for {domain}::{op_type} at version {version}. "
+                    "Correct the operator/opset, install an ONNX build with that "
+                    "schema, or use node() with explicit output types."
+                ) from error
+            schema = None
+        if schema is None:
+            return self._call_without_schema(
+                op_type,
+                inputs,
+                version=version,
+                num_outputs=num_outputs,
+                output_types=output_types,
+                attributes=attributes,
+            )
         if (
             not domain
             and op_type == "ScatterElements"
             and attributes.get("reduction") == "mean"
             and schema.since_version < 29
         ):
-            raise ValueError(
-                f"ScatterElements reduction='mean' requires the opset 29 schema, "
-                f"but installed ONNX {onnx.__version__} resolves ScatterElements "
-                f"since_version={schema.since_version} (default-domain schemas "
-                f"through opset {onnx.defs.onnx_opset_version()}). Install an "
-                "ONNX build with opset 29 schemas, select opset_version <= 28, "
-                "or register a custom translation."
+            if version < 29:
+                raise ValueError(
+                    f"ScatterElements reduction='mean' requires opset_version >= 29, "
+                    f"got {version}. Select opset_version >= 29 or use explicit "
+                    "sum/count scatter reduction."
+                )
+            return self._call_without_schema(
+                op_type,
+                inputs,
+                version=version,
+                num_outputs=num_outputs,
+                output_types=output_types,
+                attributes=attributes,
+                stale_since_version=schema.since_version,
             )
+        try:
+            return self._call_with_schema(
+                schema,
+                op_type,
+                inputs,
+                domain=domain,
+                version=version,
+                num_outputs=num_outputs,
+                output_types=output_types,
+                attributes=attributes,
+            )
+        except (TypeError, ValueError):
+            if not domain and version > onnx.defs.onnx_opset_version():
+                return self._call_without_schema(
+                    op_type,
+                    inputs,
+                    version=version,
+                    num_outputs=num_outputs,
+                    output_types=output_types,
+                    attributes=attributes,
+                    stale_since_version=schema.since_version,
+                )
+            raise
+
+    def _warn_missing_standard_schema(
+        self,
+        op_type: str,
+        version: int,
+        *,
+        stale_since_version: int | None = None,
+    ) -> None:
+        if op_type in self._warned_missing_schemas:
+            return
+        self._warned_missing_schemas.add(op_type)
+        available = onnx.defs.onnx_opset_version()
+        if stale_since_version is not None:
+            detail = (
+                f"Standard ONNX operator {op_type!r} at opset {version} exceeds "
+                f"installed ONNX {onnx.__version__} schemas (default-domain schemas "
+                f"available through opset {available}, resolved {op_type} "
+                f"since_version={stale_since_version})."
+            )
+        else:
+            detail = (
+                f"Standard ONNX operator {op_type!r} at opset {version} was not "
+                f"found in installed ONNX {onnx.__version__} schemas (default-domain "
+                f"schemas available through opset {available})."
+            )
+        warnings.warn(
+            f"{detail} Constructing the node without schema validation using explicit "
+            "output metadata. Upgrade the 'onnx' package if you need onnx.checker or "
+            "reference-evaluator validation for this operator.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def _call_without_schema(
+        self,
+        op_type: str,
+        inputs: tuple[Any, ...],
+        *,
+        version: int,
+        num_outputs: int | None,
+        output_types: Sequence[ir.TypeProtocol | None] | None,
+        attributes: Mapping[str, Any],
+        stale_since_version: int | None = None,
+    ) -> tuple[ir.Value, ...]:
+        if num_outputs is not None and (
+            type(num_outputs) is not int or num_outputs < 0
+        ):
+            raise ValueError(
+                f"{op_type} _num_outputs must be a nonnegative integer, "
+                f"got {num_outputs!r}."
+            )
+        if output_types is not None:
+            if num_outputs is not None and num_outputs != len(output_types):
+                raise ValueError(
+                    "_num_outputs disagrees with _output_types. Supply matching lengths."
+                )
+            resolved_output_types: Sequence[ir.TypeProtocol | None] = output_types
+        elif num_outputs is not None:
+            resolved_output_types = [None] * num_outputs
+        else:
+            available = onnx.defs.onnx_opset_version()
+            raise ValueError(
+                f"Cannot determine output arity for standard ONNX operator {op_type!r} "
+                f"at opset {version} because installed ONNX {onnx.__version__} only "
+                f"provides default-domain schemas through opset {available}. Pass "
+                "outputs= / output_types= on TranslationContext (or _num_outputs= / "
+                "_output_types= on GraphBuilder.call, or GraphBuilder.node() with "
+                "explicit output_types), or check the operator spelling."
+            )
+        prepared: list[ir.Value | tuple[Any, ir.DataType] | None] = []
+        for index, value in enumerate(inputs):
+            if value is None or isinstance(value, ir.Value):
+                prepared.append(value)
+                continue
+            dtype = self._constant_dtype(value, op_type, f"input[{index}]")
+            prepared.append((value, dtype))
+        self._warn_missing_standard_schema(
+            op_type,
+            version,
+            stale_since_version=stale_since_version,
+        )
+        resolved = [
+            self.constant(value[0], dtype=value[1])
+            if isinstance(value, tuple)
+            else value
+            for value in prepared
+        ]
+        return self.node(
+            op_type,
+            resolved,
+            domain="",
+            version=version,
+            attributes=attributes,
+            output_types=resolved_output_types,
+        )
+
+    def _call_with_schema(
+        self,
+        schema: onnx.defs.OpSchema,
+        op_type: str,
+        inputs: tuple[Any, ...],
+        *,
+        domain: str,
+        version: int,
+        num_outputs: int | None,
+        output_types: Sequence[ir.TypeProtocol | None] | None,
+        attributes: Mapping[str, Any],
+    ) -> tuple[ir.Value, ...]:
         if not schema.min_input <= len(inputs) <= schema.max_input:
             raise ValueError(
                 f"{op_type} expects {schema.min_input}..{schema.max_input} inputs, "

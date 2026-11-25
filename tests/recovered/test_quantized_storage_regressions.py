@@ -86,8 +86,135 @@ class _ConvertedLayer(torch.nn.Module):
                 groups=layer.groups,
             )
         )
+        self.pointwise = (
+            not linear
+            and weight.shape[2:] == (1, 1)
+            and layer.groups == 1
+            and layer.stride == (1, 1)
+            and layer.padding == (0, 0)
+            and self.axis == 0
+        )
+        self.depthwise = (
+            not linear
+            and weight.shape[2:] == (3, 3)
+            and layer.groups == weight.shape[0]
+            and weight.shape[1] == 1
+            and layer.dilation == (1, 1)
+            and layer.padding == (1, 1)
+            and self.axis == 0
+        )
+        self.depthwise_fbgemm = (
+            self.depthwise
+            and torch.backends.quantized.engine == "fbgemm"
+            and bool(torch.all(self.zeros == 0))
+        )
+        self.spatial = (
+            not linear
+            and (
+                (
+                    weight.shape[2:] == (7, 7)
+                    and layer.groups == 1
+                    and layer.stride == (2, 2)
+                    and layer.padding == (3, 3)
+                )
+                or (
+                    weight.shape[2:] == (3, 3)
+                    and layer.groups > 1
+                    and torch.backends.quantized.engine == "fbgemm"
+                    and not self.depthwise
+                    and layer.padding == (1, 1)
+                )
+            )
+            and layer.dilation == (1, 1)
+            and self.axis == 0
+        )
+        if self.pointwise or self.depthwise or self.spatial:
+            scale = self.scales.float() * self.input_scale
+            self.register_buffer("requantization_scale", scale / self.output_scale)
+            self.register_buffer("requantization_bias", self.bias / scale)
 
     def forward(self, x):
+        if self.pointwise or self.depthwise or self.spatial:
+            # Accumulate integer products before float32 requantization:
+            # dequantizing first can move a result across a rounding tie.
+            value = _quantize(x, self.input_scale, self.input_zero).double()
+            value = value - self.input_zero
+            if self.spatial:
+                height, width = value.shape[-2:]
+                patches = torch.nn.functional.unfold(
+                    value,
+                    self.weight.shape[2:],
+                    padding=self.convolution["padding"],
+                    stride=self.convolution["stride"],
+                )
+                weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
+                groups = self.convolution["groups"]
+                patches = patches.reshape(
+                    value.shape[0], groups, weight.shape[1], -1
+                ).transpose(2, 3)
+                weight = weight.reshape(groups, -1, weight.shape[1])
+                result = torch.matmul(patches, weight.transpose(1, 2))
+                result = result.transpose(1, 2)
+                stride_h, stride_w = self.convolution["stride"]
+                result = result.reshape(
+                    value.shape[0],
+                    (height - 1) // stride_h + 1,
+                    (width - 1) // stride_w + 1,
+                    self.weight.shape[0],
+                ).float()
+            elif self.depthwise:
+                height, width = value.shape[-2:]
+                stride_h, stride_w = self.convolution["stride"]
+                out_h = (height - 1) // stride_h + 1
+                out_w = (width - 1) // stride_w + 1
+                if self.depthwise_fbgemm:
+                    value = value + self.input_zero
+                value = torch.nn.functional.pad(
+                    value,
+                    (1, 1, 1, 1),
+                    value=self.input_zero if self.depthwise_fbgemm else 0,
+                )
+                weight = self.weight.double() - self.zeros.reshape(-1, 1, 1, 1)
+                result = value.new_zeros(
+                    (value.shape[0], weight.shape[0], out_h, out_w)
+                )
+                products = [
+                    value[
+                        :,
+                        :,
+                        row : row + out_h * stride_h : stride_h,
+                        column : column + out_w * stride_w : stride_w,
+                    ]
+                    * weight[:, 0, row, column].reshape(1, -1, 1, 1)
+                    for row in range(3)
+                    for column in range(3)
+                ]
+                if self.depthwise_fbgemm:
+                    # FBGEMM's uint8/int8 kernel saturates adjacent product
+                    # pairs to int16 before the int32 accumulation.
+                    for index in range(0, 8, 2):
+                        result = result + (products[index] + products[index + 1]).clamp(
+                            -32768, 32767
+                        )
+                    result = result + products[8]
+                    result = result - self.input_zero * weight.sum((1, 2, 3)).reshape(
+                        1, -1, 1, 1
+                    )
+                else:
+                    for product in products:
+                        result = result + product
+                result = result.permute(0, 2, 3, 1).float()
+            else:
+                weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
+                result = torch.matmul(value.permute(0, 2, 3, 1), weight.T).float()
+            result = (result + self.requantization_bias) * self.requantization_scale
+            result = torch.round(result) + self.output_zero
+            result = result.clamp(self.output_zero if self.relu else 0, 255)
+            return _dequantize(
+                result.permute(0, 3, 1, 2).to(torch.uint8),
+                self.output_scale,
+                self.output_zero,
+            )
         value = _dequantize(
             _quantize(x, self.input_scale, self.input_zero),
             self.input_scale,
@@ -175,6 +302,32 @@ class _StoredLayer(torch.nn.Module):
 
 
 class TestRecoveredQuantizedStorage(RecoveredRuntimeHarness):
+    @pytest.mark.integration
+    def test_depthwise_fbgemm_saturated_pair(self):
+        self._require_fbgemm()
+        input_scale = 0.037159428000450134
+        weight_scale = 0.003585818689316511
+        quantizer = torch.ao.nn.quantized.Quantize(input_scale, 0, torch.quint8)
+        layer = torch.ao.nn.quantized.Conv2d(24, 24, 3, padding=1, groups=24)
+        weight = torch.tensor([2, 19, 23, 12, 121, 127, 21, 118, 118])
+        weight = weight.reshape(1, 1, 3, 3).expand(24, 1, 3, 3).float()
+        weight = torch.quantize_per_channel(
+            weight * weight_scale,
+            torch.full((24,), weight_scale, dtype=torch.float64),
+            torch.zeros(24, dtype=torch.int64),
+            0,
+            torch.qint8,
+        )
+        layer.set_weight_bias(weight, torch.full((24,), -0.6456627249717712))
+        layer.scale, layer.zero_point = 0.12258777767419815, 59
+        x = torch.tensor([0, 113, 170, 3, 107, 170, 2, 104, 172]).float()
+        x = x.reshape(1, 1, 3, 3).expand(1, 24, 3, 3) * input_scale
+        adapter = _ConvertedLayer(quantizer, layer, linear=False, relu=False)
+        with torch.no_grad():
+            expected = layer(quantizer(x)).dequantize()
+            torch.testing.assert_close(adapter(x), expected, rtol=0, atol=0)
+        self.run_test(adapter, x)
+
     def _compare(self, model, original, examples):
         stored = [_pytree.tree_map(_storage, args) for args in examples]
         program = self.run_test(

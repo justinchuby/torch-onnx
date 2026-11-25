@@ -626,9 +626,10 @@ def _handle_call_function_node_with_lowering(
             # only native translation occurs inside an owned subgraph.
             model.graph.opset_imports[""] = registry.opset_version
             node_count = len(graph)
+            native_context = _ir_builder.TranslationContext(builder)
             try:
                 outputs = onnx_function(
-                    _ir_builder.TranslationContext(builder),
+                    native_context,
                     *onnx_args,
                     **onnx_kwargs,
                 )
@@ -644,17 +645,73 @@ def _handle_call_function_node_with_lowering(
                 and isinstance(outputs.type, ir.SequenceType)
                 and isinstance(expected, Sequence)
             ):
-                # FX exposes a fixed tuple of tensors even when dynamic sizes
-                # require an ONNX sequence. Unpack explicitly, without tracing.
-                outputs = tuple(
-                    builder.call(
-                        "SequenceAt",
-                        outputs,
-                        index,
-                        _output_types=[outputs.type.elem_type],
-                    )[0]
-                    for index in range(len(expected))
+                sequence_node = outputs.producer()
+                split_size = (
+                    sequence_node.inputs[1]
+                    if sequence_node is not None and len(sequence_node.inputs) == 2
+                    else None
                 )
+                if (
+                    sequence_node is not None
+                    and sequence_node.domain == ""
+                    and sequence_node.op_type == "SplitToSequence"
+                    and sequence_node.graph is graph
+                    and sequence_node.inputs[0] is not None
+                    and not outputs.uses()
+                    and len(expected) > 0
+                    and split_size is not None
+                    and split_size.shape is not None
+                    and len(split_size.shape) == 0
+                    and split_size.dtype == ir.DataType.INT64
+                    and sequence_node.attributes.get(
+                        "keepdims", ir.AttrInt64("keepdims", 1)
+                    ).as_int()
+                    == 1
+                ):
+                    # FX fixes the tuple arity. Emit one variadic Split instead
+                    # of boxing dynamic chunks and immediately indexing them.
+                    split_input = sequence_node.inputs[0]
+                    axis = sequence_node.attributes.get(
+                        "axis", ir.AttrInt64("axis", 0)
+                    ).as_int()
+                    count = len(expected)
+                    output_types = [outputs.type.elem_type] * count
+                    graph.remove(sequence_node, safe=True)
+                    if count == 1:
+                        outputs = (native_context.Identity(split_input),)
+                    else:
+                        remainder = native_context.Sub(
+                            native_context.Gather(
+                                native_context.Shape(split_input), axis
+                            ),
+                            native_context.Mul(split_size, count - 1),
+                        )
+                        sizes = native_context.Concat(
+                            native_context.Expand(
+                                native_context.Reshape(split_size, [1]), [count - 1]
+                            ),
+                            native_context.Reshape(remainder, [1]),
+                            axis=0,
+                        )
+                        outputs = builder.call(
+                            "Split",
+                            split_input,
+                            sizes,
+                            axis=axis,
+                            _num_outputs=count,
+                            _output_types=output_types,
+                        )
+                else:
+                    # Other sequence producers retain their runtime semantics.
+                    outputs = tuple(
+                        builder.call(
+                            "SequenceAt",
+                            outputs,
+                            index,
+                            _output_types=[outputs.type.elem_type],
+                        )[0]
+                        for index in range(len(expected))
+                    )
             values = list(outputs) if isinstance(outputs, Sequence) else [outputs]
             expected_count = len(expected) if isinstance(expected, Sequence) else 1
             if len(values) != expected_count or not all(

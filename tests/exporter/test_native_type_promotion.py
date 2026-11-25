@@ -116,6 +116,32 @@ class TestPromotionDtypes(common_utils.TestCase):
                         expected,
                     )
 
+    @common_utils.parametrize("reverse", [False, True])
+    def test_shared_wrapped_scalar_provenance_is_consumer_independent(self, reverse):
+        previous = torch.get_default_dtype()
+        try:
+            torch.set_default_dtype(torch.float64)
+            scalar = ir.Value(
+                name="captured_scalar",
+                shape=ir.Shape([]),
+                type=ir.TensorType(ir.DataType.FLOAT),
+            )
+            scalar.meta["torch.onnx.original_type"] = float
+            consumers = [torch.float32, torch.int64]
+            if reverse:
+                consumers.reverse()
+            for dtype in consumers:
+                tensor = _value(torch.empty(2, dtype=dtype, device="meta"))
+                computation, result = _promotion.dtypes(self.op, scalar, tensor)
+                expected = torch.float32 if dtype == torch.float32 else torch.float64
+                self.assertEqual(result, expected)
+                converted = _promotion.cast(self.op, scalar, computation)
+                self.assertIsNot(converted, scalar)
+                self.assertIs(converted.meta["torch.onnx.original_type"], computation)
+                self.assertIs(scalar.meta["torch.onnx.original_type"], float)
+        finally:
+            torch.set_default_dtype(previous)
+
     @common_utils.parametrize("default_dtype", [torch.float32, torch.float64])
     def test_wrapped_scalars_and_default_dtype(self, default_dtype):
         previous = torch.get_default_dtype()

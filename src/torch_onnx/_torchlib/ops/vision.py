@@ -10,10 +10,9 @@ from typing import TYPE_CHECKING
 import onnx_ir as ir
 
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
+from torch_onnx._torchlib.ops import common as common_ops
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from torch_onnx._ir_builder import TranslationContext
 
 
@@ -127,20 +126,107 @@ def torchvision_ps_roi_align(
 @onnx_impl("torchvision::roi_pool", opset_introduced=18)
 def torchvision_roi_pool(
     op: TranslationContext,
-    input,
-    boxes,
-    output_size: Sequence[int],
-    spatial_scale: float = 1.0,
-):
-    """roi_pool(input: torch.Tensor, boxes: Union[torch.Tensor, list[torch.Tensor]], output_size: None, spatial_scale: float = 1.0) -> torch.Tensor"""
+    input: ir.Value,
+    boxes: ir.Value,
+    spatial_scale: float,
+    pooled_height: int,
+    pooled_width: int,
+) -> tuple[ir.Value, ir.Value]:
+    """torchvision::roi_pool(Tensor input, Tensor rois, float spatial_scale, SymInt pooled_height, SymInt pooled_width) -> (Tensor, Tensor)"""
     # MaxRoiPool expects boxes in format [batch_index, x1, y1, x2, y2]
-    pooled_height, pooled_width = output_size
-    return op.MaxRoiPool(
+    pooled = op.MaxRoiPool(
         input,
         boxes,
         pooled_shape=(pooled_height, pooled_width),
         spatial_scale=spatial_scale,
     )
+    shape = op.Shape(input)
+    height, width = op.Gather(shape, 2), op.Gather(shape, 3)
+    scaled = op.Mul(op.Slice(boxes, [1], [5], [1]), spatial_scale)
+    # torchvision rounds half away from zero, unlike ONNX Round.
+    coordinates = op.Cast(
+        op.Mul(op.Sign(scaled), op.Floor(op.Add(op.Abs(scaled), 0.5))),
+        to=ir.DataType.INT64,
+    )
+
+    def bins(
+        op: TranslationContext,
+        start_index: int,
+        end_index: int,
+        count: int,
+        limit: ir.Value,
+    ) -> tuple[ir.Value, ir.Value, ir.Value]:
+        start = op.Gather(coordinates, start_index, axis=1)
+        end = op.Gather(coordinates, end_index, axis=1)
+        extent = op.Max(op.Add(op.Sub(end, start), 1), 1)
+        size = op.Div(op.CastLike(extent, boxes), float(count))
+        positions = op.CastLike(op.Range(0, count, 1), boxes)
+        size = op.Unsqueeze(size, [1])
+        start = op.Unsqueeze(start, [1])
+        first = op.Add(
+            start, op.Cast(op.Floor(op.Mul(size, positions)), to=ir.DataType.INT64)
+        )
+        last = op.Add(
+            start,
+            op.Cast(
+                op.Ceil(op.Mul(size, op.Add(positions, 1.0))), to=ir.DataType.INT64
+            ),
+        )
+        first, last = op.Clip(first, 0, limit), op.Clip(last, 0, limit)
+        largest = op.ReduceMax(
+            op.Concat(op.Reshape(op.Sub(last, first), [-1]), [1], axis=0),
+            keepdims=0,
+        )
+        return first, last, op.Range(0, largest, 1)
+
+    top, bottom, rows = bins(op, 1, 3, pooled_height, height)
+    left, right, columns = bins(op, 0, 2, pooled_width, width)
+    rows = op.Add(op.Unsqueeze(top, [2, 3, 4]), op.Unsqueeze(rows, [0, 1, 2, 4]))
+    columns = op.Add(op.Unsqueeze(left, [1, 3, 4]), op.Unsqueeze(columns, [0, 1, 2, 3]))
+    valid = op.And(
+        op.Less(rows, op.Unsqueeze(bottom, [2, 3, 4])),
+        op.Less(columns, op.Unsqueeze(right, [1, 3, 4])),
+    )
+    indices = op.Add(op.Mul(rows, width), columns)
+    candidate_shape = op.Shape(indices)
+    roi_count = op.Gather(candidate_shape, [0])
+    candidate_count = op.ReduceProd(op.Slice(candidate_shape, [1], [5]), keepdims=1)
+    bin_count = op.ReduceProd(op.Slice(candidate_shape, [3], [5]), keepdims=1)
+    flat_indices = op.Reshape(
+        op.Min(indices, op.Sub(op.Mul(height, width), 1)),
+        op.Concat(roi_count, [1], candidate_count, axis=0),
+    )
+    batch = _process_batch_indices_for_roi_align(op, boxes)
+    features = op.Reshape(
+        op.Gather(input, batch, axis=0),
+        op.Concat(
+            roi_count,
+            op.Gather(shape, [1]),
+            op.Reshape(op.Mul(height, width), [1]),
+            axis=0,
+        ),
+    )
+    flat_indices = op.Expand(
+        flat_indices,
+        op.Concat(roi_count, op.Gather(shape, [1]), candidate_count, axis=0),
+    )
+    candidates = op.Reshape(
+        op.GatherElements(features, flat_indices, axis=2),
+        op.Concat(op.Shape(pooled), bin_count, axis=0),
+    )
+    indices = op.Reshape(
+        indices,
+        op.Concat(roi_count, [1, pooled_height, pooled_width], bin_count, axis=0),
+    )
+    valid = op.Reshape(valid, op.Shape(indices))
+    matches = op.And(valid, op.Equal(candidates, op.Unsqueeze(pooled, [-1])))
+    matches = op.And(
+        matches, op.Greater(candidates, common_ops.require_dtype(op, input).min)
+    )
+    # The first maximum in row-major order wins; empty bins have index -1.
+    argmax = op.ReduceMin(op.Where(matches, indices, _INT64_MAX), [-1], keepdims=0)
+    argmax = op.Where(op.Equal(argmax, _INT64_MAX), -1, argmax)
+    return pooled, op.Cast(argmax, to=ir.DataType.INT32)
 
 
 @onnx_impl("torchvision::deform_conv2d", opset_introduced=19)

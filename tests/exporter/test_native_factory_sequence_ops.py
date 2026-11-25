@@ -725,5 +725,25 @@ _SOURCE_TARGETS = (
 )
 
 
+@common_utils.instantiate_parametrized_tests
+class TestFixedNativeSplitExport(common_utils.TestCase):
+    @common_utils.parametrize("length,split_size", [(0, 2), (4, 6), (4, 2)])
+    @common_utils.parametrize("optimize", [False, True])
+    def test_export_fixed_split(self, length, split_size, optimize):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.split(x, split_size)
+
+        program = torch_onnx.export(
+            Model().eval(),
+            (torch.randn(length),),
+            optimize=optimize,
+            verbose=False,
+        )
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        torch_onnx.testing.assert_onnx_program(program, strategy=None)
+        program.release()
+
+
 if __name__ == "__main__":
     common_utils.run_tests()

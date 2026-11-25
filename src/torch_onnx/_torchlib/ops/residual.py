@@ -745,7 +745,7 @@ def aten_logcumsumexp_opset29(
     """Use stable per-prefix accumulation, including infinities and empty axes."""
     if len(common_ops.require_shape(op, self)) == 0:
         return op.Identity(self)
-    return op.LogCumSumExp(self, axis=dim)
+    return op.LogCumSumExp(self, axis=dim, output_types=[self.type])
 
 
 @onnx_impl(aten.logdet.default)
@@ -962,11 +962,9 @@ def aten_roll_complex(
                 "Invalid metadata in aten_roll_complex: len(shifts) == len(dims). Supply known tensor shapes and dtypes."
             )
         for i, dim in enumerate(dims):
-            if dim < 0:
-                # Account for the complex dimension in ONNX
-                dim = self_rank + dim - 1
-            self_real = _aten_roll_shift_and_dim_onnx(op, self_real, shifts[i], dim)
-            self_imag = _aten_roll_shift_and_dim_onnx(op, self_imag, shifts[i], dim)
+            axis = self_rank + dim - 1 if dim < 0 else dim
+            self_real = _aten_roll_shift_and_dim_onnx(op, self_real, shifts[i], axis)
+            self_imag = _aten_roll_shift_and_dim_onnx(op, self_imag, shifts[i], axis)
 
         result = op.Concat(self_real, self_imag, axis=-1)
     return result

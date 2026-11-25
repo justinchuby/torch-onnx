@@ -53,7 +53,7 @@ def aten_special_expm1(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_special_expm1_opset29(op: TranslationContext, self: ir.Value) -> ir.Value:
     """Use the precision-preserving operator instead of subtracting from exp(x)."""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Expm1(self)
+    return op.Expm1(self, output_types=[self.type])
 
 
 @onnx_impl(

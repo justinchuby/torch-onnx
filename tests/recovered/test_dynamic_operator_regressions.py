@@ -159,3 +159,40 @@ class TestRecoveredDynamicOperators(RecoveredRuntimeHarness):
             output_names=["output_1", "output_2", "output_3"],
             dynamic_axes={"input_1": [0]},
         )
+
+    def _chunk_test(self, dynamic_count):
+        class ChunkModel(torch.nn.Module):
+            def __init__(self, dim=1):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, x):
+                return torch.chunk(x, x.size(0) if dynamic_count else 3, dim=self.dim)
+
+        batch = 3 if dynamic_count else 1
+        x = torch.randn(batch, 18)
+        examples = [x, *(torch.randn(batch, width) for width in range(13, 16))]
+        # A batch-derived chunk count fixes batch=3 in the modern output tree.
+        axes = {1: "dims"} if dynamic_count else {0: "batch_size", 1: "dims"}
+        for dim in (1, -1):
+            with self.subTest(dim=dim):
+                model = ChunkModel(dim)
+                program = self.run_test(
+                    model,
+                    x,
+                    additional_test_inputs=examples,
+                    input_names=["x"],
+                    dynamic_axes={"x": axes},
+                )
+                operators = {node.op_type for node in program.model.graph}
+                self.assertIn("Split", operators)
+                self.assertNotIn("SplitToSequence", operators)
+                for example in examples:
+                    self.assert_program_outputs(program, (example,), reference=model)
+                program.release()
+
+    def test_chunk(self):
+        self._chunk_test(False)
+
+    def test_dynamic_chunk(self):
+        self._chunk_test(True)

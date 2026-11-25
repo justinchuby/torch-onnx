@@ -160,7 +160,7 @@ def test_einsum_28_bfloat16_schema():
     onnx.checker.check_model(ir.to_proto(build(28)), full_check=True)
 
 
-def test_unavailable_schema_target_is_actionable():
+def test_missing_standard_schema_warns_once_and_exports():
     for opset in (30, 50):
         validate_opset_version(opset)
     for invalid in (0, -1, True, 18.5, "29"):
@@ -171,9 +171,15 @@ def test_unavailable_schema_target_is_actionable():
     builder = torch_onnx.GraphBuilder(graph, opset=30)
     op = torch_onnx.TranslationContext(builder)
     x = ir.Value(name="x", type=ir.TensorType(ir.DataType.FLOAT), shape=ir.Shape([2]))
-    with pytest.raises(AttributeError, match="provides default-domain schemas through"):
+    with pytest.raises(
+        ValueError,
+        match="Cannot determine output arity for standard ONNX operator",
+    ):
         op.NotARealFutureOnnxOperator(x)
-    with pytest.raises(ValueError, match="provides default-domain schemas through"):
+    with pytest.raises(
+        ValueError,
+        match="Cannot determine output arity for standard ONNX operator",
+    ):
         builder.call("NotARealFutureOnnxOperator", x)
 
     real_get_schema = onnx.defs.get_schema
@@ -186,43 +192,61 @@ def test_unavailable_schema_target_is_actionable():
             return scatter_18
         return real_get_schema(name, min(max_inclusive_version, 28), domain)
 
-    class Expm1Model(torch.nn.Module):
-        def forward(self, v):
-            return torch.expm1(v)
-
-    class ScatterMeanModel(torch.nn.Module):
+    class MultiOpset29Model(torch.nn.Module):
         def forward(self, v, idx, src):
-            return v.scatter_reduce(0, idx, src, reduce="mean", include_self=True)
+            y = torch.expm1(v) + torch.expm1(v * 2.0)
+            y = torch.log1p(torch.abs(y))
+            return y.scatter_reduce(0, idx, src, reduce="mean", include_self=True)
 
     with (
         mock.patch.object(onnx.defs, "onnx_opset_version", return_value=28),
         mock.patch.object(onnx.defs, "get_schema", side_effect=fake_onnx_28_get_schema),
+        pytest.warns(UserWarning) as record,
     ):
-        with pytest.raises(
-            torch_onnx.errors.ConversionError,
-            match="provides default-domain schemas through opset 28",
-        ):
-            torch_onnx.export(
-                Expm1Model().eval(),
-                (torch.randn(2),),
-                opset_version=29,
-                verbose=False,
-            )
-        with pytest.raises(
-            torch_onnx.errors.ConversionError,
-            match="ScatterElements reduction='mean' requires the opset 29 schema",
-        ):
-            torch_onnx.export(
-                ScatterMeanModel().eval(),
-                (
-                    torch.tensor([2.0, 4.0]),
-                    torch.tensor([0, 1]),
-                    torch.tensor([1.0, 3.0]),
-                ),
-                opset_version=29,
-                optimize=False,
-                verbose=False,
-            )
+        program = torch_onnx.export(
+            MultiOpset29Model().eval(),
+            (
+                torch.tensor([0.2, 0.4]),
+                torch.tensor([0, 1]),
+                torch.tensor([1.0, 3.0]),
+            ),
+            opset_version=29,
+            optimize=False,
+            verbose=False,
+        )
+
+    user_warnings = [
+        str(w.message) for w in record if issubclass(w.category, UserWarning)
+    ]
+    missing_warnings = [msg for msg in user_warnings if "Standard ONNX operator" in msg]
+    assert len(missing_warnings) == 3
+    for expected_op in ("'Expm1'", "'Log1p'", "'ScatterElements'"):
+        assert sum(expected_op in msg for msg in missing_warnings) == 1
+    assert program.model.opset_imports[""] == 29
+    op_types = [node.op_type for node in program.model.graph]
+    assert op_types.count("Expm1") == 2
+    assert op_types.count("Log1p") == 1
+    scatter_nodes = [
+        node for node in program.model.graph if node.op_type == "ScatterElements"
+    ]
+    assert len(scatter_nodes) == 1
+    assert scatter_nodes[0].attributes["reduction"].as_string() == "mean"
+
+    # When target opset <= installed ONNX schema ceiling, normal schema validation still raises.
+    graph_28 = ir.Graph([], [], nodes=[], name="known_schema_validation")
+    builder_28 = torch_onnx.GraphBuilder(graph_28, opset=28)
+    with pytest.raises(ValueError, match="ScatterElements reduction='mean' requires"):
+        builder_28.call(
+            "ScatterElements",
+            x,
+            ir.Value(
+                name="idx", type=ir.TensorType(ir.DataType.INT64), shape=ir.Shape([2])
+            ),
+            x,
+            axis=0,
+            reduction="mean",
+            _output_types=[x.type],
+        )
 
 
 def test_future_and_custom_opset_extensibility():
@@ -246,7 +270,7 @@ def test_future_and_custom_opset_extensibility():
         return op.Add(scaled, 1.0)
 
     def custom_expm1_35(op, x):
-        return op.Sub(op.Exp(x), 1.0)
+        return op.FutureStdExpm1(x, output_types=[x.type], approx=0)
 
     torch_onnx.register_custom_translation(
         torch.ops.torch_onnx_test.affine_scale.default,
@@ -273,30 +297,36 @@ def test_future_and_custom_opset_extensibility():
                     shape=y.shape,
                     version=2,
                 )
-                return torch.expm1(z)
+                return torch.expm1(z) + torch.expm1(y)
 
-        program = torch_onnx.export(
-            CustomFutureModel().eval(),
-            (torch.randn(2, 3),),
-            opset_version=35,
-            optimize=False,
-            verbose=False,
-        )
+        with pytest.warns(
+            UserWarning,
+            match="Standard ONNX operator 'FutureStdExpm1' at opset 35",
+        ) as record:
+            program = torch_onnx.export(
+                CustomFutureModel().eval(),
+                (torch.randn(2, 3),),
+                opset_version=35,
+                optimize=False,
+                verbose=False,
+            )
         assert program.model.opset_imports[""] == 35
         assert program.model.opset_imports["acme.ops"] == 3
         assert program.model.opset_imports["acme.symbolic"] == 2
+        assert sum("FutureStdExpm1" in str(w.message) for w in record) == 1
         assert [node.op_type for node in program.model.graph] == [
             "FutureScale",
             "Constant",
             "Add",
             "Bias",
-            "Exp",
-            "Sub",
+            "FutureStdExpm1",
+            "FutureStdExpm1",
+            "Add",
         ]
 
         class StandardFutureOpsetModel(torch.nn.Module):
             def forward(self, x):
-                return torch.expm1(x) + 2.0
+                return torch.sin(x) + 2.0
 
         executable = torch_onnx.export(
             StandardFutureOpsetModel().eval(),
@@ -452,6 +482,25 @@ def test_29_logcumsumexp_edge_cases(x):
     )
     onnx.checker.check_model(program.model_proto, full_check=True)
     torch_onnx.testing.assert_onnx_program(program, backend="reference")
+
+
+@pytest.mark.opset29
+def test_29_roi_pool_schema():
+    import torchvision
+
+    class Model(torch.nn.Module):
+        def forward(self, x, rois):
+            return torchvision.ops.roi_pool(x, rois, (3, 2), 1.0)
+
+    program = torch_onnx.export(
+        Model(),
+        (torch.randn(2, 3, 6, 7), torch.tensor([[0.0, 0, 0, 6, 5]])),
+        opset_version=29,
+        verbose=False,
+    )
+    assert program.model.opset_imports[""] == 29
+    assert any(node.op_type == "MaxRoiPool" for node in program.model.graph)
+    onnx.checker.check_model(program.model_proto, full_check=True)
 
 
 @pytest.mark.opset29

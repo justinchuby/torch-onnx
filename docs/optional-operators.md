@@ -54,6 +54,13 @@ must establish exact byte-format equivalence before using it.
 
 ## Torchvision matrix
 
+Development-schema CI installs the public Linux wheel
+`onnx-weekly==1.24.0.dev20261123` instead of compiling ONNX. It checks required
+`Log1p`, `Expm1`, and `DequantizePacked` schemas before running the unchanged
+semantic/schema and reference-runtime regressions. The older proxy-available
+`1.24.0.dev20261102` lacks `Log1p` and `Expm1` despite reporting maximum opset 29;
+the maximum-opset number alone does not establish compatibility.
+
 | Operator | Native ONNX representation | Coverage / limits |
 | --- | --- | --- |
 | `nms` | `NonMaxSuppression` | Opset 18+, actual-package export/check/ORT/serialization |

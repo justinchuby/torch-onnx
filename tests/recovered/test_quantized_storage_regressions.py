@@ -110,10 +110,21 @@ class _ConvertedLayer(torch.nn.Module):
         )
         self.spatial = (
             not linear
-            and weight.shape[2:] == (7, 7)
-            and layer.groups == 1
-            and layer.stride == (2, 2)
-            and layer.padding == (3, 3)
+            and (
+                (
+                    weight.shape[2:] == (7, 7)
+                    and layer.groups == 1
+                    and layer.stride == (2, 2)
+                    and layer.padding == (3, 3)
+                )
+                or (
+                    weight.shape[2:] == (3, 3)
+                    and layer.groups > 1
+                    and torch.backends.quantized.engine == "fbgemm"
+                    and not self.depthwise
+                    and layer.padding == (1, 1)
+                )
+            )
             and layer.dilation == (1, 1)
             and self.axis == 0
         )
@@ -131,15 +142,25 @@ class _ConvertedLayer(torch.nn.Module):
             if self.spatial:
                 height, width = value.shape[-2:]
                 patches = torch.nn.functional.unfold(
-                    value, (7, 7), padding=(3, 3), stride=(2, 2)
+                    value,
+                    self.weight.shape[2:],
+                    padding=self.convolution["padding"],
+                    stride=self.convolution["stride"],
                 )
                 weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
-                result = torch.matmul(patches.transpose(1, 2), weight.T)
+                groups = self.convolution["groups"]
+                patches = patches.reshape(
+                    value.shape[0], groups, weight.shape[1], -1
+                ).transpose(2, 3)
+                weight = weight.reshape(groups, -1, weight.shape[1])
+                result = torch.matmul(patches, weight.transpose(1, 2))
+                result = result.transpose(1, 2)
+                stride_h, stride_w = self.convolution["stride"]
                 result = result.reshape(
                     value.shape[0],
-                    (height + 1) // 2,
-                    (width + 1) // 2,
-                    weight.shape[0],
+                    (height - 1) // stride_h + 1,
+                    (width - 1) // stride_w + 1,
+                    self.weight.shape[0],
                 ).float()
             elif self.depthwise:
                 height, width = value.shape[-2:]

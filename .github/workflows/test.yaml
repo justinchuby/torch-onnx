@@ -21,6 +21,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  optional-operators:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Install real optional packages and pinned development schemas
+        run: |
+          pip install -r requirements-dev.txt -e . torchao==0.18.0 torchvision==0.29.2
+          pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8178f7357d52e63db0"
+      - name: Export, check, execute, and serialize optional operators
+        run: pytest tests/exporter/test_optional_packages.py -m "integration or not integration"
   opset29:
     runs-on: ubuntu-latest
     steps:

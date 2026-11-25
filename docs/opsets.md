@@ -8,13 +8,27 @@ targeting newer opset versions without breaking export.
 When a standard ONNX operator or newer operator schema is missing from a
 slightly older installed `onnx` package, `GraphBuilder` and `TranslationContext`
 emit one `UserWarning` per missing standard operator per graph construction and
-build the node directly using explicit output metadata (`output_types=` /
-`outputs=` on `TranslationContext`, or `_output_types=` / `_num_outputs=` on
-`GraphBuilder.call`) rather than failing solely on installed `onnx` package age.
-If no schema is present and output arity is omitted, construction fails with an
-actionable error requesting explicit output metadata instead of guessing output
-counts. Known schemas within the installed `onnx` opset range continue to
-validate input arity, tensor types, and attributes normally.
+build the node directly rather than failing solely on installed `onnx` package
+age:
+
+- `GraphBuilder` does not infer output types from ONNX schemas. During
+  `torch_onnx.export`, final node output shapes and dtypes are populated from
+  the captured PyTorch `ExportedProgram` (`node.meta["val"]`) via
+  `_set_shape_types` / `_set_shape_type` (matching upstream PyTorch's
+  `torch/onnx/_internal/exporter/_core.py` and `_building.py`), while
+  `Cast`, `BitCast`, `Constant`, and `ConstantOfShape` record their explicit
+  attribute-defined output dtypes directly.
+- Named calls on `TranslationContext` (for example `op.Expm1(x)`) default to one
+  untyped output when no schema is present unless `outputs=` or `output_types=`
+  is supplied explicitly for multi-output or sequence/subgraph cases. Note that
+  a misspelled default-domain operator name on `TranslationContext` therefore
+  emits the missing-schema `UserWarning` and constructs an unvalidated
+  single-output node rather than raising at call time.
+- Raw `GraphBuilder.call` stays strict when no schema is present and requires
+  `_num_outputs=` or `_output_types=` so callers do not guess arity implicitly.
+- Installed ONNX schemas within the available opset range are used only to
+  validate input counts, typed tensor inputs, attributes, and Python constant
+  conversions.
 
 The development-schema authority is ONNX main
 [`622adf94d4e720142950aa8178f7357d52e63db0`](https://github.com/onnx/onnx/commit/622adf94d4e720142950aa8178f7357d52e63db0).

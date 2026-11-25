@@ -54,9 +54,9 @@ def _evaluate(function, *args):
         else:
             inputs.append(arg)
     graph.outputs.append(function(op, *inputs))
-    proto = onnx.shape_inference.infer_shapes(
-        ir.to_proto(ir.Model(graph, ir_version=10)), strict_mode=True
-    )
+    model = ir.Model(graph, ir_version=10)
+    ir.passes.common.ShapeInferencePass()(model)
+    proto = onnx.shape_inference.infer_shapes(ir.to_proto(model), strict_mode=True)
     onnx.checker.check_model(proto, full_check=True)
     result = ReferenceEvaluator(proto).run(None, feeds)[0]
     return torch.from_numpy(np.asarray(result)), graph

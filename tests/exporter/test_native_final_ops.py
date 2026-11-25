@@ -840,7 +840,7 @@ class TestNativeFinalOps(common_utils.TestCase):
         ):
             expected = reference(x, dim=dim, correction=correction, keepdim=keepdim)
             actual = _evaluate(
-                lambda op, a: getattr(core, "aten_" + name)(
+                lambda op, a, name=name: getattr(core, "aten_" + name)(
                     op, a, dim, correction, keepdim
                 ),
                 [x],
@@ -981,6 +981,7 @@ class TestNativeFinalOps(common_utils.TestCase):
         output = vision.torchvision_deform_conv2d(
             op, *values, None, None, 1, 1, 0, 0, 1, 1, 1, 1, False
         )
+        output.dtype = ir.DataType.FLOAT
         output.shape = ir.Shape([1, 1, 4, 4])
         graph.outputs.append(output)
         onnx.checker.check_model(

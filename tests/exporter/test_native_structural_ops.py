@@ -50,10 +50,14 @@ def _evaluate(function, tensors, *, dynamic=False, expected=None, runtime=False)
     if expected is not None:
         expected_outputs = expected if isinstance(expected, tuple) else (expected,)
         for output, tensor in zip(graph.outputs, expected_outputs, strict=False):
+            if output.dtype is None:
+                output.dtype = ir.DataType.from_numpy(tensor.numpy().dtype)
             # The exporter supplies FX output ranks; dynamic dimensions remain unknown.
             output.shape = ir.Shape([None] * tensor.ndim)
+    model = ir.Model(graph, ir_version=10)
+    ir.passes.common.ShapeInferencePass()(model)
     proto = onnx.shape_inference.infer_shapes(
-        ir.to_proto(ir.Model(graph, ir_version=10)), strict_mode=True, data_prop=True
+        ir.to_proto(model), strict_mode=True, data_prop=True
     )
     onnx.checker.check_model(proto, full_check=True)
     feeds = {
@@ -109,7 +113,9 @@ class TestNativeStructuralOps(common_utils.TestCase):
                     expected = reference(x, dim=dims, keepdim=keepdim)
                     self.assertEqual(
                         _evaluate(
-                            lambda op, a: native(op, a, dims, keepdim),
+                            lambda op, a, native=native, dims=dims: native(
+                                op, a, dims, keepdim
+                            ),
                             [x],
                             dynamic=dynamic,
                             expected=expected,
@@ -378,7 +384,11 @@ class TestNativeStructuralOps(common_utils.TestCase):
         for function in (core.aten_all_dim, core.aten_any_dim):
             scalar = torch.tensor(True, device=device)
             self.assertEqual(
-                _evaluate(lambda op, a: function(op, a, -1, keepdim), [scalar]), scalar
+                _evaluate(
+                    lambda op, a, function=function: function(op, a, -1, keepdim),
+                    [scalar],
+                ),
+                scalar,
             )
 
     @common_utils.parametrize("dynamic", [False, True])

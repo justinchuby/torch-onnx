@@ -133,11 +133,12 @@ def aten_addbmm(
     builder = op.builder
 
     axes = builder.constant([0], dtype=ir.DataType.INT64)
+    alpha_val = builder.constant(alpha, dtype=common_ops.require_dtype(op, batch1))
     reduced_batches = op.ReduceSum(op.MatMul(batch1, batch2), axes, keepdims=False)
     if beta == 0:
-        return op.Mul(reduced_batches, alpha)
+        return op.Mul(reduced_batches, alpha_val)
     scaled_self = op.Mul(self, beta)
-    return op.Add(scaled_self, op.Mul(reduced_batches, alpha))
+    return op.Add(scaled_self, op.Mul(reduced_batches, alpha_val))
 
 
 @onnx_impl(aten.baddbmm.default)
@@ -163,7 +164,8 @@ def aten_baddbmm(
     else:
         mul_b = op.Mul(self, op.CastLike(beta, self))
         if isinstance(beta, ir.Value):
-            mul_b = op.Where(op.Equal(beta, 0), 0, mul_b)
+            zero = op.builder.constant(0, dtype=common_ops.require_dtype(op, self))
+            mul_b = op.Where(op.Equal(beta, 0), zero, mul_b)
     return op.Add(mul_a, mul_b)
 
 
@@ -177,8 +179,8 @@ def aten_addmv(
     alpha: float = 1.0,
 ) -> ir.Value:
     """addmv(Tensor self, Tensor mat, Tensor vec, *, Scalar beta=1, Scalar alpha=1) -> Tensor"""
-
-    product = op.Mul(op.MatMul(mat, vec), alpha)
+    alpha_val = op.builder.constant(alpha, dtype=common_ops.require_dtype(op, mat))
+    product = op.Mul(op.MatMul(mat, vec), alpha_val)
     if beta == 0:
         return product
     return op.Add(op.Mul(self, beta), product)
@@ -316,8 +318,11 @@ def aten_linalg_vector_norm(
     """linalg_vector_norm(Tensor self, Scalar ord=2, int[1]? dim=None, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"""
     builder = op.builder
 
-    if dtype != -1:
+    if dtype != -1 and dtype is not None:
         self = op.Cast(self, to=dtype)
+        elem_dtype = ir.DataType(dtype)
+    else:
+        elem_dtype = common_ops.require_dtype(op, self)
     if dim is None:
         self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
         keepdim = False
@@ -334,16 +339,17 @@ def aten_linalg_vector_norm(
             return op.ReduceMin(self, dim, keepdims=keepdim)
     elif ord == 0.0:  # sum(x!=0) means count non-zero elements
         self_bool = op.Cast(self, to=ir.DataType.BOOL)
-        self_0_1 = op.CastLike(self_bool, self)
+        self_0_1 = op.Cast(self_bool, to=elem_dtype)
         return op.ReduceSum(self_0_1, dim, keepdims=keepdim)
     elif ord == 1.0:
         return op.ReduceL1(self, dim, keepdims=keepdim)
     elif ord == 2.0:
         return op.ReduceL2(self, dim, keepdims=keepdim)
     else:
+        ord_val = op.builder.constant(ord, dtype=elem_dtype)
+        exp = op.builder.constant(1 / ord, dtype=elem_dtype)
         if ord < 0 or ord % 2 != 0:
             # Not an even integer (could be odd, fractional or negative), use Abs
             self = op.Abs(self)
-        self_pow = op.Pow(self, ord)
-        exp = op.CastLike(1 / ord, self)
+        self_pow = op.Pow(self, ord_val)
         return op.Pow(op.ReduceSum(self_pow, dim, keepdims=keepdim), exp)

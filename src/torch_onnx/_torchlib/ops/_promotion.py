@@ -92,27 +92,32 @@ def dtypes(
 
     dimensioned = None
     scalar = None
-    for value, dtype in tensors:
-        category = prims.dtype_to_type(dtype)
+    for value, candidate_dtype in tensors:
+        category = prims.dtype_to_type(candidate_dtype)
         if highest_type is complex and category in (float, complex):
-            if category is float:
-                dtype = prims.corresponding_complex_dtype(dtype)
+            effective_dtype = (
+                prims.corresponding_complex_dtype(candidate_dtype)
+                if category is float
+                else candidate_dtype
+            )
         elif category is not highest_type:
             continue
+        else:
+            effective_dtype = candidate_dtype
         if value.shape is None:
             # Rank cannot affect the answer when all candidates have one dtype.
-            if len({dtype for _, dtype in tensors}) > 1:
+            if len({dt for _, dt in tensors}) > 1:
                 raise ValueError(
                     "Promotion of mixed tensor dtypes requires known ranks. "
                     "Set ir.Value.shape (symbolic dimensions are supported)."
                 )
-            dimensioned = prims.get_higher_dtype(dimensioned, dtype)
+            dimensioned = prims.get_higher_dtype(dimensioned, effective_dtype)
         elif len(value.shape) == int(
             source_dtype(op, value, packed_complex=packed_complex).is_complex
         ):
-            scalar = prims.get_higher_dtype(scalar, dtype)
+            scalar = prims.get_higher_dtype(scalar, effective_dtype)
         else:
-            dimensioned = prims.get_higher_dtype(dimensioned, dtype)
+            dimensioned = prims.get_higher_dtype(dimensioned, effective_dtype)
     dtype = (
         dimensioned
         or scalar
@@ -124,20 +129,25 @@ def dtypes(
         }[highest_type]
     )
     promotion = prims.ELEMENTWISE_TYPE_PROMOTION_KIND[kind]
-    if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT:
-        if prims.is_integer_dtype(dtype) or dtype is torch.bool:
-            dtype = torch.get_default_dtype()
-    if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG:
-        if dtype is torch.bool:
-            dtype = torch.int64
+    if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT and (
+        prims.is_integer_dtype(dtype) or dtype is torch.bool
+    ):
+        dtype = torch.get_default_dtype()
+    if (
+        promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG
+        and dtype is torch.bool
+    ):
+        dtype = torch.int64
     computation = prims.get_computation_dtype(dtype)
     if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.NO_OPMATH:
         computation = dtype
     if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         return computation, torch.bool
-    if promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
-        if dtype.is_complex:
-            dtype = prims.corresponding_real_dtype(dtype)
+    if (
+        promotion is prims.ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT
+        and dtype.is_complex
+    ):
+        dtype = prims.corresponding_real_dtype(dtype)
     return computation, dtype
 
 
@@ -162,6 +172,7 @@ def cast(
             if value.meta.get(_SOURCE_TYPE) is dtype:
                 return value
             result = op.Identity(value)
+            result.type = value.type
             result.shape = value.shape
             result.meta[_SOURCE_TYPE] = dtype
             return result
@@ -171,10 +182,12 @@ def cast(
             real = op.Unsqueeze(result, [-1])
             zero = op.builder.constant(0, dtype=onnx_dtype)
             result = op.Concat(real, op.Expand(zero, op.Shape(real)), axis=-1)
+            result.type = ir.TensorType(onnx_dtype)
             if value.shape is not None:
                 result.shape = ir.Shape([*value.shape, 2])
         elif original.is_complex and not dtype.is_complex:
             result = op.Squeeze(op.Slice(result, [0], [1], [-1]), [-1])
+            result.type = ir.TensorType(onnx_dtype)
             if value.shape is not None:
                 result.shape = ir.Shape(list(value.shape)[:-1])
     result.meta[_SOURCE_TYPE] = dtype
@@ -227,9 +240,12 @@ def reduction_dtypes(
     result = (
         source_dtype(op, value) if dtype in (None, -1) else _DTYPES[ir.DataType(dtype)]
     )
-    if dtype in (None, -1) and integral_to_long:
-        if result is torch.bool or prims.is_integer_dtype(result):
-            result = torch.int64
+    if (
+        dtype in (None, -1)
+        and integral_to_long
+        and (result is torch.bool or prims.is_integer_dtype(result))
+    ):
+        result = torch.int64
     computation = (
         torch.int64 if result is torch.bool else prims.get_computation_dtype(result)
     )

@@ -41,6 +41,7 @@ torch-onnx = "torch_onnx.bin.convert:main"
 license-files = ["LICENSE", "LICENSE-PYTORCH"]
 
 [tool.pytest.ini_options]
+pythonpath = ["tests", "tests/torchlib", "tests/models/regressions"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = '--tb=short --color=yes -m "not integration and not opinfo and not opset29"'
 testpaths = [
@@ -50,7 +51,7 @@ testpaths = [
   "tests/decomp_test.py",
   "tests/fake_tensor_test.py",
   "tests/standalone_test.py",
-  "tests/recovered",
+  "tests/models/regressions",
 ]
 markers = [
   "integration: optional model-family or backend-specific suites (FBGEMM references run explicitly in CI)",
@@ -122,4 +123,6 @@ ignore = [
 "tests/exporter/test_native*.py" = ["B023", "PERF401"]
 "tests/exporter/test_small_models_e2e.py" = ["B023"]
 "tests/torchlib/*.py" = ["PLW2901"]
-"tests/recovered/*.py" = ["PERF401"]
+"tests/exporter/test_*regressions.py" = ["PERF401"]
+"tests/torchlib/test_*regressions.py" = ["PERF401"]
+"tests/models/regressions/*.py" = ["PERF401"]

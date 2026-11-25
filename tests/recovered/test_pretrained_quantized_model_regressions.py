@@ -268,6 +268,64 @@ def _quantized_reference_diagnostics(original, adapted, value):
                 f" mismatched={(result != expected).sum().item()}/{result.numel()}"
                 f"{qparams}"
             )
+            index = tuple((result != expected).nonzero()[0].tolist())
+            differences.append(
+                f"{name}: first_index={index}"
+                f" reference={expected[index].item()} adapted={result[index].item()}"
+            )
+            node = next(
+                node for node in reference.module.graph.nodes if node.name == name
+            )
+            if node.op == "call_module":
+                layer = reference.module.get_submodule(node.target)
+                if isinstance(layer, torch.ao.nn.quantized.Conv2d):
+                    input_value = reference.values[node.args[0].name]
+                    batch, channel, row, column = index
+                    stride_h, stride_w = layer.stride
+                    pad_h, pad_w = layer.padding
+                    dilation_h, dilation_w = layer.dilation
+                    weight = layer.weight()
+                    channels = weight.shape[1]
+                    group = channel // (weight.shape[0] // layer.groups)
+                    raw_input = input_value.int_repr()
+                    patch = []
+                    for local_channel in range(channels):
+                        for kernel_row in range(weight.shape[2]):
+                            for kernel_column in range(weight.shape[3]):
+                                h = row * stride_h - pad_h + kernel_row * dilation_h
+                                w = (
+                                    column * stride_w
+                                    - pad_w
+                                    + kernel_column * dilation_w
+                                )
+                                patch.append(
+                                    int(
+                                        raw_input[
+                                            batch,
+                                            group * channels + local_channel,
+                                            h,
+                                            w,
+                                        ]
+                                    )
+                                    if 0 <= h < raw_input.shape[2]
+                                    and 0 <= w < raw_input.shape[3]
+                                    else input_value.q_zero_point()
+                                )
+                    raw_weight = weight.int_repr()[channel].flatten().tolist()
+                    zero = int(weight.q_per_channel_zero_points()[channel])
+                    accumulator = sum(
+                        (value - input_value.q_zero_point()) * (coefficient - zero)
+                        for value, coefficient in zip(patch, raw_weight, strict=True)
+                    )
+                    differences.append(
+                        f"{name}: exact_accumulator={accumulator}"
+                        f" input_scale={input_value.q_scale()}"
+                        f" input_zero={input_value.q_zero_point()}"
+                        f" weight_scale={weight.q_per_channel_scales()[channel].item()}"
+                        f" weight_zero={zero} bias={layer.bias()[channel].item()}"
+                        f" patch={patch} weight={raw_weight}"
+                    )
+            break
         if len(differences) == 12:
             break
     return "\n".join(differences)

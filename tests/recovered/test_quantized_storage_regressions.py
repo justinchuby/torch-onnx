@@ -108,18 +108,40 @@ class _ConvertedLayer(torch.nn.Module):
             and torch.backends.quantized.engine == "fbgemm"
             and bool(torch.all(self.zeros == 0))
         )
-        if self.pointwise or self.depthwise:
+        self.spatial = (
+            not linear
+            and weight.shape[2:] == (7, 7)
+            and layer.groups == 1
+            and layer.stride == (2, 2)
+            and layer.padding == (3, 3)
+            and layer.dilation == (1, 1)
+            and self.axis == 0
+        )
+        if self.pointwise or self.depthwise or self.spatial:
             scale = self.scales.float() * self.input_scale
             self.register_buffer("requantization_scale", scale / self.output_scale)
             self.register_buffer("requantization_bias", self.bias / scale)
 
     def forward(self, x):
-        if self.pointwise or self.depthwise:
+        if self.pointwise or self.depthwise or self.spatial:
             # Accumulate integer products before float32 requantization:
             # dequantizing first can move a result across a rounding tie.
             value = _quantize(x, self.input_scale, self.input_zero).double()
             value = value - self.input_zero
-            if self.depthwise:
+            if self.spatial:
+                height, width = value.shape[-2:]
+                patches = torch.nn.functional.unfold(
+                    value, (7, 7), padding=(3, 3), stride=(2, 2)
+                )
+                weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
+                result = torch.matmul(patches.transpose(1, 2), weight.T)
+                result = result.reshape(
+                    value.shape[0],
+                    (height + 1) // 2,
+                    (width + 1) // 2,
+                    weight.shape[0],
+                ).float()
+            elif self.depthwise:
                 height, width = value.shape[-2:]
                 stride_h, stride_w = self.convolution["stride"]
                 out_h = (height - 1) // stride_h + 1

@@ -135,7 +135,9 @@ class TestPromotionDtypes(common_utils.TestCase):
                 computation, result = _promotion.dtypes(self.op, scalar, tensor)
                 expected = torch.float32 if dtype == torch.float32 else torch.float64
                 self.assertEqual(result, expected)
-                _promotion.cast(self.op, scalar, computation)
+                converted = _promotion.cast(self.op, scalar, computation)
+                self.assertIsNot(converted, scalar)
+                self.assertIs(converted.meta["torch.onnx.original_type"], computation)
                 self.assertIs(scalar.meta["torch.onnx.original_type"], float)
         finally:
             torch.set_default_dtype(previous)

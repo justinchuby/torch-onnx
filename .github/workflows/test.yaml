@@ -31,7 +31,9 @@ jobs:
       - name: Install real optional packages and pinned development schemas
         run: |
           pip install -r requirements-dev.txt -e . torchao==0.18.0 torchvision==0.29.2
-          pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8178f7357d52e63db0"
+          pip uninstall -y onnx
+          pip install --no-deps onnx-weekly==1.24.0.dev20261123
+          python -c "import onnx; print(onnx.__file__, onnx.__version__, onnx.defs.onnx_opset_version()); assert all(onnx.defs.has(name, 29) for name in ('Log1p', 'Expm1', 'DequantizePacked'))"
       - name: Export, check, execute, and serialize optional operators
         run: pytest tests/exporter/test_optional_packages.py -m "integration or not integration"
   opset29:
@@ -44,7 +46,9 @@ jobs:
       - name: Install package and current development schemas
         run: |
           pip install -r requirements-dev.txt -e .
-          pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8178f7357d52e63db0"
+          pip uninstall -y onnx
+          pip install --no-deps onnx-weekly==1.24.0.dev20261123
+          python -c "import onnx; print(onnx.__file__, onnx.__version__, onnx.defs.onnx_opset_version()); assert all(onnx.defs.has(name, 29) for name in ('Log1p', 'Expm1', 'DequantizePacked'))"
       - name: Check and execute development operators using ONNX reference runtime
         run: pytest tests/exporter/test_opsets.py -m opset29
   test:

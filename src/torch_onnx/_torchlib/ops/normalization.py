@@ -687,17 +687,17 @@ def _aten_native_batch_norm_training_onnx(
     # Compute mean and rstd
     # Mean, var, and rstd computation and results are expected to be
     # in higher precision when inputs are float16.
-    upcast_input = op.Cast(
-        input,
-        to=ir.DataType.DOUBLE
-        if input.dtype == ir.DataType.DOUBLE
-        else ir.DataType.FLOAT,
+    upcast_dtype = (
+        ir.DataType.DOUBLE if input.dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
     )
+    upcast_input = op.Cast(input, to=upcast_dtype)
+    one = op.builder.constant(1.0, dtype=upcast_dtype)
+    eps_val = op.builder.constant(eps, dtype=upcast_dtype)
     mean = op.ReduceMean(upcast_input, axes)
     input_sub_mean = op.Sub(upcast_input, mean)
     sqr = op.Mul(input_sub_mean, input_sub_mean)
     var = op.ReduceMean(sqr, axes, keepdims=False)
-    rstd = op.Div(1.0, op.Sqrt(op.Add(var, eps)))
+    rstd = op.Div(one, op.Sqrt(op.Add(var, eps_val)))
     # Use batch statistics with the fused inference operator. ONNX's training
     # operator updates biased running variance, unlike PyTorch's update below,
     # and is unavailable in inference-only runtimes.
@@ -725,20 +725,21 @@ def _aten_native_batch_norm_training_onnx(
             op.Size(input),
             op.Gather(op.Shape(input), 1, axis=0),
         ),
-        to=upcast_input.dtype,
+        to=upcast_dtype,
     )
-    unbiased_var = op.Mul(var, op.Div(n, op.Sub(n, 1.0)))
+    unbiased_var = op.Mul(var, op.Div(n, op.Sub(n, one)))
 
     # NOTE: momentum in ONNX is 1.0-momentum in PyTorch
+    one_minus_momentum = op.builder.constant(1.0 - momentum, dtype=upcast_dtype)
     new_running_var = op.Add(
         op.CastLike(
-            op.Mul(1.0 - momentum, unbiased_var),
+            op.Mul(one_minus_momentum, unbiased_var),
             running_var,
         ),
         op.Mul(momentum, running_var),
     )
     new_running_mean = op.Add(
-        op.Mul(1.0 - momentum, op.CastLike(mean, running_mean)),
+        op.CastLike(op.Mul(one_minus_momentum, mean), running_mean),
         op.Mul(momentum, running_mean),
     )
 
@@ -774,7 +775,10 @@ def _aten_native_batch_norm_inference_onnx(
     # CUDA and CPU gives different shapes:
     # https://github.com/pytorch/pytorch/blob/a44f8894fa6d973693aab44a3dda079a168b05c1/torch/_decomp/decompositions.py#L1451-L1457
     # We use CUDA's output here
-    invstd = op.Div(1.0, op.Sqrt(op.Add(running_var, eps)))
+    var_dtype = common_ops.require_dtype(op, running_var)
+    one = op.builder.constant(1.0, dtype=var_dtype)
+    eps_val = op.builder.constant(eps, dtype=var_dtype)
+    invstd = op.Div(one, op.Sqrt(op.Add(running_var, eps_val)))
     # https://github.com/pytorch/pytorch/blob/a44f8894fa6d973693aab44a3dda079a168b05c1/torch/_decomp/decompositions.py#L1475
     running_mean_fp32 = op.Cast(running_mean, to=ir.DataType.FLOAT)
     invstd = op.Cast(invstd, to=ir.DataType.FLOAT)

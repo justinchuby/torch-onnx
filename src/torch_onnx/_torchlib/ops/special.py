@@ -33,27 +33,30 @@ def aten_special_erf(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_special_erfc(op: TranslationContext, self: ir.Value) -> ir.Value:
     """erfc(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Sub(1, op.Erf(self))
+    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    return op.Sub(one, op.Erf(self))
 
 
 @onnx_impl(aten.special_erfcx.default, opset_introduced=18)
 def aten_special_erfcx(op: TranslationContext, self: ir.Value) -> ir.Value:
     """special_erfcx(Tensor self) -> Tensor"""
-    return op.Mul(op.Exp(op.Pow(self, 2)), op.Sub(1, op.Erf(self)))
+    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    return op.Mul(op.Exp(op.Pow(self, 2)), op.Sub(one, op.Erf(self)))
 
 
 @onnx_impl((aten.expm1.default, aten.special_expm1.default), opset_introduced=18)
 def aten_special_expm1(op: TranslationContext, self: ir.Value) -> ir.Value:
     """special_expm1(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Sub(op.Exp(self), 1)
+    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    return op.Sub(op.Exp(self), one)
 
 
 @onnx_impl((aten.expm1.default, aten.special_expm1.default), opset_introduced=29)
 def aten_special_expm1_opset29(op: TranslationContext, self: ir.Value) -> ir.Value:
     """Use the precision-preserving operator instead of subtracting from exp(x)."""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Expm1(self, output_types=[self.type])
+    return op.Expm1(self)
 
 
 @onnx_impl(

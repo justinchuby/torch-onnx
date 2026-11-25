@@ -231,9 +231,9 @@ def _evaluate(function, tensors, *, opset=18):
     with no_script():
         result = function(op, *values)
     graph.outputs.append(result)
-    proto = onnx.shape_inference.infer_shapes(
-        ir.to_proto(ir.Model(graph, ir_version=10)), strict_mode=True
-    )
+    model = ir.Model(graph, ir_version=10)
+    ir.passes.common.ShapeInferencePass()(model)
+    proto = onnx.shape_inference.infer_shapes(ir.to_proto(model), strict_mode=True)
     onnx.checker.check_model(proto, full_check=True)
     result = ReferenceEvaluator(proto).run(
         None,
@@ -416,7 +416,12 @@ class TestNativeLeafOps(common_utils.TestCase):
             expected = torch.view_as_real(expected)
         for function in (common.cast_to, core.aten__to_copy):
             self.assertEqual(
-                _evaluate(lambda op, value: function(op, value, dtype=onnx_dtype), [x]),
+                _evaluate(
+                    lambda op, value, function=function: function(
+                        op, value, dtype=onnx_dtype
+                    ),
+                    [x],
+                ),
                 expected,
             )
         self.assertEqual(_evaluate(core.aten__to_copy, [x]), x)

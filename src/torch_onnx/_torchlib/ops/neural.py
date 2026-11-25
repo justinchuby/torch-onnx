@@ -1015,7 +1015,15 @@ def aten_mse_loss(
     op: TranslationContext, self: ir.Value, target: ir.Value, reduction: int = 1
 ) -> ir.Value:
     """mse_loss(Tensor self, Tensor target, int reduction=Mean) -> Tensor"""
-    result_dtype = _promotion.dtypes(op, self, target, kind="COMPLEX_TO_FLOAT")[1]
+    _, result_dtype = _promotion.reduction_dtypes(
+        op,
+        _promotion.cast(
+            op,
+            self,
+            _promotion.dtypes(op, self, target, kind="COMPLEX_TO_FLOAT")[1],
+        ),
+        integral_to_long=False,
+    )
     self, target = _promotion.promote(
         op, self, target, kind="COMPLEX_TO_FLOAT", opmath=True
     )
@@ -1029,7 +1037,7 @@ def aten_mse_loss(
     if reduction == 2:  # sum
         result = op.ReduceSum(result, keepdims=False)
 
-    return _promotion.cast(op, result, result_dtype)
+    return _promotion.reduction_result(op, result, result_dtype)
 
 
 @onnx_impl(aten.nll_loss.default)
@@ -1481,10 +1489,12 @@ def aten_softplus(
     op: TranslationContext, self: ir.Value, beta: float = 1.0, threshold: float = 20.0
 ) -> ir.Value:
     """softplus(Tensor self, Scalar beta=1, Scalar threshold=20) -> Tensor"""
-
-    self_scaled = op.Mul(self, beta)
-    softplus = op.Div(op.Softplus(self_scaled), beta)
-    return op.Where(op.Greater(self_scaled, threshold), self, softplus)
+    dtype = common_ops.require_dtype(op, self)
+    beta_val = op.builder.constant(beta, dtype=dtype)
+    threshold_val = op.builder.constant(threshold, dtype=dtype)
+    self_scaled = op.Mul(self, beta_val)
+    softplus = op.Div(op.Softplus(self_scaled), beta_val)
+    return op.Where(op.Greater(self_scaled, threshold_val), self, softplus)
 
 
 def _get_upsample_align_corners_mode(

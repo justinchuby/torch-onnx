@@ -61,6 +61,8 @@ class NativeTranslation:
         outputs = self.function(*args, **kwargs)
         values = outputs if isinstance(outputs, Sequence) else [outputs]
         for param, value in zip(self.signature.outputs, values, strict=False):
+            if isinstance(value, ir.Value) and value.type is None:
+                continue
             check_value(param, value)
         return outputs
 

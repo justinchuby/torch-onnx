@@ -80,8 +80,11 @@ def aten_allclose(
 
     # FIXME: check equal_nan when self and other are all NaN
     # |input - other| <= atol + rtol x |other|
+    dtype = common_ops.require_dtype(op, other)
+    atol_val = op.builder.constant(atol, dtype=dtype)
+    rtol_val = op.builder.constant(rtol, dtype=dtype)
     left_part = op.Abs(op.Sub(self, other))
-    right_part = op.Add(atol, op.Mul(rtol, op.Abs(other)))
+    right_part = op.Add(atol_val, op.Mul(rtol_val, op.Abs(other)))
     is_close = op.LessOrEqual(left_part, right_part)
     is_close_int = op.Cast(is_close, to=ir.DataType.INT8)
 
@@ -284,16 +287,20 @@ def aten_cdist_forward(
     compute_mode: int | None = None,
 ) -> ir.Value:
     difference = op.Abs(op.Sub(op.Unsqueeze(x1, [-2]), op.Unsqueeze(x2, [-3])))
+    dtype = common_ops.require_dtype(op, x1)
     if p == 0:
+        zero = op.builder.constant(0, dtype=dtype)
         return op.ReduceSum(
-            op.CastLike(op.Not(op.Equal(difference, 0)), difference),
+            op.CastLike(op.Not(op.Equal(difference, zero)), difference),
             [-1],
             keepdims=False,
         )
     if p == float("inf"):
         maxima = op.ReduceMax(difference, [-1], keepdims=False)
         return op.Max(maxima, op.CastLike(0, maxima))
-    return op.Pow(op.ReduceSum(op.Pow(difference, p), [-1], keepdims=False), 1.0 / p)
+    p_val = op.builder.constant(p, dtype=dtype)
+    inv_p = op.builder.constant(1.0 / p, dtype=dtype)
+    return op.Pow(op.ReduceSum(op.Pow(difference, p_val), [-1], keepdims=False), inv_p)
 
 
 @onnx_impl(aten.rrelu_with_noise_functional.default)
@@ -691,6 +698,7 @@ def aten_is_nonzero(op: TranslationContext, self: ir.Value) -> ir.Value:
         local_op.Cast(self, to=ir.DataType.BOOL),
         local.constant([], dtype=ir.DataType.INT64),
     )
+    scalar.type = ir.TensorType(ir.DataType.BOOL)
     common_ops.finish_subgraph(op, then_branch, [scalar])
     else_branch = ir.Graph([], [], nodes=[], name="nonzero_multiple")
     local = GraphBuilder(else_branch, opset=builder.opset)
@@ -745,7 +753,7 @@ def aten_logcumsumexp_opset29(
     """Use stable per-prefix accumulation, including infinities and empty axes."""
     if len(common_ops.require_shape(op, self)) == 0:
         return op.Identity(self)
-    return op.LogCumSumExp(self, axis=dim, output_types=[self.type])
+    return op.LogCumSumExp(self, axis=dim)
 
 
 @onnx_impl(aten.logdet.default)
@@ -1080,11 +1088,14 @@ def aten_stft(
         right_win = then_op.CastLike(right_win, window)
         left_win = then_op.CastLike(left_win, window)
         padded_window = then_op.Concat(left_win, window, right_win, axis=0)
+        padded_window.type = window.type
         common_ops.finish_subgraph(op, then_branch, [padded_window])
         else_branch = ir.Graph([], [], nodes=[], name="stft_keep_window")
         builder = GraphBuilder(else_branch, opset=outer.opset)
         else_op = TranslationContext(builder)
-        common_ops.finish_subgraph(else_op, else_branch, [else_op.Identity(window)])
+        kept_window = else_op.Identity(window)
+        kept_window.type = window.type
+        common_ops.finish_subgraph(else_op, else_branch, [kept_window])
         builder = outer
         window = builder.node(
             "If",
@@ -1205,10 +1216,12 @@ def _unique_empty_inverse(
     then_branch = ir.Graph([], [], nodes=[], name="unique_empty_input")
     local = GraphBuilder(then_branch, opset=builder.opset)
     local_op = TranslationContext(local)
+    reshaped_inverse = local_op.Reshape(inverse_indices, input_size, allowzero=True)
+    reshaped_inverse.type = ir.TensorType(ir.DataType.INT64)
     common_ops.finish_subgraph(
         op,
         then_branch,
-        [local_op.Reshape(inverse_indices, input_size, allowzero=True)],
+        [reshaped_inverse],
     )
     else_branch = ir.Graph([], [], nodes=[], name="unique_no_inverse")
     local = GraphBuilder(else_branch, opset=builder.opset)

@@ -44,10 +44,12 @@ def _evaluate(function, tensors, expected, *, dynamic=True, runtime=False, opset
         expected_values = [expected]
     for output, reference in zip(graph.outputs, expected_values, strict=False):
         if not isinstance(output.type, ir.SequenceType):
+            if output.dtype is None:
+                output.dtype = ir.DataType.from_numpy(reference.detach().numpy().dtype)
             output.shape = ir.Shape([None] * reference.ndim)
-    proto = onnx.shape_inference.infer_shapes(
-        ir.to_proto(ir.Model(graph, ir_version=10)), strict_mode=True
-    )
+    model = ir.Model(graph, ir_version=10)
+    ir.passes.common.ShapeInferencePass()(model)
+    proto = onnx.shape_inference.infer_shapes(ir.to_proto(model), strict_mode=True)
     onnx.checker.check_model(proto, full_check=True)
     feeds = {
         value.name: tensor.numpy()
@@ -123,15 +125,15 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
                 torch.arange(3.2, -2.1, -1.2, dtype=dtype),
             ),
         ]
-        for steps in (0, 1, 2, 7):
-            cases.append(
-                (
-                    lambda op, steps=steps: factories.aten_linspace(
-                        op, -2.2, 5.3, steps, dtype=onnx_dtype
-                    ),
-                    torch.linspace(-2.2, 5.3, steps, dtype=dtype),
-                )
+        cases.extend(
+            (
+                lambda op, steps=steps: factories.aten_linspace(
+                    op, -2.2, 5.3, steps, dtype=onnx_dtype
+                ),
+                torch.linspace(-2.2, 5.3, steps, dtype=dtype),
             )
+            for steps in (0, 1, 2, 7)
+        )
         for function, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(_evaluate(function, [], expected), expected)
@@ -147,9 +149,10 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
                 ),
             ):
 
-                def function(op, a):
+                def function(op, a, native=native):
                     builder = op.builder
                     size_value = builder.call("Size", a)[0]
+                    size_value.dtype = ir.DataType.INT64
                     return native(op, size_value)
 
                 self.assertEqual(_evaluate(function, [x], reference), reference)
@@ -216,7 +219,7 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
         for index, (native, expected) in enumerate(cases):
             with self.subTest(case=index):
 
-                def function(op, a):
+                def function(op, a, native=native):
                     return native(op, a, op.builder.call("Shape", a)[0])
 
                 self.assertEqual(_evaluate(function, [x], expected), expected)
@@ -298,8 +301,8 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
             expected = x.repeat_interleave(repeats, dim)
             self.assertEqual(
                 _evaluate(
-                    lambda op, a: sequences.aten_repeat_interleave_self_int(
-                        op, a, repeats, dim
+                    lambda op, a, repeats=repeats: (
+                        sequences.aten_repeat_interleave_self_int(op, a, repeats, dim)
                     ),
                     [x],
                     expected,
@@ -348,7 +351,11 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
                 expected = list(torch.chunk(x, chunks))
                 self.assertEqual(
                     _evaluate(
-                        lambda op, a: sequences.aten_chunk(op, a, chunks), [x], expected
+                        lambda op, a, chunks=chunks: sequences.aten_chunk(
+                            op, a, chunks
+                        ),
+                        [x],
+                        expected,
                     ),
                     expected,
                 )
@@ -398,10 +405,13 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
             ):
                 expected = reference([x, x])
                 self.assertEqual(
-                    _evaluate(lambda op, a: native(op, [a, a]), [x], expected), expected
+                    _evaluate(
+                        lambda op, a, native=native: native(op, [a, a]), [x], expected
+                    ),
+                    expected,
                 )
 
-                def function(op, a):
+                def function(op, a, native=native):
                     builder = op.builder
                     seq = builder.call(
                         "SequenceConstruct",
@@ -431,7 +441,9 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
         ):
             for size in (0, 1, 7):
                 expected = reference(size, device=device)
-                output = _evaluate(lambda op: native(op, size), [], expected)
+                output = _evaluate(
+                    lambda op, native=native, size=size: native(op, size), [], expected
+                )
                 self.assertEqual(output, expected, rtol=8e-2, atol=6e-3)
                 length = torch.tensor(size, device=device)
                 output = _evaluate(native, [length], expected)
@@ -443,7 +455,12 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
         ):
             expected = torch.tensor(value, device=device)
             self.assertEqual(
-                _evaluate(lambda op: native(op, value, None), [], expected), expected
+                _evaluate(
+                    lambda op, native=native, value=value: native(op, value, None),
+                    [],
+                    expected,
+                ),
+                expected,
             )
 
     def test_matrix_products(self, device):
@@ -475,7 +492,7 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
             expected = reference(bias, a, b, beta=0)
             self.assertEqual(
                 _evaluate(
-                    lambda op, x, y, z: native(op, x, y, z, beta=0),
+                    lambda op, x, y, z, native=native: native(op, x, y, z, beta=0),
                     [bias, a, b],
                     expected,
                 ),
@@ -495,7 +512,11 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
         ):
             expected = torch.view_as_real(reference([x, x], dim))
             self.assertEqual(
-                _evaluate(lambda op, a: native(op, [a, a], dim), [real], expected),
+                _evaluate(
+                    lambda op, a, native=native: native(op, [a, a], dim),
+                    [real],
+                    expected,
+                ),
                 expected,
             )
 
@@ -505,7 +526,7 @@ class TestNativeFactorySequenceOps(common_utils.TestCase):
         for native in (factories.aten_rand, factories.aten_randn):
             expected = torch.empty(shape, dtype=torch.float64)
             output = _evaluate(
-                lambda op, a: native(
+                lambda op, a, native=native: native(
                     op,
                     op.builder.call("Shape", a)[0],
                     dtype=ir.DataType.DOUBLE,

@@ -2215,7 +2215,7 @@ def aten_cumprod_opset26(
 def aten_log1p_opset29(op: TranslationContext, self: ir.Value) -> ir.Value:
     """Use the precision-preserving operator instead of log(1 + x)."""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    return op.Log1p(self, output_types=[self.type])
+    return op.Log1p(self)
 
 
 @onnx_impl(aten.view.dtype, opset_introduced=26)
@@ -3056,11 +3056,12 @@ def aten_scatter_reduce(
             src,
             axis=dim,
             reduction="mean",
-            output_types=[self.type],
         )
         return op.Squeeze(result) if self_is_scalar else result
     if reduce == "mean":
         original = self
+        zero = builder.constant(0, dtype=dtype)
+        one = builder.constant(1, dtype=dtype)
         zeros = op.ConstantOfShape(
             op.Shape(self),
             value=ir.tensor([0], dtype=dtype),
@@ -3069,22 +3070,22 @@ def aten_scatter_reduce(
             op.Shape(src),
             value=ir.tensor([1], dtype=dtype),
         )
-        counts = op.Add(zeros, 1) if include_self else zeros
+        counts = op.Add(zeros, one) if include_self else zeros
         if not include_self:
             updates_zero = op.Sub(ones, ones)
             self = op.ScatterElements(self, index, updates_zero, axis=dim)
         total = op.ScatterElements(self, index, src, axis=dim, reduction="add")
         counts = op.ScatterElements(counts, index, ones, axis=dim, reduction="add")
-        divisor = op.Max(counts, 1)
+        divisor = op.Max(counts, one)
         mean = op.Div(total, divisor)
         if dtype.is_integer():
             remainder = op.Mod(total, divisor, fmod=0)
             round_down = op.And(
-                op.Less(total, 0),
-                op.Not(op.Equal(remainder, 0)),
+                op.Less(total, zero),
+                op.Not(op.Equal(remainder, zero)),
             )
             mean = op.Sub(mean, op.CastLike(round_down, mean))
-        result = op.Where(op.Equal(counts, 0), original, mean)
+        result = op.Where(op.Equal(counts, zero), original, mean)
         return op.Squeeze(result) if self_is_scalar else result
 
     if not include_self:

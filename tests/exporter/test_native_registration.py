@@ -225,6 +225,7 @@ class TestNativeRegistration(TestCase):
                 )
                 function = core.aten_abs_complex if complex_ else core.aten_abs
                 graph.outputs.append(function(context, value))
+                graph.outputs[0].dtype = ir.DataType.FLOAT
                 graph.outputs[0].shape = ir.Shape([2])
                 model = ir.Model(graph, ir_version=9)
                 proto = ir.serde.serialize_model(model)

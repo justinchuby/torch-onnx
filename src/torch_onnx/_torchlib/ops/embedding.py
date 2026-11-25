@@ -193,9 +193,9 @@ def aten_embedding_bag_padding_idx(
     # FIXME: https://github.com/microsoft/onnxruntime/issues/16846
     float_sequence = ir.SequenceType(ir.TensorType(ir.DataType.FLOAT))
     int_sequence = ir.SequenceType(ir.TensorType(ir.DataType.INT64))
-    result = op.SequenceEmpty(dtype=ir.DataType.FLOAT)
-    sizes = op.SequenceEmpty(dtype=ir.DataType.INT64)
-    maxima = op.SequenceEmpty(dtype=ir.DataType.INT64)
+    result = op.SequenceEmpty(dtype=ir.DataType.FLOAT, output_types=[float_sequence])
+    sizes = op.SequenceEmpty(dtype=ir.DataType.INT64, output_types=[int_sequence])
+    maxima = op.SequenceEmpty(dtype=ir.DataType.INT64, output_types=[int_sequence])
     # Used for iterator
     i = ir.Value(
         name="bag_iteration", type=ir.TensorType(ir.DataType.INT64), shape=ir.Shape([])
@@ -242,6 +242,8 @@ def aten_embedding_bag_padding_idx(
     # row_result should be 0, need to generate (1,N) shape tensor with 0 values
     zero_row = sub_op.Expand(sub.constant([0.0], dtype=ir.DataType.FLOAT), expand_shape)
     zero_max = sub_op.Expand(sub.constant([0], dtype=ir.DataType.INT64), expand_shape)
+    zero_row.type = ir.TensorType(ir.DataType.FLOAT)
+    zero_max.type = ir.TensorType(ir.DataType.INT64)
     common_ops.finish_subgraph(op, then_branch, [zero_row, zero_max])
     else_branch = ir.Graph([], [], nodes=[], name="embedding_bag_nonempty")
     sub = GraphBuilder(else_branch, opset=builder.opset)
@@ -273,6 +275,8 @@ def aten_embedding_bag_padding_idx(
         max_indices = sub_op.Expand(
             sub.constant([0], dtype=ir.DataType.INT64), expand_shape
         )
+    row_result.type = ir.TensorType(ir.DataType.FLOAT)
+    max_indices.type = ir.TensorType(ir.DataType.INT64)
     common_ops.finish_subgraph(op, else_branch, [row_result, max_indices])
     row_result, max_indices = local.node(
         "If",
@@ -284,9 +288,13 @@ def aten_embedding_bag_padding_idx(
         ],
     )
     # Something like the 'append' operation
-    rows = local_op.SequenceInsert(rows, row_result)
-    lengths = local_op.SequenceInsert(lengths, local_op.Reshape(count, [1]))
-    max_rows = local_op.SequenceInsert(max_rows, max_indices)
+    rows = local_op.SequenceInsert(rows, row_result, output_types=[float_sequence])
+    lengths = local_op.SequenceInsert(
+        lengths, local_op.Reshape(count, [1]), output_types=[int_sequence]
+    )
+    max_rows = local_op.SequenceInsert(
+        max_rows, max_indices, output_types=[int_sequence]
+    )
     common_ops.finish_subgraph(op, body, [condition, rows, lengths, max_rows])
     result, sizes, maxima = builder.node(
         "Loop",
@@ -303,14 +311,18 @@ def aten_embedding_bag_padding_idx(
     # Seed sequences after the loop so zero bags have a well-defined empty concatenation.
     empty_shape = op.Concat([0], weight_dim_1, axis=0)
     empty_row = op.Expand(builder.constant([0.0], dtype=ir.DataType.FLOAT), empty_shape)
-    result = op.SequenceInsert(result, empty_row)
+    result = op.SequenceInsert(result, empty_row, output_types=[float_sequence])
     result = op.ConcatFromSequence(
         result,
         axis=0,
         output_types=[ir.TensorType(ir.DataType.FLOAT)],
     )
     result = op.CastLike(result, weight)
-    sizes = op.SequenceInsert(sizes, builder.constant([], dtype=ir.DataType.INT64))
+    sizes = op.SequenceInsert(
+        sizes,
+        builder.constant([], dtype=ir.DataType.INT64),
+        output_types=[int_sequence],
+    )
     bag_size = op.ConcatFromSequence(
         sizes,
         axis=0,
@@ -319,6 +331,7 @@ def aten_embedding_bag_padding_idx(
     maxima = op.SequenceInsert(
         maxima,
         op.Expand(builder.constant([0], dtype=ir.DataType.INT64), empty_shape),
+        output_types=[int_sequence],
     )
     max_indices = op.ConcatFromSequence(
         maxima,

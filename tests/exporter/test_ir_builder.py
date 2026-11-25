@@ -56,8 +56,16 @@ class TestGraphBuilder(common_utils.TestCase):
         value, mask = op.Dropout(result, outputs=2)
         self.assertEqual(value.dtype, ir.DataType.FLOAT)
         self.assertEqual(mask.dtype, ir.DataType.BOOL)
-        with self.assertRaisesRegex(AttributeError, "No ONNX operator"):
+        with self.assertRaisesRegex(ValueError, "Cannot determine output arity"):
             op.NotAnOnnxOperator(result)
+        with self.assertWarnsRegex(
+            UserWarning, "Standard ONNX operator 'FutureUnaryOp' at opset 18"
+        ):
+            future = op.FutureUnaryOp(result, output_types=[result.type], scale=2.0)
+        self.assertIsInstance(future, ir.Value)
+        self.assertEqual(future.type, result.type)
+        self.assertEqual(self.graph[-1].op_type, "FutureUnaryOp")
+        self.assertEqual(self.graph[-1].attributes["scale"].as_float(), 2.0)
         with self.assertRaises(AttributeError):
             _ = op._private
 
@@ -473,8 +481,12 @@ class TestGraphBuilder(common_utils.TestCase):
             )
 
     def test_invalid_arity_attributes_and_outputs(self):
-        with self.assertRaisesRegex(ValueError, "No ONNX schema"):
+        with self.assertRaisesRegex(ValueError, "Cannot determine output arity"):
             self.builder.call("NotAnOnnxOperator", self.x)
+        with self.assertRaisesRegex(ValueError, "No ONNX schema for custom::Op"):
+            self.builder.call(
+                "Op", self.x, domain="custom", version=1, _output_types=[self.x.type]
+            )
         with self.assertRaisesRegex(ValueError, "inputs"):
             self.builder.call("Add", self.x)
         with self.assertRaisesRegex(ValueError, "no attribute"):
@@ -490,6 +502,32 @@ class TestGraphBuilder(common_utils.TestCase):
                 "Neg", self.x, _output_types=[ir.TensorType(ir.DataType.INT64)]
             )
         self.assertEqual(len(self.graph), 0)
+
+    def test_missing_standard_schema_warns_once_per_op(self):
+        import warnings
+
+        builder = _ir_builder.GraphBuilder(self.graph, opset=30)
+        op = _ir_builder.TranslationContext(builder)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            first = op.FutureActivation(self.x, 1.0, output_types=[self.x.type])
+            second = op.FutureActivation(first, 2.0, output_types=[self.x.type])
+            pair = op.FutureSplitPair(
+                second, outputs=2, output_types=[self.x.type, self.x.type], axis=0
+            )
+            (raw_single,) = builder.call(
+                "FutureActivation", pair[0], 3.0, _output_types=[self.x.type]
+            )
+        self.assertIsInstance(first, ir.Value)
+        self.assertIsInstance(second, ir.Value)
+        self.assertIsInstance(pair, tuple)
+        self.assertEqual(len(pair), 2)
+        self.assertIsInstance(raw_single, ir.Value)
+        messages = [str(item.message) for item in caught]
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(any("FutureActivation" in msg for msg in messages))
+        self.assertTrue(any("FutureSplitPair" in msg for msg in messages))
+        self.assertEqual(self.graph.opset_imports[""], 30)
 
     def test_attributes_use_schema_types(self):
         self.builder.call("LeakyRelu", self.x, alpha=1)

@@ -3,10 +3,18 @@
 Built-in translations cover ONNX opsets 18–29, and older targets still use the
 existing version converter. The exporter does not enforce a maximum opset gate:
 users can export custom operators, custom domains, and custom translations
-targeting newer opset versions without breaking export. Schema-guided operator
-calls still validate against the installed ONNX schema registry so missing
-default-domain schemas fail with actionable guidance rather than silently
-emitting invalid older-schema operators.
+targeting newer opset versions without breaking export.
+
+When a standard ONNX operator or newer operator schema is missing from a
+slightly older installed `onnx` package, `GraphBuilder` and `TranslationContext`
+emit one `UserWarning` per missing standard operator per graph construction and
+build the node directly using explicit output metadata (`output_types=` /
+`outputs=` on `TranslationContext`, or `_output_types=` / `_num_outputs=` on
+`GraphBuilder.call`) rather than failing solely on installed `onnx` package age.
+If no schema is present and output arity is omitted, construction fails with an
+actionable error requesting explicit output metadata instead of guessing output
+counts. Known schemas within the installed `onnx` opset range continue to
+validate input arity, tensor types, and attributes normally.
 
 The development-schema authority is ONNX main
 [`622adf94d4e720142950aa8178f7357d52e63db0`](https://github.com/onnx/onnx/commit/622adf94d4e720142950aa8178f7357d52e63db0).
@@ -41,8 +49,12 @@ The half Range case uses reference execution; bfloat16 Einsum has schema-only
 coverage. Opset 29 uses ONNX main's reference evaluator, not an assertion that
 released ORT implements development operators.
 
-The default suite uses released dependencies. The separate `opset29` CI job
-installs the exact ONNX main revision and runs the development tests:
+The default suite uses released dependencies. Note that while graph export and
+serialization succeed on older `onnx` packages via the missing-schema fallback,
+`onnx.checker.check_model`, `onnx.reference.ReferenceEvaluator`, and ONNX
+Runtime still require an `onnx` / runtime build that recognizes the emitted
+operators and opset version. The separate `opset29` CI job installs the exact
+ONNX main revision and runs full checker + reference-evaluator tests:
 
 ```bash
 pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8178f7357d52e63db0"

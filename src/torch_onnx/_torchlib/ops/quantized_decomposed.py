@@ -229,7 +229,9 @@ def quantized_decomposed_dequantize_per_tensor(
         zero_point = common.constant(op, zero_point, dtype=dtype)
     if isinstance(scale, ir.Value):
         scale = op.Cast(scale, to=ir.DataType.FLOAT)
-    dequantized = op.DequantizeLinear(input, scale, zero_point)
+    dequantized = op.DequantizeLinear(
+        input, scale, zero_point, output_types=[ir.TensorType(ir.DataType.FLOAT)]
+    )
     if out_dtype in (-1, None):
         # out_dtype can be None as well
         return dequantized
@@ -272,7 +274,13 @@ def quantized_decomposed_dequantize_per_channel(
     scales = op.Cast(scales, to=ir.DataType.FLOAT)
     if zero_points is not None:
         zero_points = op.Cast(zero_points, to=dtype)
-    dequantized = op.DequantizeLinear(input, scales, zero_points, axis=axis)
+    dequantized = op.DequantizeLinear(
+        input,
+        scales,
+        zero_points,
+        axis=axis,
+        output_types=[ir.TensorType(ir.DataType.FLOAT)],
+    )
     if out_dtype in (-1, None):
         # PyTorch defaults to float32, which DequantizeLinear already produces.
         return dequantized

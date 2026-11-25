@@ -94,19 +94,51 @@ class _ConvertedLayer(torch.nn.Module):
             and layer.padding == (0, 0)
             and self.axis == 0
         )
-        if self.pointwise:
+        self.depthwise = (
+            not linear
+            and weight.shape[2:] == (3, 3)
+            and layer.groups == weight.shape[0]
+            and weight.shape[1] == 1
+            and layer.dilation == (1, 1)
+            and layer.padding == (1, 1)
+            and self.axis == 0
+        )
+        if self.pointwise or self.depthwise:
             scale = self.scales.float() * self.input_scale
             self.register_buffer("requantization_scale", scale / self.output_scale)
             self.register_buffer("requantization_bias", self.bias / scale)
 
     def forward(self, x):
-        if self.pointwise:
+        if self.pointwise or self.depthwise:
             # Accumulate integer products before float32 requantization:
             # dequantizing first can move a result across a rounding tie.
             value = _quantize(x, self.input_scale, self.input_zero).double()
             value = value - self.input_zero
-            weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
-            result = torch.matmul(value.permute(0, 2, 3, 1), weight.T).float()
+            if self.depthwise:
+                height, width = value.shape[-2:]
+                stride_h, stride_w = self.convolution["stride"]
+                out_h = (height - 1) // stride_h + 1
+                out_w = (width - 1) // stride_w + 1
+                value = torch.nn.functional.pad(value, (1, 1, 1, 1))
+                weight = self.weight.double() - self.zeros.reshape(-1, 1, 1, 1)
+                result = value.new_zeros(
+                    (value.shape[0], weight.shape[0], out_h, out_w)
+                )
+                for row in range(3):
+                    for column in range(3):
+                        result = result + (
+                            value[
+                                :,
+                                :,
+                                row : row + out_h * stride_h : stride_h,
+                                column : column + out_w * stride_w : stride_w,
+                            ]
+                            * weight[:, 0, row, column].reshape(1, -1, 1, 1)
+                        )
+                result = result.permute(0, 2, 3, 1).float()
+            else:
+                weight = self.weight.double().flatten(1) - self.zeros.reshape(-1, 1)
+                result = torch.matmul(value.permute(0, 2, 3, 1), weight.T).float()
             result = (result + self.requantization_bias) * self.requantization_scale
             result = torch.round(result) + self.output_zero
             result = result.clamp(self.output_zero if self.relu else 0, 255)

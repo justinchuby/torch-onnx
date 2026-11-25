@@ -77,6 +77,7 @@ def aten_group_norm(
     result = op.GroupNormalization(
         input, weight, bias, epsilon=eps, num_groups=num_groups
     )
+    result.type = input.type
     result.shape = input.shape
     return result
 

@@ -31,9 +31,9 @@ def test_torch_dynamic_unreduced_cross_entropy_retracing_preserves_metadata():
         for node in decomposed.graph.nodes
         if node.target is torch.ops.aten.cross_entropy_loss.default
     )
-    assert (
-        loss.meta["val"].ndim == 1
-    ), "Unreduced loss metadata became scalar during retracing"
+    assert loss.meta["val"].ndim == 1, (
+        "Unreduced loss metadata became scalar during retracing"
+    )
     # If metadata is repaired upstream, also require correct consumer execution.
     logits, targets = torch.randn(4, 5), torch.tensor([0, 1, 2, 3])
     for expected, actual in zip(

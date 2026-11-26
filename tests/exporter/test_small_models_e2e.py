@@ -827,7 +827,7 @@ class DynamoExporterTest(common_utils.TestCase, _WithExport):
 
         class ScanModel(torch.nn.Module):
             def forward(self, x, y):
-                carry, out = torch.ops.higher_order.scan(
+                _carry, out = torch.ops.higher_order.scan(
                     dist, [y], [x], additional_inputs=[]
                 )
                 return out

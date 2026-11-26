@@ -43,7 +43,10 @@ class FakeTensorTest(unittest.TestCase):
 
         onnx_program = torch_onnx.export_compat(model, (fake_input,), optimize=False)
 
-        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(Exception):
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            self.assertRaises(ir.serde.SerdeError),
+        ):
             onnx_program.save(os.path.join(tmpdir, "fake_model.onnx"))
 
     def test_apply_weights(self):

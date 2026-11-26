@@ -107,9 +107,9 @@ def _adapt_mobilenet(model):
                 assert incoming is not None, f"Missing pooling qparams for {node}"
                 replacement = _ConvertedOperation(module, *incoming)
             else:
-                assert isinstance(
-                    module, torch.nn.Identity | torch.nn.Dropout
-                ), f"Add an explicit Q/DQ adaptation for {node}: {type(module)}"
+                assert isinstance(module, torch.nn.Identity | torch.nn.Dropout), (
+                    f"Add an explicit Q/DQ adaptation for {node}: {type(module)}"
+                )
                 assert not module.training, f"Expected an evaluation module: {node}"
                 replacement = torch.nn.Identity()
             adapted.set_submodule(node.target, replacement)
@@ -160,9 +160,9 @@ def test_pretrained_mobilenet_v3():
     program = None
     try:
         engines = torch.backends.quantized.supported_engines
-        assert (
-            "qnnpack" in engines or "onednn" in engines
-        ), "The original MobileNetV3 checkpoint requires QNNPACK or oneDNN."
+        assert "qnnpack" in engines or "onednn" in engines, (
+            "The original MobileNetV3 checkpoint requires QNNPACK or oneDNN."
+        )
         # Windows has no QNNPACK; retain its QAT configuration and checkpoint,
         # but pack the original quantized oracle with the available oneDNN.
         torch.backends.quantized.engine = (

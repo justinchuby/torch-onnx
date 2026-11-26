@@ -127,22 +127,22 @@ def _adjust_args_for_arange_int_dtype(
     step: ir.Value | int | float,
 ) -> tuple[ir.Value, ir.Value, ir.Value]:
     zero = op.Cast(0.0, to=ir.DataType.FLOAT)
-    start = op.Cast(start, to=ir.DataType.FLOAT)
-    end = op.Cast(end, to=ir.DataType.FLOAT)
-    step = op.Cast(step, to=ir.DataType.FLOAT)
+    start_value: ir.Value = op.Cast(start, to=ir.DataType.FLOAT)
+    end_value: ir.Value = op.Cast(end, to=ir.DataType.FLOAT)
+    step_value: ir.Value = op.Cast(step, to=ir.DataType.FLOAT)
 
-    start = op.Where(
-        op.Less(start, zero),
-        op.Ceil(start),
-        start,
+    start_value = op.Where(
+        op.Less(start_value, zero),
+        op.Ceil(start_value),
+        start_value,
     )
-    start = op.Where(
-        op.Less(step, zero),
-        op.Floor(start),
-        start,
+    start_value = op.Where(
+        op.Less(step_value, zero),
+        op.Floor(start_value),
+        start_value,
     )
 
-    return (start, end, step)
+    return (start_value, end_value, step_value)
 
 
 @onnx_impl(aten.arange.default)

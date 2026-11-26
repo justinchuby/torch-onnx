@@ -3072,7 +3072,7 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
                 for _ in range(5):
                     d = a[0]
                     for _ in range(2):
-                        e, f = a
+                        _e, f = a
                         a = (d, f)
                         f = c[2]
                         if f.size(0) != input1.size(-1):
@@ -3516,7 +3516,7 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         # test Shape, Reshape, Transpose, Gather
         class ShapeModel(torch.nn.Module):
             def forward(self, x, y):
-                shape = x.size()[:3] + (-1,)  # shape [4], ("batch", 3, 4, -1)
+                shape = x.size()[:3] + (-1,)  # noqa: RUF005 - exercise symbolic tuple concatenation
                 y = y.reshape(shape)  # batch, 3, 4, 10/batch
                 return y.transpose(1, 2)
 
@@ -3695,7 +3695,7 @@ class TestRecoveredAdditional(RecoveredRuntimeHarness):
         class M(torch.nn.Module):
             def forward(self, x, position_bias):
                 input_shape = x.size()
-                batch_size, seq_length = input_shape
+                _batch_size, seq_length = input_shape
                 position_bias = position_bias[:, :, -seq_length:, :]
                 return position_bias.transpose(0, 1)
 

@@ -150,9 +150,9 @@ def _adapt_model(model):
                 adapted.add_submodule(name, _ConvertedAddRelu(*outgoing))
                 node.op, node.target, node.kwargs = "call_module", name, {}
             elif node.target == torch.ops.quantized.cat:
-                assert all(
-                    parameters[value] is not None for value in node.args[0]
-                ), f"Missing concatenation input qparams for {node}"
+                assert all(parameters[value] is not None for value in node.args[0]), (
+                    f"Missing concatenation input qparams for {node}"
+                )
                 outgoing = (
                     float(node.kwargs["scale"]),
                     int(node.kwargs["zero_point"]),
@@ -192,9 +192,9 @@ def _adapt_model(model):
                 operator.mul,
                 operator.floordiv,
             }:
-                assert (
-                    incoming is None
-                ), f"Expected an unquantized scalar/input-transform operation: {node}"
+                assert incoming is None, (
+                    f"Expected an unquantized scalar/input-transform operation: {node}"
+                )
             else:
                 assert node.target in {
                     torch.flatten,
@@ -341,9 +341,9 @@ def _load_pretrained_model(name, weights):
             weights=None, quantize=True, backend="fbgemm", progress=False, **kwargs
         )
     else:
-        assert (
-            "onednn" in torch.backends.quantized.supported_engines
-        ), "These pretrained quantized model fixtures require fbgemm or oneDNN."
+        assert "onednn" in torch.backends.quantized.supported_engines, (
+            "These pretrained quantized model fixtures require fbgemm or oneDNN."
+        )
         # Windows lacks fbgemm. Pack the same serialized weights with oneDNN,
         # retaining torchvision's fbgemm observer/weight configuration.
         torch.backends.quantized.engine = "onednn"

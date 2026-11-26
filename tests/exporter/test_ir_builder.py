@@ -265,6 +265,66 @@ class TestGraphBuilder(common_utils.TestCase):
         result = _ir_builder.TranslationContext(child).NonZero(self.x)
         self.assertNotIn(str(result.shape[1]), {"_d0", "_d1", "_d2"})
 
+    def test_ir_schema_is_resolved_once_across_context_and_child_calls(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        child = self.builder.subgraph(ir.Graph([], [], nodes=[], name="child"))
+        original_lookup = onnx.defs.get_schema
+        original_conversion = ir.schemas.OpSignature.from_op_schema
+        with (
+            mock.patch.object(onnx.defs, "get_schema", wraps=original_lookup) as lookup,
+            mock.patch.object(
+                ir.schemas.OpSignature, "from_op_schema", wraps=original_conversion
+            ) as convert,
+        ):
+            first = op.Add(self.x, 1)
+            second = op.Add(first, 2)
+            (third,) = self.builder.call("Add", second, self.x)
+            fourth = _ir_builder.TranslationContext(child).Add(third, 3)
+        self.assertEqual(fourth.dtype, ir.DataType.FLOAT)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 18, "")), 1)
+        self.assertEqual(convert.call_count, 1)
+
+    def test_schema_cache_does_not_keep_tensor_type_bindings(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        first = op.Add(self.x, 1)
+        double = ir.Value(type=ir.TensorType(ir.DataType.DOUBLE), shape=self.x.shape)
+        second = op.Add(double, 1)
+        self.assertEqual(first.dtype, ir.DataType.FLOAT)
+        self.assertEqual(second.dtype, ir.DataType.DOUBLE)
+        self.assertEqual(second.producer().inputs[1].dtype, ir.DataType.DOUBLE)
+        self.assertFalse(any(node.op_type == "Cast" for node in self.graph))
+
+    def test_schema_resolution_is_scoped_to_each_export_and_opset(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        child = self.builder.subgraph(
+            ir.Graph([], [], nodes=[], name="child"), opset=19
+        )
+        independent = _ir_builder.TranslationContext(
+            _ir_builder.GraphBuilder(ir.Graph([], [], nodes=[]))
+        )
+        original_lookup = onnx.defs.get_schema
+        with mock.patch.object(
+            onnx.defs, "get_schema", wraps=original_lookup
+        ) as lookup:
+            op.Add(self.x, self.x)
+            _ir_builder.TranslationContext(child).Add(self.x, self.x)
+            independent.Add(self.x, self.x)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 18, "")), 2)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 19, "")), 1)
+
+    def test_missing_schema_is_not_cached_when_registration_changes(self):
+        schema = onnx.defs.get_schema("Relu", 18, "")
+        with mock.patch.object(
+            onnx.defs,
+            "get_schema",
+            side_effect=[onnx.defs.SchemaError("not registered yet"), schema],
+        ) as lookup:
+            with self.assertWarnsRegex(UserWarning, "Standard ONNX operator 'Relu'"):
+                self.builder.call("Relu", self.x, _num_outputs=1)
+            (result,) = self.builder.call("Relu", self.x)
+        self.assertEqual(lookup.call_count, 2)
+        self.assertEqual(result.shape, self.x.shape)
+
     @parametrize("metadata", ["dtype", "shape"])
     def test_required_metadata_reports_missing_input(self, metadata):
         require = getattr(common, f"require_{metadata}")

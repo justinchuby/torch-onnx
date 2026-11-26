@@ -438,8 +438,8 @@ uses the current boolean-mask API; checks for pruned inputs check unused graph
 inputs instead, because modern export preserves the original callable signature.
 
 The variance test's epsilon-stabilized square-root subcase is split into
-`test_var_sqrt_epsilon` and explicitly skipped with a TODO: the known ONNX Script
-optimizer bug drops `+1e-8`. Other variance cases remain enabled. No blanket
+`test_var_sqrt_epsilon`. It is enabled now that the standalone optimizer
+preserves `+1e-8` instead of matching it approximately to zero. No blanket
 operator/frontend skips are used.
 
 Recovered regressions found and fixed runtime shape handling for dynamic `-1`
@@ -453,8 +453,8 @@ Historical dtype-check suppressions on power/full-like are also not retained;
 the modern harness verifies their actual output dtypes.
 
 The inventory counts original source methods, not parametrized executions:
-the original variance method maps to enabled variance checks plus the one
-explicitly deferred epsilon subcase. Six additional broadcast/empty-mask cases
+the original variance method maps to enabled variance checks, including its
+epsilon subcase. Six additional broadcast/empty-mask cases
 exercise the new masked-select implementation across float, integer and boolean
 tensors. Dynamic pixel-shuffle, diagonal, factory and floor-division cases execute
 their additional shapes; they are not merely exported with one example.

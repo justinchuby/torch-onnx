@@ -46,6 +46,7 @@ addopts = '--tb=short --color=yes -m "not integration and not opinfo and not ops
 testpaths = [
   "tests/exporter",
   "tests/fuzz",
+  "benchmarks/test_performance.py",
   "tests/torchlib",
   "tests/conversion_test.py",
   "tests/decomp_test.py",

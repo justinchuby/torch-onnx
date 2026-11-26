@@ -1,130 +1,144 @@
 # Exporter differential fuzzing
 
-The deterministic fuzzer in `tests/fuzz/fuzzer.py` generates small, pure
-`torch.nn.Module` DAGs and compares their ONNX execution with PyTorch eager.
-It exercises compositions, including reused intermediate values, rather than
-running isolated random operators.
+The deterministic generator creates small, pure `torch.nn.Module` DAGs and
+constrained loss/attention models. It checks ONNX legality, output declarations,
+and execution against PyTorch eager in both optimization modes.
 
-## Default smoke budget
+## Default CI budget
 
-Default `pytest` includes eight fixed seeds (0–7), seven generated operations per
-DAG, and both `optimize=False` and `optimize=True`: **16 exports total**. The
-remaining tests in `tests/fuzz` validate replay, the special-value oracle and the
-suffix reducer. Long campaigns are marked `fuzz_long` and excluded by default.
+Default pytest retains the original eight seven-node DAG seeds and adds three
+CE/BCE/SDPA templates: **11 cases / 22 exports / 34 input-instance checks**.
+Each dynamic template executes its capture shape and two additional shapes
+against the same exported model and ORT session. CE smoke explicitly selects
+mean reduction; the separate known unreduced CE failure is described below.
+Harness tests exercise replay, comparison, reduction, crash and timeout handling;
+there are no timing assertions or random-seed skips in this smoke tier.
 
-```bash
-# The same eight graph cases used by default CI
+```sh
 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m pytest tests/fuzz -m fuzz -q
-
-# Replay one generated seed
 TORCH_ONNX_FUZZ_SEED=123 python -m pytest tests/fuzz -m fuzz -q
+```
 
-# Explicit longer budget: 256 graph cases / 512 exports
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-  TORCH_ONNX_FUZZ_SEED=0 TORCH_ONNX_FUZZ_COUNT=256 \
+## Output visibility and generation domains
+
+`output_mode=all` exposes intermediate values and input signbit probes to locate
+errors. `output_mode=final` exposes only the final DAG result, allowing optimizers
+to eliminate intermediates and fuse operations as they would in a production
+model. Integer and Boolean DAGs, casts, broadcasting, shape operations,
+noncontiguous layouts, empty dimensions and floating special values are covered.
+
+Generation supports opsets **18, 23 and 26**, with signbit probes only at 26.
+The initial data domain is CPU float32, float64, int32, int64 and bool.
+CE/BCE/SDPA templates add legal relationships between inputs, randomized loss
+reductions, and dynamic shapes. Dynamic SDPA varies batch, query and key sequence
+lengths, including a broadcast Boolean mask. Arbitrary DAGs currently use static
+shapes; dynamic shapes are limited to these constrained templates.
+
+## Bounded isolated campaigns
+
+The CLI isolates execution by default. The old `fuzzer.py` entry point delegates
+to the same campaign CLI, so existing commands also gain isolation.
+
+```sh
+# Preserve the original static DAG domain, now with crash-safe execution
+python tests/fuzz/fuzzer.py --seed 0 --count 256 --report /tmp/dag-report.json
+
+# Total 256 cases across the 42 supported domain/output/opset/shape configurations
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 python tests/fuzz/campaign.py \
+  --seed 0 --count 256 --domain all --output-mode both --shape-mode both \
+  --opset 18 --opset 23 --opset 26 --timeout 120 --keep-going \
+  --report /tmp/fuzz-report.json --failure-dir /tmp/fuzz-artifacts
+
+# Explicit long pytest tier, stopping at the first discrepancy
+TORCH_ONNX_FUZZ_COUNT=256 TORCH_ONNX_FUZZ_TIMEOUT=120 \
   python -m pytest tests/fuzz -m fuzz_long -q
-
-# CLI, independent of pytest; fail at the first discrepancy
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-  python tests/fuzz/fuzzer.py --seed 0 --count 256
 ```
 
-The count is a bound on cases, not a wall-clock timeout. Every case checks two
-optimization modes; the failure reducer can perform up to eight additional
-exports in the failing mode. ORT sessions use one intra/inter-op thread. The
-fuzzer does not start background jobs or schedule future campaigns.
+`--count` is a **total-case budget**, not a multiplier per configuration. At
+least one full configuration round is required, and each round is shuffled
+deterministically to avoid coupling seed edge profiles to configuration choices.
+The CLI stops at the first failure unless `--keep-going` is supplied. That flag
+records each classified failure and continues within the budget, then **exits
+nonzero** if any case failed. Worker protocol failures remain fatal. Successful
+export/input counts in the JSON summary count only completely validated cases;
+failed cases are never reported as passes.
 
-## Supported generation domain
+Workers are reused and rotated every 64 cases. A complete per-case wall-clock
+budget includes worker startup/imports, eager, export, checker, ORT, reference
+attribution and bounded reduction. Timeout or abrupt native failure terminates
+the owned worker process group on Unix; Windows uses a Job Object with tree-kill
+fallback (the Windows branch has not been exercised locally). Native diagnostics
+and faulthandler output are retained, and core dumps are disabled. The generator
+controller itself imports Torch; generation is not covered by the worker timeout.
+`--in-process` is an explicit debugging option with no crash/timeout isolation.
 
-The initial domain is CPU float32, float64, int32, int64 and bool at **opset 26**.
-That opset permits exact floating-point `signbit` probes through BitCast. It does
-not interpret explicit rejection at an older opset as a successful fuzz case.
+The manual **Differential fuzz campaign** Actions workflow runs the isolated
+matrix and uploads the summary and case artifacts even after a failure. It is
+separate from required PR checks and has no scheduled execution.
 
-Operations include arithmetic, integer floor division and round, casts, logical
-operators, where, transpose, unsqueeze/squeeze, flatten, concatenate and stack.
-The generator tracks intermediate dtype and shape to choose legal inputs;
-integer division has a nonzero positive divisor, and floating values containing
-NaN/Inf are not converted to integers. Graphs remain small. Zero/one-sized
-shapes, noncontiguous inputs, integers above float32/float64 exact-integer ranges,
-float64 scalar constants, signed zeros, NaN and infinities receive fixed edge
-profiles in addition to randomized compositions.
+## Failure artifacts and replay
 
-Risk categories were informed by the exporter issue inventory: precision-losing
-integer division, integer round, no-op squeeze, mixed-dtype stack, float64 scalar
-materialization, signed-zero rewrites and signbit. This is not coverage of all
-22 reported issues: training/state mutation, convolution, attention and losses
-need separate model-specific generators or directed regressions.
+Before execution, each case receives a unique directory with atomically saved
+`case.json` and `config.json`. It also retains `stdout.log`, `stderr.log` and
+`result.json`; normal Python failures may include a minimized `failure-case.json`.
+The original case survives even when native code crashes before Python can
+raise an exception. Identical seeds with different configurations and repeated
+campaigns do not overwrite previous artifacts.
 
-## What counts as a failure
+Case JSON version 2 stores actual input values/layouts, the DAG, output mode,
+opset, domain, dynamic symbols and additional shape instances. Old version-1
+artifacts still load with their original all-output/opset-26 behavior. Replay
+uses these values rather than regenerating a seed. NaN/Inf have JSON string
+encodings, including negative NaN, so payloads remain valid JSON.
 
-For both optimization modes, the harness:
+```sh
+# Exact case data with the current default execution budget
+python tests/fuzz/campaign.py --case /tmp/fuzz-artifacts/seed-.../case.json
 
-1. Exports the model and classifies capture/lowering/optimization exceptions as
-   `export` failures.
-2. Runs `onnx.checker.check_model(..., full_check=True)` and checks output
-   declarations against eager dtype/rank/concrete dimensions (`invalid_graph`).
-3. Creates a CPU ONNX Runtime session and executes it (`runtime`).
-4. Compares output dtype, shape and values (`semantic`). Only on failure, ONNX
-   ReferenceEvaluator is used to attribute the mismatch: `backend` when reference
-   agrees with eager, `export_semantic` when reference also disagrees, and
-   `unattributed` when the reference evaluator cannot execute it. Every category
-   still fails; attribution does not turn a backend issue into a pass.
-
-Integer and bool results must match exactly. Float comparisons separately check
-NaN masks and positive/negative infinity masks, then finite values with dtype
-specific tolerances. Explicit add-zero probes, and input values carried through
-neg/abs or bit-preserving structural operations, also compare exact zero and its
-sign. Ordinary arithmetic and Where outputs do not acquire a blanket bitwise
-zero requirement through later structural operations. Original floating
-inputs have observable Boolean `torch.signbit` outputs, including negative NaNs;
-NaN payloads are not required to match bit-for-bit. Thus `allclose(equal_nan=True)`
-cannot silently hide a lost NaN, changed infinity sign or the signed-zero probe.
-
-Failures are not skipped, and unsupported randomly generated operators are not
-counted as passes. Invalid generated eager programs are separately reported as
-`generator` failures, with the same replay payload. Expand the supported domain with a regression when adding
-new operations. An optional backend lacking a generated kernel is a visible
-`runtime` failure, not an automatic exclusion.
-
-## Stable replay and reduction
-
-Each failure prints the stage, optimization mode, seed and **complete JSON
-case**, including all input values/layouts and the DAG. Special values use JSON
-strings (`nan`, `negative_nan`, `+inf`, `-inf`), so the file is valid JSON without
-nonstandard numeric extensions. Replay uses the stored case, not a freshly
-regenerated seed; generator changes do not invalidate a saved reproducer.
-
-The CLI writes a failing case in `torch-onnx-fuzz-failures` under the system
-temporary directory by default; python -m pytest writes it in the case's temporary directory and prints its path.
-Pass `--failure-dir DIR` to keep a campaign corpus elsewhere.
-
-```bash
-python tests/fuzz/fuzzer.py --case /path/to/seed-123-semantic-1.json
-TORCH_ONNX_FUZZ_CASE=/path/to/case.json python -m pytest tests/fuzz -m fuzz -q
+# Recorded timeout/reduction settings, including moved artifact directories
+python tests/fuzz/runner.py --replay /tmp/fuzz-artifacts/seed-.../config.json
 ```
 
-The reducer greedily removes DAG suffixes while preserving the failure category,
-reference attribution and optimizer mode. Every intermediate is an output, so a retained prefix is a
-legal, inspectable graph. The reducer is deliberately bounded; it does not claim
-that the result is globally minimal, does not change input values, and stops
-when shortening the prefix loses or changes the failure. Use `--no-reduce` to
-retain the original case or to avoid extra exports while debugging a failure.
+Generation flags cannot override `--case`. Config replay uses the current trusted
+worker and interpreter, never an executable command embedded in JSON. It reports
+recorded environment/cwd differences. Only for trusted own artifacts, explicitly
+add `--restore-environment` to restore the recorded working directory and selected
+environment keys. Runtime versions and source hashes are diagnostic: use a
+matching checkout/environment when reproducing historical failures.
 
-## Known backend observation
+The suffix reducer performs at most eight attempts, preserving stage, optimizer
+mode and reference attribution. It validates candidates before retaining them,
+so a minimized template remains loadable. It does not minimize input values or
+claim a globally minimal result.
 
-`test_where_backend.py` keeps a separate minimal, exporter-independent observation:
-on macOS arm64 with exactly ONNX Runtime 1.32.0, a standard ONNX Where node can
-turn selected `-0.0` into `+0.0` even with ORT graph optimization disabled. Eager
-and ONNX ReferenceEvaluator preserve the input bit. The test has a **strict**
-expected failure only for that exact environment and only for its dedicated
-signed-zero mismatch exception; checker/reference failures and other exceptions
-are not covered. The random DAG smoke has no seed-level xfails. A generated
-Where→Reciprocal composition that changes an infinity sign is still a hard
-semantic failure and can be attributed to the backend by the reference oracle.
+## Failure classification and known observations
 
-This exporter-independent observation is marked `integration` and excluded from
-the default smoke budget. Run it explicitly when investigating a backend:
+Capture/lowering/optimization exceptions are `export`; checker/declaration errors
+are `invalid_graph`; ORT setup/execution errors are `runtime`; value mismatches
+are `semantic`. Invalid generated eager programs are `generator` failures.
+Isolation adds `timeout`, `crash` and `worker` protocol/harness failures.
 
-```bash
+Integer/Boolean results match exactly. Floating comparisons check dtype/shape,
+NaN masks, positive/negative infinity masks, and finite tolerances separately.
+Explicit add-zero probes and bit-preserving lineages also require signed-zero
+agreement; ordinary arithmetic/Where does not acquire blanket bitwise checks.
+Only after a numerical mismatch, ONNX ReferenceEvaluator distinguishes `backend`,
+`export_semantic` and `unattributed`. Attribution never converts a failure into a
+pass. Missing runtime kernels are failures, not automatic exclusions.
+
+Two known observations are intentionally visible:
+
+- On PyTorch 2.15, retracing dynamic CE with `reduction=none` can turn vector
+  metadata into scalar metadata and rewrite a later flatten into `view([1])`.
+  `tests/exporter/test_dynamic_loss_metadata.py` has an independent, narrowly
+  scoped strict expected failure using raw `ExportedProgram.run_decompositions`.
+  No exporter workaround or random-case exclusion is installed. Long campaigns
+  still generate this configuration and fail normally, saving its full replay.
+- `test_where_backend.py` observes ORT Where losing negative zero on macOS arm64
+  with exactly ORT 1.32.0. Its dedicated strict expected failure is an optional
+  integration test; the default random DAG smoke has no seed-level xfails.
+  Generated Where-to-Reciprocal infinity-sign differences remain hard failures.
+
+```sh
 python -m pytest tests/fuzz/test_where_backend.py -m integration -q
 ```

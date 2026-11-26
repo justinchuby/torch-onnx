@@ -213,15 +213,20 @@ def test_replay_never_executes_a_command_from_json(tmp_path, monkeypatch, capsys
     assert "/untrusted" not in diagnostic
 
 
-def test_real_worker_runs_complete_fuzzer_without_changing_case_schema(tmp_path):
+@pytest.mark.parametrize("domain,opset", [("dag", 26), ("moe", 23)])
+def test_real_worker_runs_complete_fuzzer_without_changing_case_schema(
+    tmp_path, domain, opset
+):
     from fuzz import fuzzer
 
-    case = fuzzer.generate_case(4)
+    case = fuzzer.generate_case(4, domain=domain, dynamic=domain != "dag", opset=opset)
     with runner.IsolatedRunner(tmp_path, timeout_s=30, reduce=False) as isolated:
         result = isolated.check(case)
     assert result.passed
     assert json.loads(result.case_path.read_text()) == json.loads(case.to_json())
     assert result.worker_pid is not None
+    assert result.coverage["aten_ops"] and result.coverage["onnx_ops"]
+    assert "model_families.py" in result.runtime_info["source_sha256"]
 
 
 @pytest.mark.skipif(

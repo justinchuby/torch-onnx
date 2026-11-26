@@ -19,7 +19,7 @@ on:
       domain:
         description: Generated domain
         type: choice
-        options: [all, dag, ce, bce, sdpa]
+        options: [all, models, dag, ce, bce, sdpa, decoder, moe, delta, vision, dit, sparse_attention, mhc]
         default: all
       timeout:
         description: Complete per-case worker budget in seconds

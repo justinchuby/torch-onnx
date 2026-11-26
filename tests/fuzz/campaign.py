@@ -27,7 +27,7 @@ def configurations(domains, output_modes, opsets, shape_modes):
         if domain != "dag" or not dynamic
     ]
     if not variants:
-        raise ValueError("Dynamic shapes require a ce, bce or sdpa template domain")
+        raise ValueError("Dynamic shapes require a constrained template domain")
     return list(dict.fromkeys(variants))
 
 
@@ -74,7 +74,7 @@ def main(argv=None):
         "--steps", type=int, help="DAG node budget, at least 4 (default 7)"
     )
     parser.add_argument("--case", type=Path, help="Replay exact serialized case data")
-    parser.add_argument("--domain", choices=("dag", "ce", "bce", "sdpa", "all"))
+    parser.add_argument("--domain", choices=(*fuzzer.DOMAINS, "models", "all"))
     parser.add_argument("--output-mode", choices=("all", "final", "both"))
     parser.add_argument("--opset", type=int, choices=(18, 23, 26), action="append")
     parser.add_argument("--shape-mode", choices=("static", "dynamic", "both"))
@@ -135,8 +135,10 @@ def main(argv=None):
         variants = []
     else:
         domains = (
-            ("dag", "ce", "bce", "sdpa")
+            fuzzer.DOMAINS
             if args.domain == "all"
+            else fuzzer.model_families.DOMAINS
+            if args.domain == "models"
             else (args.domain or "dag",)
         )
         outputs = (
@@ -193,21 +195,31 @@ def main(argv=None):
         "elapsed_s": 0.0,
         "failure": None,
         "failures": [],
+        "domain_counts": {},
+        "generated_ops": [],
+        "aten_ops": [],
+        "onnx_ops": [],
     }
     _write_report(args.report, report)
     try:
         with context as isolated:
             for case in cases:
                 report["attempted_cases"] += 1
+                report["domain_counts"][case.domain] = (
+                    report["domain_counts"].get(case.domain, 0) + 1
+                )
+                report["generated_ops"] = sorted(
+                    set(report["generated_ops"]) | {node["op"] for node in case.nodes}
+                )
                 try:
                     if isolated is None:
-                        fuzzer.check_case(
+                        coverage = fuzzer.check_case(
                             case,
                             failure_dir=args.failure_dir,
                             reduce=not args.no_reduce,
                         )
                     else:
-                        isolated.check(case)
+                        coverage = isolated.check(case).coverage
                 except (fuzzer.FuzzFailure, RunnerFailure) as error:
                     report["failed_cases"] += 1
                     report["failures"].append(
@@ -221,6 +233,10 @@ def main(argv=None):
                     report["validated_input_instances"] += 2 * (
                         1 + len(case.additional_inputs)
                     )
+                    for name in ("aten_ops", "onnx_ops"):
+                        report[name] = sorted(
+                            set(report[name]) | set((coverage or {}).get(name, []))
+                        )
                 report["elapsed_s"] = time.monotonic() - start
                 _write_report(args.report, report)
         report["status"] = "failed" if report["failed_cases"] else "passed"

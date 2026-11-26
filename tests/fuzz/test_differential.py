@@ -33,6 +33,12 @@ def _smoke_cases():
             )
             for i, (domain, opset) in enumerate((("ce", 18), ("bce", 23), ("sdpa", 26)))
         ]
+        + [
+            fuzzer.generate_template_case(
+                200 + i, domain=domain, opset=23, dynamic=True
+            )
+            for i, domain in enumerate(fuzzer.model_families.DOMAINS)
+        ]
     )
 
 
@@ -53,7 +59,7 @@ def test_exporter_differential_long(tmp_path):
     timeout = float(os.environ.get("TORCH_ONNX_FUZZ_TIMEOUT", "120"))
     with IsolatedRunner(tmp_path, timeout_s=timeout) as isolated:
         for seed in range(start, start + count):
-            domain = ("dag", "ce", "bce", "sdpa")[seed % 4]
+            domain = fuzzer.DOMAINS[seed % len(fuzzer.DOMAINS)]
             case = fuzzer.generate_case(
                 seed,
                 domain=domain,

@@ -111,6 +111,7 @@ select = [
 ]
 
 ignore = [
+  "PLC0415", # Lazy imports isolate optional dependencies and expensive Torch setup.
   "E501", # line too long
   "PYI041",
   "NPY002",
@@ -118,6 +119,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLW0108"] # Callback wrappers are intentional tracing fixtures.
 "tests/onnx_test_common.py" = ["UP006", "UP007"]
 "tests/pytorch_test.py" = ["UP006", "UP007"]
 "tests/pytorch_test_common.py" = ["UP006", "UP007"]

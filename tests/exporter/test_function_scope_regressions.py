@@ -39,7 +39,7 @@ def test_local_function_infer_scopes():
     class M(torch.nn.Module):
         def forward(self, x):
             # Concatenation of scalars inserts unscoped tensors in IR graph.
-            new_tensor_shape = x.size()[:-1] + (1, 1, -1)
+            new_tensor_shape = x.size()[:-1] + (1, 1, -1)  # noqa: RUF005 - exercise tuple concatenation
             tensor = x.view(*new_tensor_shape)
             return tensor
 

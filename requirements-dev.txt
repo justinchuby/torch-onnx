@@ -1,4 +1,4 @@
-expecttest==0.1.6
+expecttest==0.3.0
 hypothesis
 onnxruntime
 pandas
@@ -8,8 +8,9 @@ pytest
 pytest-cov
 pytest-subtests
 pytest-xdist
-pyrefly==0.58.0
+pyrefly==1.5.0
 pyyaml
+ruff==0.17.6
 torch-geometric
 # The internal-harness development suite has a reproducible current baseline.
 # Package installation itself leaves Torch unconstrained; older releases run in

@@ -176,7 +176,7 @@ class TestExportableModule(common_utils.TestCase):
         """Test ExportableModule with multiple outputs."""
         model = ExportableModelMultipleOutputs()
 
-        args, kwargs = model.example_arguments()
+        args, _kwargs = model.example_arguments()
         output1, output2 = model(*args)
         self.assertEqual(output1.shape, (2, 5))
         self.assertEqual(output2.shape, (2, 3))
@@ -231,7 +231,7 @@ class TestExportableModule(common_utils.TestCase):
                 return (torch.randn(2, 3), torch.randn(2, 3)), None
 
         model = ComplexInputModel()
-        args, kwargs = model.example_arguments()
+        args, _kwargs = model.example_arguments()
         output = model(*args)
         self.assertEqual(output.shape, (2, 3))
 

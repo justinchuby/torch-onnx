@@ -269,9 +269,9 @@ class _StoredLayer(torch.nn.Module):
         )
         self.output_padding = layer.output_padding if transposed else ()
         if transposed:
-            assert not any(
-                layer.padding
-            ), "These recovered transpose fixtures use zero padding."
+            assert not any(layer.padding), (
+                "These recovered transpose fixtures use zero padding."
+            )
 
     def forward(self, x):
         value = _dequantize(x, self.input_scale, self.input_zero)

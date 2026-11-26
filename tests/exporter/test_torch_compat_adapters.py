@@ -128,9 +128,9 @@ def test_fake_tensor_serialization_is_rejected_with_either_detection_api(legacy)
         mock.patch.object(
             _torch_compat,
             "getattr",
-            side_effect=lambda module, name, default=None: None
-            if name == "is_fake_tensor"
-            else getattr(module, name, default),
+            side_effect=lambda module, name, default=None: (
+                None if name == "is_fake_tensor" else getattr(module, name, default)
+            ),
             create=True,
         )
         if legacy

@@ -17,7 +17,6 @@ from _common.assertions import (
 )
 from _common.runtime import RecoveredRuntimeHarness
 from torch import Tensor
-from torch.testing._internal import common_utils
 
 
 @pytest.mark.parametrize("mixed_weights", [False, True])
@@ -596,11 +595,7 @@ class TestRecoveredRuntime(RecoveredRuntimeHarness):
         model = VarianceUnbiased()
         self.run_test(model, x)
 
-    @common_utils.unittest.skip(
-        "Known ONNX Script optimizer bug: approximate-zero rewrite drops variance epsilon"
-    )
     def test_var_sqrt_epsilon(self):
-        # TODO: Enable when ONNX Script preserves stabilizing epsilon additions.
         class VarianceSqrt(torch.nn.Module):
             def forward(self, input):
                 y = torch.var(input, 1)

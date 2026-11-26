@@ -59,9 +59,15 @@ PyTorch program methods are inherited without modifying the upstream class.
 
 [The differential harness](fuzzing.md) adds bounded, deterministic graph
 composition checks and complete replay artifacts. Its initial domain targets
-the dtype, scalar precision and signed-zero issues above. Attention, losses,
-stateful training and special-function tail approximations still require
-directed tests or additional generators.
+the dtype, scalar precision and signed-zero issues above. It now also includes
+constrained CE/BCE/SDPA templates, additional dynamic input instances, multiple
+opsets and final-output-only graphs. Stateful training and special-function
+tail approximations still require directed tests or additional generators.
+
+The expanded cases found another pinned-PyTorch issue: retracing dynamic
+unreduced CE can corrupt metadata and rewrite a following flatten to a scalar
+view. An independent strict expected failure records the raw PyTorch problem;
+long campaigns still report it normally and retain the complete replay.
 
 The independent ORT Where signed-zero observation is documented separately in
 the fuzzing guide. Runtime discrepancies remain failures in differential runs;

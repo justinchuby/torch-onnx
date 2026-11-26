@@ -11,6 +11,7 @@ import onnx
 import pytest
 
 from fuzz import fuzzer
+from fuzz.runner import IsolatedRunner
 
 
 def _smoke_cases():
@@ -22,11 +23,23 @@ def _smoke_cases():
         [fuzzer.generate_case(int(seed))]
         if seed is not None
         else [fuzzer.generate_case(i) for i in range(8)]
+        + [
+            fuzzer.generate_template_case(
+                100 + i,
+                domain=domain,
+                opset=opset,
+                dynamic=True,
+                reduction="mean" if domain == "ce" else None,
+            )
+            for i, (domain, opset) in enumerate((("ce", 18), ("bce", 23), ("sdpa", 26)))
+        ]
     )
 
 
 @pytest.mark.fuzz
-@pytest.mark.parametrize("case", _smoke_cases(), ids=lambda case: f"seed-{case.seed}")
+@pytest.mark.parametrize(
+    "case", _smoke_cases(), ids=lambda case: f"{case.domain}-seed-{case.seed}"
+)
 def test_exporter_differential_smoke(case, tmp_path):
     fuzzer.check_case(case, failure_dir=tmp_path)
 
@@ -37,8 +50,18 @@ def test_exporter_differential_long(tmp_path):
     count = int(os.environ.get("TORCH_ONNX_FUZZ_COUNT", "256"))
     if count < 1:
         raise ValueError("TORCH_ONNX_FUZZ_COUNT must be positive")
-    for seed in range(start, start + count):
-        fuzzer.check_case(fuzzer.generate_case(seed), failure_dir=tmp_path)
+    timeout = float(os.environ.get("TORCH_ONNX_FUZZ_TIMEOUT", "120"))
+    with IsolatedRunner(tmp_path, timeout_s=timeout) as isolated:
+        for seed in range(start, start + count):
+            domain = ("dag", "ce", "bce", "sdpa")[seed % 4]
+            case = fuzzer.generate_case(
+                seed,
+                domain=domain,
+                output_mode="final",
+                opset=(18, 23, 26)[seed % 3],
+                dynamic=domain != "dag",
+            )
+            isolated.check(case)
 
 
 @pytest.mark.parametrize("seed", range(8))

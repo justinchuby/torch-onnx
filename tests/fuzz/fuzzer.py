@@ -7,14 +7,11 @@ current generator implementation or on global Python/PyTorch random state.
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import json
 import math
 import random
 import shlex
-import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +50,9 @@ _OPS = {
     "flatten",
     "cat",
     "stack",
+    "cross_entropy",
+    "binary_cross_entropy_with_logits",
+    "scaled_dot_product_attention",
 }
 _ZERO_SIGN_OPS = {
     "neg",
@@ -75,7 +75,15 @@ class Case:
     seed: int
     inputs: list[dict[str, Any]]
     nodes: list[dict[str, Any]]
-    version: int = 1
+    version: int = 2
+    output_mode: str = "all"
+    opset: int = 26
+    domain: str = "dag"
+    dynamic_shapes: dict[str, dict[str, str]] = dataclasses.field(default_factory=dict)
+    additional_inputs: list[list[dict[str, Any]]] = dataclasses.field(
+        default_factory=list
+    )
+    input_probes: bool = True
 
     def to_json(self) -> str:
         return json.dumps(
@@ -86,21 +94,75 @@ class Case:
     def from_json(cls, text: str) -> Case:
         raw = json.loads(text)
         case = cls(**raw)
-        if case.version != 1 or len(case.inputs) != 2:
+        if case.version not in (1, 2) or not case.inputs:
+            raise ValueError("Expected a version-1 or version-2 case with inputs")
+        if case.version == 1 and len(case.inputs) != 2:
             raise ValueError("Expected a version-1 case with two inputs")
-        for spec in case.inputs:
-            if spec["layout"] not in ("contiguous", "transposed"):
-                raise ValueError("Invalid input layout")
-            if spec["dtype"] not in _DTYPES or any(dim < 0 for dim in spec["shape"]):
-                raise ValueError("Invalid input dtype or shape")
-            if len(spec["values"]) != math.prod(spec["shape"]):
-                raise ValueError("Input shape and value count disagree")
+        if case.output_mode not in ("all", "final") or case.opset not in (18, 23, 26):
+            raise ValueError("Invalid output mode or opset")
+        if case.domain not in ("dag", "ce", "bce", "sdpa") or not isinstance(
+            case.input_probes, bool
+        ):
+            raise ValueError("Invalid case domain or probe mode")
+        if (
+            case.input_probes
+            and case.opset < 26
+            and any(spec["dtype"] in _FLOATS for spec in case.inputs)
+        ):
+            raise ValueError("Floating signbit input probes require opset 26")
+        for specs in [case.inputs, *case.additional_inputs]:
+            if len(specs) != len(case.inputs):
+                raise ValueError("Input instance arity differs")
+            for original, spec in zip(case.inputs, specs, strict=True):
+                if original["dtype"] != spec["dtype"] or len(original["shape"]) != len(
+                    spec["shape"]
+                ):
+                    raise ValueError("Input instance dtype/rank differs")
+                cls._validate_input(spec)
+        names = (
+            ["x", "y"]
+            if len(case.inputs) == 2
+            else [f"input_{i}" for i in range(len(case.inputs))]
+        )
+        for name, axes in case.dynamic_shapes.items():
+            if name not in names or any(
+                not 0 <= int(axis) < len(case.inputs[names.index(name)]["shape"])
+                or not isinstance(symbol, str)
+                or not symbol.isidentifier()
+                for axis, symbol in axes.items()
+            ):
+                raise ValueError("Invalid dynamic shape declaration")
+        for specs in [case.inputs, *case.additional_inputs]:
+            sizes = {}
+            for name, original, spec in zip(names, case.inputs, specs, strict=True):
+                axes = case.dynamic_shapes.get(name, {})
+                for axis, size in enumerate(spec["shape"]):
+                    symbol = axes.get(str(axis))
+                    if symbol is None:
+                        if size != original["shape"][axis]:
+                            raise ValueError("Undeclared input dimension changed")
+                    elif not 2 <= size <= 64 or sizes.setdefault(symbol, size) != size:
+                        raise ValueError(
+                            "Dynamic dimension violates bounds or shared symbol"
+                        )
+            _validate_template_inputs(case.domain, specs)
         for index, node in enumerate(case.nodes):
             if node["op"] not in _OPS or any(
-                not 0 <= arg < index + 2 for arg in node["args"]
+                not 0 <= arg < index + len(case.inputs) for arg in node["args"]
             ):
                 raise ValueError("Invalid operation or non-topological argument")
         return case
+
+    @staticmethod
+    def _validate_input(spec):
+        if spec["layout"] not in ("contiguous", "transposed"):
+            raise ValueError("Invalid input layout")
+        if spec["dtype"] not in _DTYPES or any(
+            type(dim) is not int or dim < 0 for dim in spec["shape"]
+        ):
+            raise ValueError("Invalid input dtype or shape")
+        if len(spec["values"]) != math.prod(spec["shape"]):
+            raise ValueError("Input shape and value count disagree")
 
 
 def _dtype_name(dtype: torch.dtype) -> str:
@@ -119,18 +181,19 @@ def _decode(value: Any) -> Any:
     return value
 
 
-def materialize(case: Case) -> tuple[torch.Tensor, torch.Tensor]:
+def materialize(case: Case, *, inputs=None) -> tuple[torch.Tensor, ...]:
     """Rebuild inputs, including their requested strided layout."""
-    inputs = []
-    for spec in case.inputs:
+    specs = case.inputs if inputs is None else inputs
+    tensors = []
+    for spec in specs:
         tensor = torch.tensor(
             [_decode(v) for v in spec["values"]], dtype=_DTYPES[spec["dtype"]]
         )
         tensor = tensor.reshape(spec["shape"])
         if spec["layout"] == "transposed" and tensor.ndim == 2:
             tensor = tensor.transpose(0, 1).contiguous().transpose(0, 1)
-        inputs.append(tensor)
-    return inputs[0], inputs[1]
+        tensors.append(tensor)
+    return tuple(tensors)
 
 
 class GraphModule(torch.nn.Module):
@@ -140,8 +203,8 @@ class GraphModule(torch.nn.Module):
         super().__init__()
         self.case = case
 
-    def forward(self, x, y):
-        values = [x, y]
+    def forward(self, *inputs):
+        values = list(inputs)
         for node in self.case.nodes:
             op, attrs = node["op"], node.get("attrs", {})
             args = [values[i] for i in node["args"]]
@@ -187,25 +250,64 @@ class GraphModule(torch.nn.Module):
                 result = torch.cat(args, dim=attrs["dim"])
             elif op == "stack":
                 result = torch.stack(args, dim=attrs["dim"])
+            elif op == "cross_entropy":
+                result = torch.nn.functional.cross_entropy(a, args[1], **attrs)
+            elif op == "binary_cross_entropy_with_logits":
+                result = torch.nn.functional.binary_cross_entropy_with_logits(
+                    a, args[1], **attrs
+                )
+            elif op == "scaled_dot_product_attention":
+                result = torch.nn.functional.scaled_dot_product_attention(
+                    *args, **attrs
+                )
             else:
                 raise ValueError(f"Unknown op {op!r}")
             values.append(result)
-        outputs = values[2:]
+        outputs = (
+            values[len(inputs) :] if self.case.output_mode == "all" else values[-1:]
+        )
         # Explicit observable probes: compare signbit as Boolean output, including
         # signed NaNs on original inputs, without demanding NaN payload identity.
-        if self.case.inputs[0]["dtype"] in _FLOATS:
-            outputs.extend([torch.signbit(x), torch.signbit(y)])
+        if self.case.input_probes:
+            if self.case.version == 1:
+                # V1 used the first input's dtype to enable probes for both
+                # inputs, including integer peers in hand-authored artifacts.
+                probe_inputs = inputs if self.case.inputs[0]["dtype"] in _FLOATS else ()
+            else:
+                probe_inputs = [
+                    value
+                    for value, spec in zip(inputs, self.case.inputs, strict=True)
+                    if spec["dtype"] in _FLOATS
+                ]
+            outputs.extend(torch.signbit(value) for value in probe_inputs)
         return tuple(outputs)
 
     def case_dtype(self, index):
         # This is static Python metadata, not a tensor-dependent capture branch.
-        if index < 2:
+        count = len(self.case.inputs)
+        if index < count:
             return self.case.inputs[index]["dtype"]
-        return self.case.nodes[index - 2]["dtype"]
+        return self.case.nodes[index - count]["dtype"]
 
 
-def generate_case(seed: int, *, steps: int = 7) -> Case:
+def generate_case(
+    seed: int,
+    *,
+    steps: int = 7,
+    domain: str = "dag",
+    output_mode: str = "all",
+    opset: int = 26,
+    dynamic: bool = False,
+) -> Case:
     """Generate supported small multi-op graphs, with rotating edge profiles."""
+    if domain != "dag":
+        return generate_template_case(
+            seed, domain=domain, output_mode=output_mode, opset=opset, dynamic=dynamic
+        )
+    if dynamic:
+        raise ValueError(
+            "Dynamic DAG generation requires a constrained template domain"
+        )
     rng = random.Random(seed)
     family = seed % 8
     dtype = (
@@ -341,7 +443,170 @@ def generate_case(seed: int, *, steps: int = 7) -> Case:
             }
             attrs["dtype"] = rng.choice(targets[dt])
         append(op, args, attrs)
-    return Case(seed, inputs, nodes)
+    return Case(
+        seed,
+        inputs,
+        nodes,
+        output_mode=output_mode,
+        opset=opset,
+        input_probes=output_mode == "all" and opset >= 26,
+    )
+
+
+def input_names(case: Case) -> list[str]:
+    """Stable serialized input ordering used by capture and replay."""
+    return (
+        ["x", "y"]
+        if len(case.inputs) == 2
+        else [f"input_{i}" for i in range(len(case.inputs))]
+    )
+
+
+def _validate_template_inputs(domain, specs):
+    if domain == "dag":
+        return
+    if domain in ("ce", "bce"):
+        if (
+            len(specs) != 2
+            or len(specs[0]["shape"]) != 2
+            or specs[0]["dtype"] != "float32"
+        ):
+            raise ValueError("Invalid loss template inputs")
+        batch, classes = specs[0]["shape"]
+        if not batch or not classes:
+            raise ValueError("Loss template dimensions must be positive")
+        if domain == "ce":
+            if (
+                specs[1]["shape"] != [batch]
+                or specs[1]["dtype"] != "int64"
+                or any(
+                    type(value) is not int or not 0 <= value < classes
+                    for value in specs[1]["values"]
+                )
+            ):
+                raise ValueError("Invalid class-index targets")
+        elif (
+            specs[1]["shape"] != [batch, classes]
+            or specs[1]["dtype"] != "float32"
+            or any(
+                not isinstance(value, int | float) or not 0 <= value <= 1
+                for value in specs[1]["values"]
+            )
+        ):
+            raise ValueError("Invalid probability targets")
+        return
+    if len(specs) != 4 or any(len(spec["shape"]) != 4 for spec in specs):
+        raise ValueError("Invalid attention template input ranks")
+    q, k, v, mask = specs
+    batch, heads, length, depth = q["shape"]
+    source = k["shape"][2]
+    if (
+        min(batch, heads, length, depth, source) < 1
+        or k["shape"] != [batch, heads, source, depth]
+        or v["shape"] != k["shape"]
+        or mask["shape"] != [1, 1, length, source]
+        or any(spec["dtype"] != "float32" for spec in (q, k, v))
+        or mask["dtype"] != "bool"
+    ):
+        raise ValueError("Invalid attention template dimensions or dtypes")
+    if any(
+        not any(mask["values"][row : row + source])
+        for row in range(0, len(mask["values"]), source)
+    ):
+        raise ValueError("Attention template requires a visible key per query")
+
+
+def generate_template_case(
+    seed: int,
+    *,
+    domain: str,
+    opset: int = 26,
+    dynamic: bool = False,
+    output_mode: str = "final",
+    reduction: str | None = None,
+) -> Case:
+    """Constrained loss/attention families with reproducible legal input instances."""
+    if domain not in ("ce", "bce", "sdpa"):
+        raise ValueError(f"Unknown template domain {domain!r}")
+    rng = random.Random(seed)
+    if reduction is not None and (
+        domain == "sdpa" or reduction not in ("none", "sum", "mean")
+    ):
+        raise ValueError("Invalid reduction for template domain")
+    reduction = (
+        reduction if reduction is not None else rng.choice(("none", "sum", "mean"))
+    )
+    classes = rng.choice((3, 5, 7))
+    heads = rng.choice((1, 2))
+    depth = rng.choice((4, 8))
+
+    def specs(batch, length, source):
+        if domain == "ce":
+            shapes, dtypes = [(batch, classes), (batch,)], ["float32", "int64"]
+        elif domain == "bce":
+            shapes, dtypes = [(batch, classes)] * 2, ["float32"] * 2
+        else:
+            shapes = [
+                (batch, heads, length, depth),
+                (batch, heads, source, depth),
+                (batch, heads, source, depth),
+                (1, 1, length, source),
+            ]
+            dtypes = ["float32"] * 3 + ["bool"]
+        result = []
+        for index, (shape, dtype) in enumerate(zip(shapes, dtypes, strict=True)):
+            count = math.prod(shape)
+            if domain == "ce" and index == 1:
+                values = [rng.randrange(classes) for _ in range(count)]
+            elif domain == "bce" and index == 1:
+                values = [rng.random() for _ in range(count)]
+            elif dtype == "bool":
+                # Every query keeps key zero visible, so no all-masked rows.
+                values = [
+                    i % source == 0 or rng.choice((True, False)) for i in range(count)
+                ]
+            else:
+                values = [rng.uniform(-3.0, 3.0) for _ in range(count)]
+            result.append(
+                dict(dtype=dtype, shape=list(shape), layout="contiguous", values=values)
+            )
+        return result
+
+    inputs = specs(2, 3, 4)
+    op = {
+        "ce": "cross_entropy",
+        "bce": "binary_cross_entropy_with_logits",
+        "sdpa": "scaled_dot_product_attention",
+    }[domain]
+    attrs = (
+        {"dropout_p": 0.0, "is_causal": False}
+        if domain == "sdpa"
+        else {"reduction": reduction}
+    )
+    nodes = [dict(op=op, args=list(range(len(inputs))), attrs=attrs, dtype="float32")]
+    case = Case(
+        seed,
+        inputs,
+        nodes,
+        output_mode=output_mode,
+        opset=opset,
+        domain=domain,
+        input_probes=output_mode == "all" and opset >= 26,
+    )
+    if dynamic:
+        names = input_names(case)
+        if domain == "sdpa":
+            case.dynamic_shapes = {
+                names[0]: {"0": "batch", "2": "query"},
+                names[1]: {"0": "batch", "2": "source"},
+                names[2]: {"0": "batch", "2": "source"},
+                names[3]: {"2": "query", "3": "source"},
+            }
+        else:
+            case.dynamic_shapes = {name: {"0": "batch"} for name in names}
+        case.additional_inputs = [specs(3, 5, 6), specs(4, 2, 3)]
+    # The same validation applies to generated cases and externally supplied JSON.
+    return Case.from_json(case.to_json())
 
 
 class FuzzFailure(AssertionError):
@@ -431,15 +696,33 @@ def _reference_attribution(proto, arrays, expected, zero_sign):
 
 
 def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
-    """Check eager against independently checked/executed ONNX in both modes."""
+    """Export once per mode and execute every serialized legal shape instance."""
     try:
-        model, args = GraphModule(case).eval(), materialize(case)
+        model = GraphModule(case).eval()
+        instances = [
+            materialize(case, inputs=specs)
+            for specs in [case.inputs, *case.additional_inputs]
+        ]
         with torch.no_grad():
-            expected = tuple(value.numpy() for value in model(*args))
+            expected_instances = [
+                tuple(value.numpy() for value in model(*args)) for args in instances
+            ]
+        symbols = {
+            symbol: torch.export.Dim(symbol, min=1, max=64)
+            for axes in case.dynamic_shapes.values()
+            for symbol in axes.values()
+        }
+        names = input_names(case)
+        dynamic = tuple(
+            {
+                int(axis): symbols[symbol]
+                for axis, symbol in case.dynamic_shapes.get(name, {}).items()
+            }
+            for name in names
+        )
     except Exception as error:
         raise FuzzFailure(case, "generator", False, str(error)) from error
-    # Track explicit bit-preserving probes, not every numerically equal zero
-    # produced by ordinary arithmetic or a backend selection kernel.
+    count = len(case.inputs)
     sensitivity = [spec["dtype"] in _FLOATS for spec in case.inputs]
     for node in case.nodes:
         sensitive = node["op"] == "add_zero" or (
@@ -447,15 +730,16 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
             and all(sensitivity[index] for index in node["args"])
         )
         sensitivity.append(sensitive)
-    zero_sign = sensitivity[2:]
-    zero_sign.extend([False] * (len(expected) - len(zero_sign)))
+    zero_sign = sensitivity[count:] if case.output_mode == "all" else sensitivity[-1:]
+    zero_sign = [*zero_sign, *([False] * (len(expected_instances[0]) - len(zero_sign)))]
     for optimize in optimize_modes:
         try:
             program = torch_onnx.export(
                 model,
-                args,
-                input_names=["x", "y"],
-                opset_version=26,
+                instances[0],
+                input_names=names,
+                dynamic_shapes=(dynamic,) if case.dynamic_shapes else None,
+                opset_version=case.opset,
                 optimize=optimize,
                 verbose=False,
             )
@@ -465,28 +749,8 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
             try:
                 proto = program.model_proto
                 onnx.checker.check_model(proto, full_check=True)
-                if len(proto.graph.output) != len(expected):
-                    raise AssertionError("Output count differs from eager")
-                for info, output in zip(proto.graph.output, expected, strict=True):
-                    declared = info.type.tensor_type
-                    if declared.elem_type != onnx.helper.np_dtype_to_tensor_dtype(
-                        output.dtype
-                    ):
-                        raise AssertionError(
-                            f"Output {info.name} declares the wrong dtype"
-                        )
-                    if declared.HasField("shape"):
-                        if len(declared.shape.dim) != output.ndim:
-                            raise AssertionError(
-                                f"Output {info.name} declares the wrong rank"
-                            )
-                        for dim, size in zip(
-                            declared.shape.dim, output.shape, strict=True
-                        ):
-                            if dim.HasField("dim_value") and dim.dim_value != size:
-                                raise AssertionError(
-                                    f"Output {info.name} declares the wrong dimension"
-                                )
+                for expected in expected_instances:
+                    _validate_outputs(proto, expected)
             except Exception as error:
                 raise FuzzFailure(
                     case, "invalid_graph", optimize, str(error)
@@ -499,30 +763,64 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
                     options,
                     providers=["CPUExecutionProvider"],
                 )
-                arrays = {"x": args[0].numpy(), "y": args[1].numpy()}
-                actual = session.run(
-                    None,
-                    {value.name: arrays[value.name] for value in session.get_inputs()},
-                )
             except Exception as error:
                 raise FuzzFailure(case, "runtime", optimize, str(error)) from error
-            try:
-                if len(actual) != len(expected):
-                    raise AssertionError("Runtime output count differs from eager")
-                for index, (reference, result) in enumerate(
-                    zip(expected, actual, strict=True)
-                ):
-                    try:
-                        compare_array(reference, result, zero_sign=zero_sign[index])
-                    except AssertionError as error:
-                        raise AssertionError(f"output {index}: {error}") from error
-            except Exception as error:
-                attribution = _reference_attribution(proto, arrays, expected, zero_sign)
-                raise FuzzFailure(
-                    case, "semantic", optimize, str(error), attribution=attribution
-                ) from error
+            for instance, (args, expected) in enumerate(
+                zip(instances, expected_instances, strict=True)
+            ):
+                arrays = {
+                    name: value.numpy() for name, value in zip(names, args, strict=True)
+                }
+                try:
+                    actual = session.run(
+                        None,
+                        {
+                            value.name: arrays[value.name]
+                            for value in session.get_inputs()
+                        },
+                    )
+                except Exception as error:
+                    raise FuzzFailure(
+                        case, "runtime", optimize, f"instance {instance}: {error}"
+                    ) from error
+                try:
+                    if len(actual) != len(expected):
+                        raise AssertionError("Runtime output count differs from eager")
+                    for index, (reference, result) in enumerate(
+                        zip(expected, actual, strict=True)
+                    ):
+                        try:
+                            compare_array(reference, result, zero_sign=zero_sign[index])
+                        except AssertionError as error:
+                            raise AssertionError(
+                                f"instance {instance} output {index}: {error}"
+                            ) from error
+                except Exception as error:
+                    attribution = _reference_attribution(
+                        proto, arrays, expected, zero_sign
+                    )
+                    raise FuzzFailure(
+                        case, "semantic", optimize, str(error), attribution=attribution
+                    ) from error
         finally:
             program.release()
+
+
+def _validate_outputs(proto, expected):
+    if len(proto.graph.output) != len(expected):
+        raise AssertionError("Output count differs from eager")
+    for info, output in zip(proto.graph.output, expected, strict=True):
+        declared = info.type.tensor_type
+        if declared.elem_type != onnx.helper.np_dtype_to_tensor_dtype(output.dtype):
+            raise AssertionError(f"Output {info.name} declares the wrong dtype")
+        if declared.HasField("shape"):
+            if len(declared.shape.dim) != output.ndim:
+                raise AssertionError(f"Output {info.name} declares the wrong rank")
+            for dim, size in zip(declared.shape.dim, output.shape, strict=True):
+                if dim.HasField("dim_value") and dim.dim_value != size:
+                    raise AssertionError(
+                        f"Output {info.name} declares the wrong dimension"
+                    )
 
 
 def reduce_failure(case: Case, failure: FuzzFailure, *, attempts: int = 8) -> Case:
@@ -532,6 +830,12 @@ def reduce_failure(case: Case, failure: FuzzFailure, *, attempts: int = 8) -> Ca
         if not reduced.nodes:
             break
         candidate = dataclasses.replace(reduced, nodes=reduced.nodes[:-1])
+        try:
+            candidate = Case.from_json(candidate.to_json())
+        except (ValueError, TypeError):
+            # Domain templates can require a loss/attention node. Never emit a
+            # reduced artifact that the replay loader would reject.
+            break
         try:
             run_case(candidate, optimize_modes=(failure.optimize,))
         except FuzzFailure as error:
@@ -567,32 +871,12 @@ def check_case(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--count", type=int, default=1)
-    parser.add_argument("--case", type=Path)
-    parser.add_argument(
-        "--failure-dir",
-        type=Path,
-        default=Path(tempfile.gettempdir()) / "torch-onnx-fuzz-failures",
-    )
-    parser.add_argument("--no-reduce", action="store_true")
-    args = parser.parse_args()
-    if args.count < 1:
-        parser.error("--count must be positive")
-    cases = (
-        [Case.from_json(args.case.read_text())]
-        if args.case
-        else (generate_case(seed) for seed in range(args.seed, args.seed + args.count))
-    )
-    start = time.monotonic()
-    count = 0
-    for case in cases:
-        check_case(case, failure_dir=args.failure_dir, reduce=not args.no_reduce)
-        count += 1
-    print(
-        f"Passed {count} cases / {2 * count} exports in {time.monotonic() - start:.2f}s"
-    )
+    # Preserve the original entry point while sharing the isolated campaign CLI.
+    if __package__:
+        from .campaign import main as campaign_main
+    else:
+        from campaign import main as campaign_main
+    campaign_main()
 
 
 if __name__ == "__main__":

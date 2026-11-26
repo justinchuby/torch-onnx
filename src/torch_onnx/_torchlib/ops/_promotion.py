@@ -163,9 +163,7 @@ def cast(
     onnx_dtype = _ONNX_DTYPES[component]
     if not isinstance(value, ir.Value):
         data = [value.real, value.imag] if isinstance(value, complex) else [value, 0]
-        result = op.builder.constant(
-            data if dtype.is_complex else value, dtype=onnx_dtype
-        )
+        result = op.constant(data if dtype.is_complex else value, dtype=onnx_dtype)
     else:
         original = source_dtype(op, value, packed_complex=packed_complex)
         if original == dtype and value.dtype == onnx_dtype:
@@ -180,7 +178,7 @@ def cast(
         result.shape = value.shape
         if dtype.is_complex and not original.is_complex:
             real = op.Unsqueeze(result, [-1])
-            zero = op.builder.constant(0, dtype=onnx_dtype)
+            zero = op.constant(0, dtype=onnx_dtype)
             result = op.Concat(real, op.Expand(zero, op.Shape(real)), axis=-1)
             result.type = ir.TensorType(onnx_dtype)
             if value.shape is not None:

@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import logging
 import warnings
 from typing import TYPE_CHECKING, Any
 
 import onnx
 import onnx_ir as ir
+import onnx_shape_inference
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
+
+
+logger = logging.getLogger(__name__)
 
 
 _CURRENT: contextvars.ContextVar[GraphBuilder | None] = contextvars.ContextVar(
@@ -49,11 +54,12 @@ class TranslationContext:
 
     Named calls default to returning a single :class:`onnx_ir.Value` unless the
     operator is known to have multiple/optional/variadic outputs or ``outputs=`` /
-    ``output_types=`` is passed. Output ``ir.Value`` dtypes and shapes are not
-    inferred from ONNX schemas (final ATen return values receive captured
-    ``ExportedProgram`` metadata in ``_core.py``). When a default-domain operator
+    ``output_types=`` is passed. Output dtypes and symbolic shapes are inferred
+    incrementally using ``onnx_shape_inference`` when an inference rule is
+    available. Final ATen return values also receive captured ``ExportedProgram``
+    metadata in ``_core.py``. When a default-domain operator
     schema is missing from the installed ``onnx`` package, named calls warn once
-    per operator per builder and construct a single untyped output node unless
+    per operator per builder and construct a single output node unless
     ``outputs=`` or ``output_types=`` specifies otherwise. Use ``builder`` for
     raw tuple-returning calls, custom domains, functions, and explicit subgraph
     construction.
@@ -71,6 +77,10 @@ class TranslationContext:
 
     def __init__(self, builder: GraphBuilder) -> None:
         self.builder = builder
+
+    def constant(self, value: Any, *, dtype: ir.DataType) -> ir.Value:
+        """Create a typed constant using the builder's graph-local cache."""
+        return self.builder.constant(value, dtype=dtype)
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
@@ -148,6 +158,8 @@ class GraphBuilder:
         self.functions: dict[ir.OperatorIdentifier, ir.Function] = {}
         self._constants: dict[tuple[ir.DataType, tuple[int, ...], bytes], ir.Value] = {}
         self._warned_missing_schemas: set[str] = set()
+        onnx_shape_inference.registry.collect()
+        self._shape_context: onnx_shape_inference.ShapeInferenceContext | None = None
 
     @contextlib.contextmanager
     def activate(self) -> Iterator[GraphBuilder]:
@@ -242,7 +254,48 @@ class GraphBuilder:
         )
         self.graph.append(node)
         self.graph.opset_imports[domain] = version
+        self._infer_node(node, version)
         return tuple(outputs)
+
+    def _infer_node(self, node: ir.Node, version: int) -> None:
+        """Enrich intermediate values without requiring every op to have a rule."""
+        infer = onnx_shape_inference.registry.get(
+            node.domain, node.op_type, version=version
+        )
+        if infer is None:
+            return
+        context = self._shape_context
+        if context is None:
+            context = onnx_shape_inference.ShapeInferenceContext(
+                self.graph.opset_imports
+            )
+            self._shape_context = context
+            values = (*self.graph.inputs, *node.inputs)
+        else:
+            values = node.inputs
+        context.opset_imports = self.graph.opset_imports
+        for value in values:
+            if value is not None and value.shape is not None:
+                context.reserve_symbol_names(
+                    str(dim)
+                    for dim in value.shape
+                    if isinstance(dim, ir.SymbolicDim) and dim.value is not None
+                )
+        try:
+            for value in node.inputs:
+                if value is not None:
+                    context.name_anonymous_dims(value)
+            infer(context, node)
+        except Exception:
+            # Partial graphs, unresolved function attributes and custom operators
+            # can lack the information needed for inference. Capture metadata and
+            # final model validation remain authoritative for exporter correctness.
+            logger.debug(
+                "Shape inference failed for %s::%s",
+                node.domain,
+                node.op_type,
+                exc_info=True,
+            )
 
     def call(
         self,
@@ -258,9 +311,9 @@ class GraphBuilder:
 
         Inputs are positional, attributes are keyword-only, variadics are expanded
         positionally, and optional holes use None. Ambiguous output arity requires
-        _num_outputs or _output_types. Types not determined by bindings or known
-        dtype attributes may be supplied explicitly; this is not general
-        type/shape inference.
+        _num_outputs or _output_types. Output types may be supplied explicitly.
+        Symbolic inference enriches output types, shapes, and shape-tensor data
+        when an inference rule is available.
         """
         num_outputs = _num_outputs
         output_types = _output_types
@@ -673,11 +726,8 @@ class GraphBuilder:
             for name, value in attributes.items()
             if value is not None
         }
-        # Do not infer output types from ONNX schemas (matching upstream PyTorch
-        # torch/onnx/_internal/exporter/_building.py:_construct_node and
-        # _core.py:_set_shape_type). Only explicit _output_types or explicit
-        # dtype-defining attributes (Cast, BitCast, Constant, ConstantOfShape)
-        # populate intermediate output dtypes.
+        # Seed explicit output types and dtype-defining attributes before the
+        # node is passed to symbolic type/shape inference.
         attribute_dtype = self._attribute_output_dtype(
             op_type, domain, typed_attributes
         )

@@ -33,14 +33,14 @@ def aten_special_erf(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_special_erfc(op: TranslationContext, self: ir.Value) -> ir.Value:
     """erfc(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    one = op.constant(1, dtype=common_ops.require_dtype(op, self))
     return op.Sub(one, op.Erf(self))
 
 
 @onnx_impl(aten.special_erfcx.default, opset_introduced=18)
 def aten_special_erfcx(op: TranslationContext, self: ir.Value) -> ir.Value:
     """special_erfcx(Tensor self) -> Tensor"""
-    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    one = op.constant(1, dtype=common_ops.require_dtype(op, self))
     return op.Mul(op.Exp(op.Pow(self, 2)), op.Sub(one, op.Erf(self)))
 
 
@@ -48,7 +48,7 @@ def aten_special_erfcx(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_special_expm1(op: TranslationContext, self: ir.Value) -> ir.Value:
     """special_expm1(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    one = op.builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    one = op.constant(1, dtype=common_ops.require_dtype(op, self))
     return op.Sub(op.Exp(self), one)
 
 

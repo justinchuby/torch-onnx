@@ -25,14 +25,11 @@ def _rnn_output_to_layer_output(
     op: TranslationContext, Y: ir.Value, bidirectional: bool, hidden_size: int
 ) -> ir.Value:
     """Convert [seq, directions, batch, hidden] to [seq, batch, directions * hidden]."""
-    builder = op.builder
     if not bidirectional:
         return op.Squeeze(Y, [1])
     Y = op.Transpose(Y, perm=[0, 2, 1, 3])
     # Zeros copy the sequence and batch dimensions without runtime shape computation.
-    return op.Reshape(
-        Y, builder.constant([0, 0, 2 * hidden_size], dtype=ir.DataType.INT64)
-    )
+    return op.Reshape(Y, op.constant([0, 0, 2 * hidden_size], dtype=ir.DataType.INT64))
 
 
 @onnx_impl(aten.gru.input)

@@ -35,7 +35,6 @@ def _conv(
     *,
     complex,
 ):
-    builder = op.builder
     # Attributes need to be manipulated in Python to match ONNX's conv1d/2d/3d.
     padding = list(padding) if isinstance(padding, Sequence) else [padding] * dimensions
     dilation = (
@@ -45,7 +44,7 @@ def _conv(
     if bias is None:
         weight_dim_0 = op.Shape(weight, start=0, end=1)
         bias_shape = op.Concat(weight_dim_0, [2], axis=0) if complex else weight_dim_0
-        bias = op.Expand(builder.constant(0.0, dtype=input.dtype), bias_shape)
+        bias = op.Expand(op.constant(0.0, dtype=input.dtype), bias_shape)
     impl = _aten_convolution_complex_onnx if complex else _aten_convolution_onnx
     return impl(
         op,
@@ -316,7 +315,6 @@ def _aten_convolution_onnx(
     groups: int = 1,
 ) -> ir.Value:
     """ConvXd with attributes pre-computed to fit the ONNX spec."""
-    builder = op.builder
 
     # Native construction branches on the Python transposed flag, not a graph input.
 
@@ -325,7 +323,7 @@ def _aten_convolution_onnx(
     )
 
     if no_batch:
-        input = op.Unsqueeze(input, builder.constant([0], dtype=ir.DataType.INT64))
+        input = op.Unsqueeze(input, op.constant([0], dtype=ir.DataType.INT64))
 
     # kernel_shape is the spatial shape of the weight tensor (excluding the
     # output-channel and input-channel dimensions). It is optional in the ONNX
@@ -357,7 +355,7 @@ def _aten_convolution_onnx(
         )
 
     if no_batch:
-        result = op.Squeeze(result, builder.constant([0], dtype=ir.DataType.INT64))
+        result = op.Squeeze(result, op.constant([0], dtype=ir.DataType.INT64))
 
     return result
 
@@ -375,7 +373,6 @@ def _aten_convolution_complex_onnx(
     groups: int = 1,
 ) -> ir.Value:
     """ConvXd on complex inputs with attributes pre-computed to fit the ONNX spec."""
-    builder = op.builder
 
     # Native construction branches on the Python transposed flag, not a graph input.
 
@@ -384,7 +381,7 @@ def _aten_convolution_complex_onnx(
     )
 
     if no_batch:
-        input = op.Unsqueeze(input, builder.constant([0], dtype=ir.DataType.INT64))
+        input = op.Unsqueeze(input, op.constant([0], dtype=ir.DataType.INT64))
 
     input_real = op.Gather(input, 0, axis=-1)
     input_imag = op.Gather(input, 1, axis=-1)
@@ -505,7 +502,7 @@ def _aten_convolution_complex_onnx(
     )
 
     if no_batch:
-        result = op.Squeeze(result, builder.constant([0], dtype=ir.DataType.INT64))
+        result = op.Squeeze(result, op.constant([0], dtype=ir.DataType.INT64))
 
     return result
 
@@ -524,12 +521,11 @@ def aten_instance_norm(
     cudnn_enabled: bool = False,
 ) -> ir.Value:
     """instance_norm(Tensor input, Tensor? weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool use_input_stats, float momentum, float eps, bool cudnn_enabled) -> Tensor"""
-    builder = op.builder
     del cudnn_enabled  # unused
     if weight is None:  # Set to 1.0 as default
         weight = op.CastLike(
             op.Expand(
-                builder.constant([1.0], dtype=common_ops.require_dtype(op, input)),
+                op.constant([1.0], dtype=common_ops.require_dtype(op, input)),
                 op.Shape(input, start=1, end=2),
             ),
             input,
@@ -538,7 +534,7 @@ def aten_instance_norm(
     if bias is None:  # Set to 0.0 as default
         bias = op.CastLike(
             op.Expand(
-                builder.constant([0.0], dtype=common_ops.require_dtype(op, input)),
+                op.constant([0.0], dtype=common_ops.require_dtype(op, input)),
                 op.Shape(input, start=1, end=2),
             ),
             input,
@@ -560,7 +556,7 @@ def aten_instance_norm(
     bn_input = op.Reshape(
         input,
         op.Concat(
-            builder.constant([1, -1], dtype=ir.DataType.INT64),
+            op.constant([1, -1], dtype=ir.DataType.INT64),
             op.Shape(input, start=2),
             axis=0,
         ),
@@ -691,8 +687,8 @@ def _aten_native_batch_norm_training_onnx(
         ir.DataType.DOUBLE if input.dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
     )
     upcast_input = op.Cast(input, to=upcast_dtype)
-    one = op.builder.constant(1.0, dtype=upcast_dtype)
-    eps_val = op.builder.constant(eps, dtype=upcast_dtype)
+    one = op.constant(1.0, dtype=upcast_dtype)
+    eps_val = op.constant(eps, dtype=upcast_dtype)
     mean = op.ReduceMean(upcast_input, axes)
     input_sub_mean = op.Sub(upcast_input, mean)
     sqr = op.Mul(input_sub_mean, input_sub_mean)
@@ -730,7 +726,7 @@ def _aten_native_batch_norm_training_onnx(
     unbiased_var = op.Mul(var, op.Div(n, op.Sub(n, one)))
 
     # NOTE: momentum in ONNX is 1.0-momentum in PyTorch
-    one_minus_momentum = op.builder.constant(1.0 - momentum, dtype=upcast_dtype)
+    one_minus_momentum = op.constant(1.0 - momentum, dtype=upcast_dtype)
     new_running_var = op.Add(
         op.CastLike(
             op.Mul(one_minus_momentum, unbiased_var),
@@ -776,8 +772,8 @@ def _aten_native_batch_norm_inference_onnx(
     # https://github.com/pytorch/pytorch/blob/a44f8894fa6d973693aab44a3dda079a168b05c1/torch/_decomp/decompositions.py#L1451-L1457
     # We use CUDA's output here
     var_dtype = common_ops.require_dtype(op, running_var)
-    one = op.builder.constant(1.0, dtype=var_dtype)
-    eps_val = op.builder.constant(eps, dtype=var_dtype)
+    one = op.constant(1.0, dtype=var_dtype)
+    eps_val = op.constant(eps, dtype=var_dtype)
     invstd = op.Div(one, op.Sqrt(op.Add(running_var, eps_val)))
     # https://github.com/pytorch/pytorch/blob/a44f8894fa6d973693aab44a3dda079a168b05c1/torch/_decomp/decompositions.py#L1475
     running_mean_fp32 = op.Cast(running_mean, to=ir.DataType.FLOAT)
@@ -803,22 +799,21 @@ def aten__native_batch_norm_legit_functional(
     momentum: float = 0.9,
     eps: float = 1e-05,
 ) -> tuple[ir.Value, ir.Value, ir.Value, ir.Value, ir.Value]:
-    builder = op.builder
     if weight is None:  # Set to 1.0 as default
         weight = op.Expand(
-            builder.constant([1.0], dtype=common_ops.require_dtype(op, input)),
+            op.constant([1.0], dtype=common_ops.require_dtype(op, input)),
             op.Shape(input, start=1, end=2),
         )
 
     if bias is None:  # Set to 0.0 as default
         bias = op.Expand(
-            builder.constant([0.0], dtype=common_ops.require_dtype(op, input)),
+            op.constant([0.0], dtype=common_ops.require_dtype(op, input)),
             op.Shape(input, start=1, end=2),
         )
 
     axes = list(range(len(common_ops.require_shape(op, input))))
     axes.pop(1)
-    axes = builder.constant(axes, dtype=ir.DataType.INT64)
+    axes = op.constant(axes, dtype=ir.DataType.INT64)
     if running_mean is None:  # Using input mean
         running_mean = op.ReduceMean(input, axes, keepdims=False)
 
@@ -881,18 +876,17 @@ def aten_native_group_norm(
     eps: float = 1e-05,
 ) -> tuple[ir.Value, ir.Value, ir.Value]:
     """native_group_norm(Tensor input, Tensor? weight, Tensor? bias, SymInt N, SymInt C, SymInt HxW, int group, float eps) -> (Tensor, Tensor, Tensor)"""
-    builder = op.builder
 
     # Actually we don't need N,C,HxW value because the input tensor has that information
     if weight is None:  # Set to 1.0 as default, the shape is Channel size
         weight = op.Expand(
-            builder.constant([1.0], dtype=ir.DataType.FLOAT),
+            op.constant([1.0], dtype=ir.DataType.FLOAT),
             op.Shape(input, start=1, end=2),
         )
 
     if bias is None:  # Set to 0.0 as default, the shape is Channel size
         bias = op.Expand(
-            builder.constant([0.0], dtype=ir.DataType.FLOAT),
+            op.constant([0.0], dtype=ir.DataType.FLOAT),
             op.Shape(input, start=1, end=2),
         )
 
@@ -900,12 +894,12 @@ def aten_native_group_norm(
     # But the torch's aten function's input need size=channel, the size mismatched
     # So we have to use onnx.InstanceNorm() to simulate
     # This implementation should be simplified after opset 21
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     # Create weight_instance_norm and bias_instance_norm, copied from Torch ONNX converter
     group_tensor = op.Reshape(group, neg_1)
     # 0 in the shape list keeps dimension value unchanged, for InstanceNorm need [0,group,-1]
     shape_input = op.Concat(
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
         group_tensor,
         neg_1,
         axis=0,
@@ -937,7 +931,7 @@ def aten_native_group_norm(
     shape_N_group_neg1 = op.Concat(N, group_tensor, neg_1, axis=0)
     input_N_group_neg1 = op.Reshape(input, shape_N_group_neg1)
     # The output size is [N, group], so dims = [2]
-    axes = builder.constant([2], dtype=ir.DataType.INT64)
+    axes = op.constant([2], dtype=ir.DataType.INT64)
     # Get mean which size is [N, group, 1], for broadcasting
     mean = op.ReduceMean(input_N_group_neg1, axes)
     input_sub_mean = op.Sub(input_N_group_neg1, mean)
@@ -962,7 +956,6 @@ def aten_native_layer_norm(
     eps: float = 1e-05,
 ) -> tuple[ir.Value, ir.Value, ir.Value]:
     """native_layer_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight, Tensor? bias, float eps) -> (Tensor, Tensor, Tensor)"""
-    builder = op.builder
 
     # https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html#torch.nn.LayerNorm
     # The mean and standard-deviation are calculated over the last D dimensions,
@@ -974,7 +967,7 @@ def aten_native_layer_norm(
     start_axis = -len(normalized_shape)
 
     if weight is None:
-        one = builder.constant([1.0], dtype=ir.DataType.FLOAT)
+        one = op.constant([1.0], dtype=ir.DataType.FLOAT)
         weight = op.Expand(one, op.Shape(input, start=start_axis))
         weight = op.CastLike(weight, input)
 

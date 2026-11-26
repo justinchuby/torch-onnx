@@ -81,7 +81,6 @@ def _arange_integral_dtype_with_non_integral_args(
     dtype: int,
 ) -> ir.Value:
     """Implements torch.arange for integral dtypes when not all inputs are integral."""
-    builder = op.builder
     if dtype is None:
         dtype = -1
     start_float = op.Cast(start, to=ir.DataType.FLOAT)
@@ -95,9 +94,9 @@ def _arange_integral_dtype_with_non_integral_args(
         to=ir.DataType.INT64,
     )
     index = op.Range(
-        builder.constant(0, dtype=ir.DataType.INT64),
+        op.constant(0, dtype=ir.DataType.INT64),
         length,
-        builder.constant(1, dtype=ir.DataType.INT64),
+        op.constant(1, dtype=ir.DataType.INT64),
     )
 
     if _range_supported(op, dtype):
@@ -156,11 +155,10 @@ def aten_arange(
     pin_memory: bool = False,
 ) -> ir.Value:
     """arange(Scalar end, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = -1
     if dtype == ir.DataType.DOUBLE and not isinstance(end, ir.Value):
-        end = builder.constant(end, dtype=ir.DataType.DOUBLE)
+        end = op.constant(end, dtype=ir.DataType.DOUBLE)
 
     if dtype == -1:
         dtype = ir.DataType.INT64 if _is_integral_scalar(op, end) else ir.DataType.FLOAT
@@ -186,8 +184,8 @@ def aten_arange(
         # which Range does not support. The output type is ensured because the output
         # is casted to the specified dtype.
         end = op.Cast(end, to=ir.DataType.FLOAT)
-        zero = builder.constant(0.0, dtype=ir.DataType.FLOAT)
-        one = builder.constant(1.0, dtype=ir.DataType.FLOAT)
+        zero = op.constant(0.0, dtype=ir.DataType.FLOAT)
+        one = op.constant(1.0, dtype=ir.DataType.FLOAT)
         result = op.Cast(op.Range(zero, end, one), to=dtype)
 
     return result
@@ -204,19 +202,18 @@ def aten_arange_start(
     pin_memory: bool = False,
 ) -> ir.Value:
     """arange.start(Scalar start, Scalar end, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = -1
     if dtype == ir.DataType.DOUBLE:
         start = (
             start
             if isinstance(start, ir.Value)
-            else builder.constant(start, dtype=ir.DataType.DOUBLE)
+            else op.constant(start, dtype=ir.DataType.DOUBLE)
         )
         end = (
             end
             if isinstance(end, ir.Value)
-            else builder.constant(end, dtype=ir.DataType.DOUBLE)
+            else op.constant(end, dtype=ir.DataType.DOUBLE)
         )
 
     if dtype == -1:
@@ -248,7 +245,7 @@ def aten_arange_start(
         # is casted to the specified dtype.
         end = op.Cast(end, to=ir.DataType.FLOAT)
         start = op.Cast(start, to=ir.DataType.FLOAT)
-        one = builder.constant(1.0, dtype=ir.DataType.FLOAT)
+        one = op.constant(1.0, dtype=ir.DataType.FLOAT)
         result = op.Cast(op.Range(start, end, one), to=dtype)
 
     return result
@@ -266,24 +263,23 @@ def aten_arange_start_step(
     pin_memory: bool = False,
 ) -> ir.Value:
     """arange.start_step(Scalar start, Scalar end, Scalar step=1, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = -1
     if dtype == ir.DataType.DOUBLE:
         start = (
             start
             if isinstance(start, ir.Value)
-            else builder.constant(start, dtype=ir.DataType.DOUBLE)
+            else op.constant(start, dtype=ir.DataType.DOUBLE)
         )
         end = (
             end
             if isinstance(end, ir.Value)
-            else builder.constant(end, dtype=ir.DataType.DOUBLE)
+            else op.constant(end, dtype=ir.DataType.DOUBLE)
         )
         step = (
             step
             if isinstance(step, ir.Value)
-            else builder.constant(step, dtype=ir.DataType.DOUBLE)
+            else op.constant(step, dtype=ir.DataType.DOUBLE)
         )
 
     if dtype == -1:
@@ -377,7 +373,6 @@ def aten_linspace(
     pin_memory: bool = False,
 ) -> ir.Value:
     """linspace(Scalar start, Scalar end, int steps, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = -1
 
@@ -387,21 +382,21 @@ def aten_linspace(
         start = (
             start
             if isinstance(start, ir.Value)
-            else builder.constant(start, dtype=ir.DataType.DOUBLE)
+            else op.constant(start, dtype=ir.DataType.DOUBLE)
         )
         end = (
             end
             if isinstance(end, ir.Value)
-            else builder.constant(end, dtype=ir.DataType.DOUBLE)
+            else op.constant(end, dtype=ir.DataType.DOUBLE)
         )
 
     if isinstance(steps, int) and steps == 0:
         return aten_full(
-            op, builder.constant([0], dtype=ir.DataType.INT64), 0.0, dtype=dtype
+            op, op.constant([0], dtype=ir.DataType.INT64), 0.0, dtype=dtype
         )
     if isinstance(steps, int) and steps == 1:
         return aten_full(
-            op, builder.constant([steps], dtype=ir.DataType.INT64), start, dtype=dtype
+            op, op.constant([steps], dtype=ir.DataType.INT64), start, dtype=dtype
         )
 
     # For integer output dtypes, cast start/end to the target dtype first
@@ -644,12 +639,11 @@ def aten_new_ones(
     pin_memory: bool = False,
 ) -> ir.Value:
     """new_ones(Tensor self, SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = -1
     size = common_ops.merge_dims(op, size)
 
-    one = builder.constant(1.0, dtype=ir.DataType.FLOAT)
+    one = op.constant(1.0, dtype=ir.DataType.FLOAT)
     result = op.Expand(one, size)
     if dtype == -1:
         return op.CastLike(result, self)
@@ -687,14 +681,13 @@ def aten_ones(
     pin_memory: bool = False,
 ):
     """ones(SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype is None:
         dtype = ir.DataType.FLOAT
     size = common_ops.merge_dims(op, size)
     if dtype == -1:
         dtype = ir.DataType.FLOAT
     size = op.Cast(size, to=ir.DataType.INT64)
-    one = builder.constant(1.0, dtype=ir.DataType.FLOAT)
+    one = op.constant(1.0, dtype=ir.DataType.FLOAT)
     one = op.Cast(one, to=dtype)
     return op.Expand(one, size)
 
@@ -770,28 +763,25 @@ def aten_zeros_like(
 
 @onnx_impl(aten.tensor.bool)
 def aten_tensor_bool(op: TranslationContext, self: bool, dtype: int) -> ir.Value:
-    builder = op.builder
     if dtype is None:
         dtype = ir.DataType.BOOL
-    tensor = builder.constant(self, dtype=ir.DataType.INT64)
+    tensor = op.constant(self, dtype=ir.DataType.INT64)
     return op.Cast(tensor, to=dtype)
 
 
 @onnx_impl(aten.tensor.float)
 def aten_tensor_float(op: TranslationContext, self: float, dtype: int) -> ir.Value:
-    builder = op.builder
     if dtype is None:
         dtype = ir.DataType.FLOAT
-    tensor = builder.constant(self, dtype=ir.DataType.FLOAT)
+    tensor = op.constant(self, dtype=ir.DataType.FLOAT)
     return op.Cast(tensor, to=dtype)
 
 
 @onnx_impl(aten.tensor.int)
 def aten_tensor_int(op: TranslationContext, self: int, dtype: int) -> ir.Value:
-    builder = op.builder
     if dtype is None:
         dtype = ir.DataType.INT64
-    tensor = builder.constant(self, dtype=ir.DataType.INT64)
+    tensor = op.constant(self, dtype=ir.DataType.INT64)
     return op.Cast(tensor, to=dtype)
 
 
@@ -862,7 +852,7 @@ def _window(
             raise ValueError(
                 f"{op_type} requires a nonnegative length, got {length}; pass length >= 0."
             )
-        return builder.constant([1] * length, dtype=ir.DataType(dtype))
+        return op.constant([1] * length, dtype=ir.DataType(dtype))
     if isinstance(length, int):
         return builder.call(
             op_type,
@@ -879,7 +869,7 @@ def _window(
         _output_types=[ir.TensorType(ir.DataType(dtype))],
     )[0]
     result = op.Slice(window, [0], op.Reshape(length, [1]))
-    one = builder.constant(1, dtype=ir.DataType(dtype))
+    one = op.constant(1, dtype=ir.DataType(dtype))
     return op.Where(op.Equal(length, 1), one, result)
 
 

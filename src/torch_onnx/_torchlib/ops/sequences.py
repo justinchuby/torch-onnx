@@ -472,10 +472,9 @@ def aten_stack(
 ) -> ir.Value:
     """stack(Tensor[] tensors, int dim=0) -> Tensor"""
     tensors = _promotion.promote_sequence(op, tensors)
-    builder = op.builder
     if isinstance(tensors, Sequence):
         unsqueezed = [
-            op.Unsqueeze(t, builder.constant([dim], dtype=ir.DataType.INT64))
+            op.Unsqueeze(t, op.constant([dim], dtype=ir.DataType.INT64))
             for t in tensors
         ]
         return op.Concat(*unsqueezed, axis=dim)
@@ -490,7 +489,6 @@ def aten_stack(
 @onnx_impl(aten.tile.default)
 def aten_tile(op: TranslationContext, self: ir.Value, dims: Sequence[int]) -> ir.Value:
     """tile(Tensor self, int[] dims) -> Tensor"""
-    builder = op.builder
 
     self_rank = len(common_ops.require_shape(op, self))
     dims_rank = len(dims)
@@ -505,7 +503,7 @@ def aten_tile(op: TranslationContext, self: ir.Value, dims: Sequence[int]) -> ir
     elif diff < 0:
         # dims is longer than self.shape
         # pad self.shape with 1
-        exapnd_ones = builder.constant([1] * (-diff), dtype=ir.DataType.INT64)
+        exapnd_ones = op.constant([1] * (-diff), dtype=ir.DataType.INT64)
         self_shape = op.Shape(self)
         self_final_shape = op.Concat(exapnd_ones, self_shape, axis=0)
         self = op.Reshape(self, self_final_shape, allowzero=True)
@@ -518,7 +516,6 @@ def aten_unbind(
     op: TranslationContext, self: ir.Value, dim: int = 0
 ) -> Sequence[ir.Value] | ir.Value:
     """unbind.int(Tensor(a -> *) self, int dim=0) -> Tensor(a)[]"""
-    builder = op.builder
 
     num_outputs = common_ops.require_shape(op, self)[dim]
     if isinstance(num_outputs, int):
@@ -527,9 +524,9 @@ def aten_unbind(
             # Slice to get a single element at position i along dim
             sliced = op.Slice(
                 self,
-                builder.constant([i], dtype=ir.DataType.INT64),
-                builder.constant([i + 1], dtype=ir.DataType.INT64),
-                builder.constant([dim], dtype=ir.DataType.INT64),
+                op.constant([i], dtype=ir.DataType.INT64),
+                op.constant([i + 1], dtype=ir.DataType.INT64),
+                op.constant([dim], dtype=ir.DataType.INT64),
             )
             # Squeeze to remove the dimension of size 1
             squeezed = op.Squeeze(sliced, [dim])

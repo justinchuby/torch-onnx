@@ -4,10 +4,12 @@ r"""Tests for native IR construction without ONNX Script evaluation."""
 from __future__ import annotations
 
 import contextvars
+from unittest import mock
 
 import numpy as np
 import onnx
 import onnx_ir as ir
+import onnx_shape_inference
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_utils import (
     HardwareClassification,
@@ -34,14 +36,14 @@ class TestGraphBuilder(common_utils.TestCase):
         op = _ir_builder.TranslationContext(self.builder)
         result = op.Add(self.x, op.Mul(self.x, 2))
         self.assertIsInstance(result, ir.Value)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.FLOAT)
         values, indices = op.TopK(result, [1])
-        self.assertIsNone(values.dtype)
-        self.assertIsNone(indices.dtype)
+        self.assertEqual(values.dtype, ir.DataType.FLOAT)
+        self.assertEqual(indices.dtype, ir.DataType.INT64)
         parts = op.Split(result, outputs=2, axis=0)
         self.assertIsInstance(parts, tuple)
         self.assertEqual(len(parts), 2)
-        self.assertTrue(all(value.dtype is None for value in parts))
+        self.assertTrue(all(value.dtype == ir.DataType.FLOAT for value in parts))
         typed_parts = op.Split(result, output_types=[self.x.type], axis=0)
         self.assertIsInstance(typed_parts, tuple)
 
@@ -56,8 +58,8 @@ class TestGraphBuilder(common_utils.TestCase):
         self.assertIsInstance(dropped, tuple)
         self.assertEqual(len(dropped), 1)
         value, mask = op.Dropout(result, outputs=2)
-        self.assertIsNone(value.dtype)
-        self.assertIsNone(mask.dtype)
+        self.assertEqual(value.dtype, ir.DataType.FLOAT)
+        self.assertEqual(mask.dtype, ir.DataType.BOOL)
         with self.assertWarnsRegex(
             UserWarning, "Standard ONNX operator 'FutureUnaryOp' at opset 18"
         ):
@@ -68,6 +70,114 @@ class TestGraphBuilder(common_utils.TestCase):
         self.assertEqual(self.graph[-1].attributes["scale"].as_float(), 2.0)
         with self.assertRaises(AttributeError):
             _ = op._private
+
+    def test_context_constant_cache_and_scope(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        empty = op.constant([], dtype=ir.DataType.INT64)
+        self.assertEqual(empty.shape, ir.Shape([0]))
+        self.assertIs(empty, self.builder.constant([], dtype=ir.DataType.INT64))
+        other = _ir_builder.TranslationContext(
+            _ir_builder.GraphBuilder(ir.Graph([], [], nodes=[]))
+        )
+        self.assertIsNot(empty, other.constant([], dtype=ir.DataType.INT64))
+
+    def test_incremental_symbolic_shapes(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(type=self.x.type, shape=ir.Shape(["batch", 3]))
+        weight = op.constant([1, 2, 3], dtype=ir.DataType.FLOAT)
+        added = op.Add(x, weight)
+        self.assertEqual(added.dtype, ir.DataType.FLOAT)
+        self.assertEqual(added.shape, ir.Shape(["batch", 3]))
+        transposed = op.Transpose(added, perm=[1, 0])
+        self.assertEqual(transposed.shape, ir.Shape([3, "batch"]))
+        self.assertEqual(
+            op.MatMul(added, transposed).shape, ir.Shape(["batch", "batch"])
+        )
+
+    def test_shape_tensor_propagation_between_nodes(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(type=self.x.type, shape=ir.Shape(["batch", 3]))
+        shape = op.Shape(x)
+        batch = op.Gather(shape, [0])
+        target = op.Concat(batch, [3], axis=0)
+        reshaped = op.Reshape(x, target)
+        self.assertEqual(shape.shape, ir.Shape([2]))
+        self.assertEqual(batch.shape, ir.Shape([1]))
+        self.assertEqual(target.dtype, ir.DataType.INT64)
+        self.assertEqual(reshaped.shape, x.shape)
+        self.assertEqual(reshaped.dtype, x.dtype)
+
+    @parametrize("axis", [0, 1, -1])
+    def test_unique_axis_preserves_rank_for_downstream_shape(self, axis):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(name="unique_input", type=self.x.type, shape=ir.Shape([3, 2]))
+        unique, _, _, counts = op.Unique(x, axis=axis, outputs=4)
+        expected = list(x.shape)
+        expected[axis] = counts.shape[0]
+        self.assertEqual(unique.shape, ir.Shape(expected))
+        shape = op.Shape(unique)
+        self.assertEqual(shape.shape, ir.Shape([2]))
+        self.graph.inputs.append(x)
+        self.graph.outputs.append(shape)
+        onnx.checker.check_model(
+            ir.to_proto(ir.Model(self.graph, ir_version=10)), full_check=True
+        )
+
+    def test_unique_axis_unknown_input_rank_stays_unknown(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(type=self.x.type)
+        unique, _, _, _ = op.Unique(x, axis=0, outputs=4)
+        self.assertIsNone(unique.shape)
+        self.assertIsNone(op.Shape(unique).shape)
+
+    def test_inference_reserves_declared_symbols(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(type=self.x.type, shape=ir.Shape(["_d0", None]))
+        reserved = ir.Value(type=self.x.type, shape=ir.Shape(["_d1"]))
+        self.graph.inputs.extend([x, reserved])
+        result = op.Identity(x)
+        self.assertEqual(result.shape, x.shape)
+        self.assertEqual(result.shape[0], ir.SymbolicDim("_d0"))
+        self.assertNotEqual(result.shape[1], result.shape[0])
+        self.assertNotEqual(result.shape[1], reserved.shape[0])
+        first = op.NonZero(x)
+        second = op.NonZero(x)
+        self.assertNotEqual(first.shape[1], second.shape[1])
+
+    def test_raw_node_inference_preserves_explicit_types(self):
+        (result,) = self.builder.node("Identity", [self.x], output_types=[self.x.type])
+        self.assertIs(result.type, self.x.type)
+        self.assertEqual(result.shape, self.x.shape)
+        (custom,) = self.builder.node(
+            "Unknown", [result], domain="test", version=1, output_types=[self.x.type]
+        )
+        self.assertIs(custom.type, self.x.type)
+        self.assertIsNone(custom.shape)
+
+    def test_inference_uses_node_opset(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        original = onnx_shape_inference.registry.get
+        with mock.patch.object(
+            onnx_shape_inference.registry, "get", wraps=original
+        ) as get:
+            op.Identity(self.x)
+        get.assert_called_once_with("", "Identity", version=18)
+
+    def test_inference_failure_keeps_node_and_logs_diagnostic(self):
+        with (
+            mock.patch.object(
+                onnx_shape_inference.registry,
+                "get",
+                return_value=mock.Mock(side_effect=ValueError("incomplete metadata")),
+            ),
+            self.assertLogs("torch_onnx._ir_builder", level="DEBUG") as logs,
+        ):
+            (result,) = self.builder.node(
+                "Identity", [self.x], output_types=[self.x.type]
+            )
+        self.assertIs(self.graph[-1].outputs[0], result)
+        self.assertIs(result.type, self.x.type)
+        self.assertIn("incomplete metadata", logs.output[0])
 
     @parametrize("metadata", ["dtype", "shape"])
     def test_required_metadata_reports_missing_input(self, metadata):
@@ -120,7 +230,7 @@ class TestGraphBuilder(common_utils.TestCase):
         op = _ir_builder.TranslationContext(self.builder)
         args = (constant, self.x) if reverse else (self.x, constant)
         result = op.Add(*args)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.FLOAT)
         self.assertEqual(self.graph[0].outputs[0].dtype, ir.DataType.FLOAT)
         other = ir.Value(type=ir.TensorType(ir.DataType.DOUBLE))
         with self.assertRaisesRegex(TypeError, "explicit Cast"):
@@ -132,7 +242,7 @@ class TestGraphBuilder(common_utils.TestCase):
         clipped = op.Clip(self.x, None, 1)
         self.assertIsNone(self.graph[-1].inputs[1])
         joined = op.Concat(clipped, self.x, axis=0)
-        self.assertIsNone(joined.dtype)
+        self.assertEqual(joined.dtype, ir.DataType.FLOAT)
         self.assertEqual(len(self.graph[-1].inputs), 2)
         parts = op.Split(joined, outputs=2, num_outputs=2, axis=0)
         self.assertEqual(len(parts), 2)
@@ -225,7 +335,7 @@ class TestGraphBuilder(common_utils.TestCase):
         op = _ir_builder.TranslationContext(self.builder)
         value = op.Constant(**attributes)
         self.assertEqual(value.dtype, dtype)
-        self.assertIsNone(op.Identity(value).dtype)
+        self.assertEqual(op.Identity(value).dtype, dtype)
 
     def test_context_cast_and_constant_of_shape_dtype(self):
         op = _ir_builder.TranslationContext(self.builder)
@@ -246,14 +356,14 @@ class TestGraphBuilder(common_utils.TestCase):
     def test_tensor_binding_precedes_constants(self, reverse, constant):
         args = (constant, self.x) if reverse else (self.x, constant)
         (result,) = self.builder.call("Add", *args)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.FLOAT)
         constant_node = self.graph[0]
         self.assertEqual(constant_node.op_type, "Constant")
         self.assertEqual(constant_node.outputs[0].dtype, ir.DataType.FLOAT)
         (chained,) = self.builder.call(
             "Mul", self.builder.constant(2, dtype=ir.DataType.FLOAT), result
         )
-        self.assertIsNone(chained.dtype)
+        self.assertEqual(chained.dtype, ir.DataType.FLOAT)
         self.assertFalse(any(node.op_type == "Cast" for node in self.graph))
 
     @parametrize(
@@ -266,13 +376,13 @@ class TestGraphBuilder(common_utils.TestCase):
     )
     def test_unbound_constants(self, op, value, dtype):
         (result,) = self.builder.call(op, value)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, dtype)
         self.assertEqual(self.graph[0].outputs[0].dtype, dtype)
 
     def test_fixed_input_dtype(self):
         (result,) = self.builder.call("Reshape", self.x, [1, 2])
         self.assertEqual(self.graph[0].outputs[0].dtype, ir.DataType.INT64)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.FLOAT)
 
     @parametrize("reverse", [False, True])
     @parametrize("dtype", [ir.DataType.INT32, ir.DataType.FLOAT16, ir.DataType.DOUBLE])
@@ -280,13 +390,13 @@ class TestGraphBuilder(common_utils.TestCase):
         tensor = ir.Value(type=ir.TensorType(dtype))
         inputs = (2, tensor) if reverse else (tensor, 2)
         (result,) = self.builder.call("Add", *inputs)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, dtype)
         self.assertEqual(self.graph[0].outputs[0].dtype, dtype)
 
     def test_boolean_binding_and_fixed_types(self):
         boolean = ir.Value(type=ir.TensorType(ir.DataType.BOOL))
         (result,) = self.builder.call("And", True, boolean)
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.BOOL)
         self.assertEqual(self.graph[0].outputs[0].dtype, ir.DataType.BOOL)
         self.builder.call("Where", False, self.x, 0)
         self.assertEqual(self.graph[-2].outputs[0].dtype, ir.DataType.FLOAT)
@@ -306,7 +416,7 @@ class TestGraphBuilder(common_utils.TestCase):
             self.builder.call("Reshape", self.x, other)
         self.assertEqual(len(self.graph), 0)
         (untyped_add,) = self.builder.call("Add", self.x, ir.Value())
-        self.assertIsNone(untyped_add.dtype)
+        self.assertEqual(untyped_add.dtype, ir.DataType.FLOAT)
 
     def test_constant_identity_and_scope(self):
         first = self.builder.constant([], dtype=ir.DataType.INT64)
@@ -330,7 +440,7 @@ class TestGraphBuilder(common_utils.TestCase):
     def test_optional_inputs(self):
         (result,) = self.builder.call("Clip", self.x, None, 1)
         self.assertIsNone(self.graph[-1].inputs[1])
-        self.assertIsNone(result.dtype)
+        self.assertEqual(result.dtype, ir.DataType.FLOAT)
         self.builder.call("Clip", self.x, None, None)
         self.assertEqual(len(self.graph[-1].inputs), 1)
         with self.assertRaisesRegex(ValueError, "required"):
@@ -338,17 +448,17 @@ class TestGraphBuilder(common_utils.TestCase):
 
     def test_variadic_inputs_and_outputs(self):
         (joined,) = self.builder.call("Concat", self.x, self.x, axis=0)
-        self.assertIsNone(joined.dtype)
+        self.assertEqual(joined.dtype, ir.DataType.FLOAT)
         with self.assertRaisesRegex(ValueError, "num_outputs"):
             self.builder.call("Split", joined)
         outputs = self.builder.call(
             "Split", joined, _num_outputs=2, num_outputs=2, axis=0
         )
         self.assertEqual(len(outputs), 2)
-        self.assertTrue(all(value.dtype is None for value in outputs))
+        self.assertTrue(all(value.dtype == ir.DataType.FLOAT for value in outputs))
         (values, indices) = self.builder.call("TopK", self.x, [1])
-        self.assertIsNone(values.dtype)
-        self.assertIsNone(indices.dtype)
+        self.assertEqual(values.dtype, ir.DataType.FLOAT)
+        self.assertEqual(indices.dtype, ir.DataType.INT64)
 
     def test_explicit_cast_shape_and_sequence(self):
         (cast,) = self.builder.call(
@@ -362,7 +472,7 @@ class TestGraphBuilder(common_utils.TestCase):
         (dimension,) = self.builder.call("Gather", shape, 0, axis=0)
         (vector,) = self.builder.call("Reshape", dimension, [1])
         (new_shape,) = self.builder.call("Concat", vector, [1], axis=0)
-        self.assertIsNone(new_shape.dtype)
+        self.assertEqual(new_shape.dtype, ir.DataType.INT64)
         sequence_type = ir.SequenceType(ir.TensorType(ir.DataType.FLOAT))
         (sequence,) = self.builder.call(
             "SequenceConstruct", self.x, self.x, _output_types=[sequence_type]

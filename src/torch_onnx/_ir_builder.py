@@ -286,22 +286,6 @@ class GraphBuilder:
                 if value is not None:
                     context.name_anonymous_dims(value)
             infer(context, node)
-            # onnx-shape-inference 0.4.3 flattens nonconstant Unique inputs
-            # even with axis=. Correct this before downstream Shape rules run.
-            if (
-                node.domain == ""
-                and node.op_type == "Unique"
-                and "axis" in node.attributes
-            ):
-                data = node.inputs[0]
-                output = node.outputs[0]
-                if data is not None and data.const_value is None:
-                    if data.shape is None:
-                        output.shape = None
-                    elif output.shape is not None and output.shape.rank() == 1:
-                        dims = list(data.shape)
-                        dims[node.attributes["axis"].as_int()] = output.shape[0]
-                        output.shape = ir.Shape(dims)
         except Exception:
             # Partial graphs, unresolved function attributes and custom operators
             # can lack the information needed for inference. Capture metadata and

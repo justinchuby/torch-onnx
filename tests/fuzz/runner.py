@@ -77,7 +77,10 @@ def _runtime_info() -> dict[str, Any]:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             versions[name] = None
-    files = (Path(__file__), Path(__file__).with_name("fuzzer.py"))
+    files = tuple(
+        Path(__file__).with_name(name)
+        for name in ("runner.py", "fuzzer.py", "model_families.py")
+    )
     return {
         "python": sys.version,
         "python_executable": sys.executable,
@@ -123,6 +126,7 @@ class CaseResult:
     worker_pid: int | None
     replay_command: str
     runtime_info: dict[str, Any]
+    coverage: dict[str, list[str]] = dataclasses.field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -529,6 +533,7 @@ class IsolatedRunner:
             worker_pid=pid,
             replay_command=replay_command,
             runtime_info=self.runtime_info,
+            coverage=response.get("coverage", {}),
         )
         _write_json(result_path, result.to_dict())
         return result
@@ -602,7 +607,7 @@ def _worker() -> None:
                 from fuzz import fuzzer
 
                 case = fuzzer.Case.from_json(Path(config["case_path"]).read_text())
-                fuzzer.check_case(
+                response["coverage"] = fuzzer.check_case(
                     case,
                     failure_dir=Path(config["case_path"]).parent,
                     reduce=config["reduce"],

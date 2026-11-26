@@ -23,6 +23,14 @@ from onnx.reference import ReferenceEvaluator
 
 import torch_onnx
 
+if __package__:
+    from . import model_families
+else:
+    import model_families
+
+TEMPLATE_DOMAINS = ("ce", "bce", "sdpa", *model_families.DOMAINS)
+DOMAINS = ("dag", *TEMPLATE_DOMAINS)
+
 _DTYPES = {
     name: getattr(torch, name)
     for name in ("float32", "float64", "int32", "int64", "bool")
@@ -66,6 +74,7 @@ _ZERO_SIGN_OPS = {
     "cat",
     "stack",
 }
+_OPS.update(model_families.OPS)
 
 
 @dataclasses.dataclass
@@ -84,25 +93,43 @@ class Case:
         default_factory=list
     )
     input_probes: bool = True
+    dynamic_bounds: dict[str, list[int]] = dataclasses.field(default_factory=dict)
+    float32_tolerance: list[float] | None = None
 
     def to_json(self) -> str:
-        return json.dumps(
-            dataclasses.asdict(self), indent=2, sort_keys=True, allow_nan=False
-        )
+        payload = dataclasses.asdict(self)
+        if self.version < 3:
+            # Preserve the v1/v2 wire format for readers from earlier releases.
+            # Non-default v3 settings remain visible so validation rejects them.
+            if not self.dynamic_bounds:
+                payload.pop("dynamic_bounds")
+            if self.float32_tolerance is None:
+                payload.pop("float32_tolerance")
+        return json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
 
     @classmethod
     def from_json(cls, text: str) -> Case:
         raw = json.loads(text)
         case = cls(**raw)
-        if case.version not in (1, 2) or not case.inputs:
-            raise ValueError("Expected a version-1 or version-2 case with inputs")
+        if case.version not in (1, 2, 3) or not case.inputs:
+            raise ValueError(
+                "Expected a version-1, version-2 or version-3 case with inputs"
+            )
         if case.version == 1 and len(case.inputs) != 2:
             raise ValueError("Expected a version-1 case with two inputs")
+        if case.float32_tolerance is not None and (
+            case.version < 3
+            or not isinstance(case.float32_tolerance, list)
+            or len(case.float32_tolerance) != 2
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value < 0
+                for value in case.float32_tolerance
+            )
+        ):
+            raise ValueError("Invalid explicit float32 tolerance")
         if case.output_mode not in ("all", "final") or case.opset not in (18, 23, 26):
             raise ValueError("Invalid output mode or opset")
-        if case.domain not in ("dag", "ce", "bce", "sdpa") or not isinstance(
-            case.input_probes, bool
-        ):
+        if case.domain not in DOMAINS or not isinstance(case.input_probes, bool):
             raise ValueError("Invalid case domain or probe mode")
         if (
             case.input_probes
@@ -132,6 +159,22 @@ class Case:
                 for axis, symbol in axes.items()
             ):
                 raise ValueError("Invalid dynamic shape declaration")
+        symbols = {
+            symbol for axes in case.dynamic_shapes.values() for symbol in axes.values()
+        }
+        if case.version < 3 and case.dynamic_bounds:
+            raise ValueError("Explicit dynamic bounds require case version 3")
+        if case.version == 3 and (
+            set(case.dynamic_bounds) != symbols
+            or any(
+                not isinstance(bounds, list)
+                or len(bounds) != 2
+                or any(type(value) is not int for value in bounds)
+                or not 0 <= bounds[0] < bounds[1] <= 64
+                for bounds in case.dynamic_bounds.values()
+            )
+        ):
+            raise ValueError("Invalid explicit dynamic bounds")
         for specs in [case.inputs, *case.additional_inputs]:
             sizes = {}
             for name, original, spec in zip(names, case.inputs, specs, strict=True):
@@ -141,16 +184,28 @@ class Case:
                     if symbol is None:
                         if size != original["shape"][axis]:
                             raise ValueError("Undeclared input dimension changed")
-                    elif not 2 <= size <= 64 or sizes.setdefault(symbol, size) != size:
-                        raise ValueError(
-                            "Dynamic dimension violates bounds or shared symbol"
-                        )
+                    else:
+                        lower, upper = case.dynamic_bounds.get(symbol, (2, 64))
+                        if (
+                            not lower <= size <= upper
+                            or sizes.setdefault(symbol, size) != size
+                        ):
+                            raise ValueError(
+                                "Dynamic dimension violates bounds or shared symbol"
+                            )
             _validate_template_inputs(case.domain, specs)
         for index, node in enumerate(case.nodes):
             if node["op"] not in _OPS or any(
                 not 0 <= arg < index + len(case.inputs) for arg in node["args"]
             ):
                 raise ValueError("Invalid operation or non-topological argument")
+            if (
+                node["op"] in model_families.ARITY
+                and len(node["args"]) != model_families.ARITY[node["op"]]
+            ):
+                raise ValueError("Invalid model recipe operation arity")
+            if node["op"] == "tensor_const":
+                cls._validate_input({"layout": "contiguous", **node["attrs"]})
         return case
 
     @staticmethod
@@ -190,8 +245,8 @@ def materialize(case: Case, *, inputs=None) -> tuple[torch.Tensor, ...]:
             [_decode(v) for v in spec["values"]], dtype=_DTYPES[spec["dtype"]]
         )
         tensor = tensor.reshape(spec["shape"])
-        if spec["layout"] == "transposed" and tensor.ndim == 2:
-            tensor = tensor.transpose(0, 1).contiguous().transpose(0, 1)
+        if spec["layout"] == "transposed" and tensor.ndim >= 2:
+            tensor = tensor.transpose(-2, -1).contiguous().transpose(-2, -1)
         tensors.append(tensor)
     return tuple(tensors)
 
@@ -208,7 +263,7 @@ class GraphModule(torch.nn.Module):
         for node in self.case.nodes:
             op, attrs = node["op"], node.get("attrs", {})
             args = [values[i] for i in node["args"]]
-            a = args[0]
+            a = args[0] if args else None
             if op == "add":
                 result = a + args[1]
             elif op == "sub":
@@ -260,6 +315,8 @@ class GraphModule(torch.nn.Module):
                 result = torch.nn.functional.scaled_dot_product_attention(
                     *args, **attrs
                 )
+            elif op in model_families.OPS:
+                result = model_families.apply(op, args, attrs)
             else:
                 raise ValueError(f"Unknown op {op!r}")
             values.append(result)
@@ -465,6 +522,9 @@ def input_names(case: Case) -> list[str]:
 def _validate_template_inputs(domain, specs):
     if domain == "dag":
         return
+    if domain in model_families.DOMAINS:
+        model_families.validate_inputs(domain, specs)
+        return
     if domain in ("ce", "bce"):
         if (
             len(specs) != 2
@@ -526,6 +586,12 @@ def generate_template_case(
     reduction: str | None = None,
 ) -> Case:
     """Constrained loss/attention families with reproducible legal input instances."""
+    if domain in model_families.DOMAINS:
+        if reduction is not None:
+            raise ValueError("Model recipes do not accept loss reductions")
+        return model_families.generate(
+            seed, domain=domain, opset=opset, dynamic=dynamic, output_mode=output_mode
+        )
     if domain not in ("ce", "bce", "sdpa"):
         raise ValueError(f"Unknown template domain {domain!r}")
     rng = random.Random(seed)
@@ -635,7 +701,7 @@ class FuzzFailure(AssertionError):
 
 
 def compare_array(
-    expected: np.ndarray, actual: np.ndarray, *, zero_sign: bool = False
+    expected: np.ndarray, actual: np.ndarray, *, zero_sign: bool = False, tolerance=None
 ) -> None:
     """Compare masks and observable special values before finite tolerances."""
     if actual.shape != expected.shape or actual.dtype != expected.dtype:
@@ -655,7 +721,8 @@ def compare_array(
         np.isneginf(actual), np.isneginf(expected), err_msg="-Inf mask"
     )
     finite = np.isfinite(expected)
-    tolerance = (1e-10, 1e-12) if expected.dtype == np.float64 else (1e-5, 1e-6)
+    if tolerance is None:
+        tolerance = (1e-10, 1e-12) if expected.dtype == np.float64 else (1e-5, 1e-6)
     np.testing.assert_allclose(
         actual[finite], expected[finite], rtol=tolerance[0], atol=tolerance[1]
     )
@@ -673,7 +740,7 @@ def compare_array(
         )
 
 
-def _reference_attribution(proto, arrays, expected, zero_sign):
+def _reference_attribution(proto, arrays, expected, zero_sign, float32_tolerance=None):
     """Use an independent ONNX evaluator only after an ORT semantic mismatch."""
     try:
         outputs = ReferenceEvaluator(proto).run(
@@ -687,7 +754,12 @@ def _reference_attribution(proto, arrays, expected, zero_sign):
         for index, (reference, output) in enumerate(
             zip(expected, outputs, strict=True)
         ):
-            compare_array(reference, output, zero_sign=zero_sign[index])
+            compare_array(
+                reference,
+                output,
+                zero_sign=zero_sign[index],
+                tolerance=float32_tolerance if reference.dtype == np.float32 else None,
+            )
     except AssertionError:
         return "export_semantic"
     except Exception:
@@ -695,7 +767,36 @@ def _reference_attribution(proto, arrays, expected, zero_sign):
     return "backend"
 
 
-def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
+def _onnx_ops(proto) -> set[str]:
+    """Inventory serialized nodes, including reachable functions and subgraphs."""
+    functions = {
+        (function.domain, function.name, function.overload): function
+        for function in proto.functions
+    }
+    result = set()
+    visited = set()
+
+    def visit(nodes):
+        for node in nodes:
+            key = node.domain, node.op_type, node.overload
+            result.add(
+                f"{node.domain}::{node.op_type}" if node.domain else node.op_type
+            )
+            if key in functions and key not in visited:
+                visited.add(key)
+                visit(functions[key].node)
+            for attribute in node.attribute:
+                if attribute.type == onnx.AttributeProto.GRAPH:
+                    visit(attribute.g.node)
+                elif attribute.type == onnx.AttributeProto.GRAPHS:
+                    for graph in attribute.graphs:
+                        visit(graph.node)
+
+    visit(proto.graph.node)
+    return result
+
+
+def run_case(case: Case, *, optimize_modes=(False, True)) -> dict[str, list[str]]:
     """Export once per mode and execute every serialized legal shape instance."""
     try:
         model = GraphModule(case).eval()
@@ -708,7 +809,11 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
                 tuple(value.numpy() for value in model(*args)) for args in instances
             ]
         symbols = {
-            symbol: torch.export.Dim(symbol, min=1, max=64)
+            symbol: torch.export.Dim(
+                symbol,
+                min=case.dynamic_bounds.get(symbol, (1, 64))[0],
+                max=case.dynamic_bounds.get(symbol, (1, 64))[1],
+            )
             for axes in case.dynamic_shapes.values()
             for symbol in axes.values()
         }
@@ -732,6 +837,7 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
         sensitivity.append(sensitive)
     zero_sign = sensitivity[count:] if case.output_mode == "all" else sensitivity[-1:]
     zero_sign = [*zero_sign, *([False] * (len(expected_instances[0]) - len(zero_sign)))]
+    aten_ops, onnx_ops = set(), set()
     for optimize in optimize_modes:
         try:
             program = torch_onnx.export(
@@ -749,6 +855,13 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
             try:
                 proto = program.model_proto
                 onnx.checker.check_model(proto, full_check=True)
+                onnx_ops.update(_onnx_ops(proto))
+                aten_ops.update(
+                    str(node.target)
+                    for node in program.exported_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and isinstance(node.target, torch._ops.OpOverload)
+                )
                 for expected in expected_instances:
                     _validate_outputs(proto, expected)
             except Exception as error:
@@ -790,20 +903,28 @@ def run_case(case: Case, *, optimize_modes=(False, True)) -> None:
                         zip(expected, actual, strict=True)
                     ):
                         try:
-                            compare_array(reference, result, zero_sign=zero_sign[index])
+                            compare_array(
+                                reference,
+                                result,
+                                zero_sign=zero_sign[index],
+                                tolerance=case.float32_tolerance
+                                if reference.dtype == np.float32
+                                else None,
+                            )
                         except AssertionError as error:
                             raise AssertionError(
                                 f"instance {instance} output {index}: {error}"
                             ) from error
                 except Exception as error:
                     attribution = _reference_attribution(
-                        proto, arrays, expected, zero_sign
+                        proto, arrays, expected, zero_sign, case.float32_tolerance
                     )
                     raise FuzzFailure(
                         case, "semantic", optimize, str(error), attribution=attribution
                     ) from error
         finally:
             program.release()
+    return {"aten_ops": sorted(aten_ops), "onnx_ops": sorted(onnx_ops)}
 
 
 def _validate_outputs(proto, expected):
@@ -849,10 +970,10 @@ def reduce_failure(case: Case, failure: FuzzFailure, *, attempts: int = 8) -> Ca
 
 def check_case(
     case: Case, *, failure_dir: Path | None = None, reduce: bool = True
-) -> None:
+) -> dict[str, list[str]]:
     """Run a case and report/save a reduced, directly replayable failure."""
     try:
-        run_case(case)
+        return run_case(case)
     except FuzzFailure as error:
         reduced = reduce_failure(case, error) if reduce else case
         if failure_dir is not None:

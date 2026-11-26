@@ -94,6 +94,7 @@ def test_keep_going_records_every_failure_and_still_exits_nonzero(
     assert seen == [0, 1, 2]
     assert result["status"] == "failed" and result["failed_cases"] == 3
     assert result["passed_cases"] == 0 and result["validated_exports"] == 0
+    assert result["aten_ops"] == result["onnx_ops"] == []
     assert [failure["seed"] for failure in result["failures"]] == seen
 
 

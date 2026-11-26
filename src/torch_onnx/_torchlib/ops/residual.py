@@ -1064,15 +1064,17 @@ def aten_stft(
         then_op = TranslationContext(builder)
         left = then_op.Div(
             then_op.Sub(n_fft, n_win),
-            op.constant([2], dtype=ir.DataType.INT64),
+            then_op.constant([2], dtype=ir.DataType.INT64),
         )
 
         right = then_op.Sub(then_op.Sub(n_fft, left), n_win)
-        left = then_op.Reshape(left, op.constant([1], dtype=ir.DataType.INT64))
-        right = then_op.Reshape(right, op.constant([1], dtype=ir.DataType.INT64))
+        left = then_op.Reshape(left, then_op.constant([1], dtype=ir.DataType.INT64))
+        right = then_op.Reshape(right, then_op.constant([1], dtype=ir.DataType.INT64))
 
-        left_win = then_op.Expand(op.constant([0], dtype=ir.DataType.INT64), left)
-        right_win = then_op.Expand(op.constant([0], dtype=ir.DataType.INT64), right)
+        left_win = then_op.Expand(then_op.constant([0], dtype=ir.DataType.INT64), left)
+        right_win = then_op.Expand(
+            then_op.constant([0], dtype=ir.DataType.INT64), right
+        )
         right_win = then_op.CastLike(right_win, window)
         left_win = then_op.CastLike(left_win, window)
         padded_window = then_op.Concat(left_win, window, right_win, axis=0)

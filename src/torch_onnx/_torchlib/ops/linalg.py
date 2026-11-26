@@ -230,15 +230,69 @@ def aten_einsum(
 ) -> ir.Value:
     """einsum(str equation, Tensor[] tensors, *, int[]? path=None) -> Tensor"""
 
+    equation = equation.replace(" ", "")
+    terms = equation.split("->")[0].split(",")
+    ellipsis_sizes = [
+        len(common_ops.require_shape(op, tensor)) - len(term.replace("...", ""))
+        for term, tensor in zip(terms, tensors, strict=True)
+        if "..." in term
+    ]
+    if ellipsis_sizes:
+        # ONNX requires equally many ellipsis axes on each operand carrying it.
+        # Prepend singleton axes inside each shorter ellipsis to right-align them.
+        widest = max(ellipsis_sizes)
+        normalized = []
+        for term, tensor in zip(terms, tensors, strict=True):
+            if "..." in term:
+                width = len(common_ops.require_shape(op, tensor)) - len(
+                    term.replace("...", "")
+                )
+                missing = widest - width
+                if missing:
+                    offset = term.index("...")
+                    tensor = op.Unsqueeze(tensor, list(range(offset, offset + missing)))
+            normalized.append(tensor)
+        tensors = normalized
     # Unpack the explicit tensor list into ONNX's variadic inputs.
     if common_ops.require_dtype(op, tensors[0]) == ir.DataType.BOOL:
-        return op.Cast(
-            op.Einsum(
-                *(op.Cast(tensor, to=ir.DataType.INT64) for tensor in tensors),
-                equation=equation,
-            ),
-            to=ir.DataType.BOOL,
+        integer_tensors = [op.Cast(tensor, to=ir.DataType.INT64) for tensor in tensors]
+        integer_equation = equation
+        if (
+            len(tensors) == 1
+            and "..." in terms[0]
+            and "->" in equation
+            and "..." not in equation.split("->")[1]
+        ):
+            # PyTorch allows summing ellipsis axes; ONNX Einsum does not.
+            offset = terms[0].index("...")
+            width = ellipsis_sizes[0]
+            if width:
+                integer_tensors[0] = op.ReduceSum(
+                    integer_tensors[0], list(range(offset, offset + width)), keepdims=0
+                )
+            integer_equation = equation.replace("...", "")
+        result = op.Einsum(
+            *integer_tensors,
+            equation=integer_equation,
         )
+        if len(tensors) == 1:
+            # Diagonal extraction and permutation retain bool; summation promotes
+            # to int64, even when a reduced dimension has size zero or one.
+            term = terms[0]
+            labels = term.replace("...", "")
+            output = (
+                equation.split("->")[1]
+                if "->" in equation
+                else "..."
+                + "".join(label for label in labels if labels.count(label) == 1)
+            )
+            reduces_labels = any(label not in output for label in labels)
+            reduces_ellipsis = (
+                "..." in term and "..." not in output and bool(ellipsis_sizes[0])
+            )
+            if reduces_labels or reduces_ellipsis:
+                return result
+        return op.Cast(result, to=ir.DataType.BOOL)
     return op.Einsum(*tensors, equation=equation)
 
 

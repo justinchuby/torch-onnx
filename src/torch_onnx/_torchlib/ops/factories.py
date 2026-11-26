@@ -509,7 +509,11 @@ def aten_fill(op: TranslationContext, self: ir.Value, value: ir.Value) -> ir.Val
     """fill.Tensor(Tensor self, Tensor value) -> Tensor"""
 
     # Cast the value before Expand so it can be constant folded
-    value = op.CastLike(value, self)
+    value = (
+        op.constant(value, dtype=common_ops.require_dtype(op, self))
+        if isinstance(value, bool | int | float)
+        else op.CastLike(value, self)
+    )
     shape = op.Shape(self)
     return op.Expand(value, shape)
 
@@ -530,7 +534,14 @@ def aten_full(
     size = common_ops.merge_dims(op, size)
 
     if dtype != -1:
-        fill_value = op.Cast(fill_value, to=dtype)
+        fill_value = (
+            op.constant(fill_value, dtype=ir.DataType(dtype))
+            if isinstance(fill_value, bool | int | float)
+            else op.Cast(fill_value, to=dtype)
+        )
+    elif isinstance(fill_value, bool | int | float):
+        # In particular, a Python float follows torch's current default dtype.
+        fill_value = _promotion.promote(op, fill_value)[0]
 
     size = op.Cast(size, to=ir.DataType.INT64)
     return op.Expand(fill_value, size)
@@ -551,10 +562,14 @@ def aten_full_like(
     if dtype is None:
         dtype = -1
 
-    if dtype == -1:
-        fill_value = op.CastLike(fill_value, self)
-    else:
-        fill_value = op.Cast(fill_value, to=dtype)
+    target_dtype = (
+        common_ops.require_dtype(op, self) if dtype == -1 else ir.DataType(dtype)
+    )
+    fill_value = (
+        op.constant(fill_value, dtype=target_dtype)
+        if isinstance(fill_value, bool | int | float)
+        else op.Cast(fill_value, to=target_dtype)
+    )
 
     self_shape = op.Shape(self)
     return op.Expand(fill_value, self_shape)

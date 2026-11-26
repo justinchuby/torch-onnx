@@ -2457,6 +2457,7 @@ TESTED_TORCHLIB_OPS += (
         TorchLibOpInfo(
             "signbit",
             residual_ops.aten_signbit,
+            opset_introduced=26,
             supported_dtypes=(
                 torch.float16,
                 torch.float32,

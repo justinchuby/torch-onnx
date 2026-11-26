@@ -35,6 +35,7 @@ from torch_onnx import (
     _ir_builder,
     _ir_passes,
     _onnx_program,
+    _optimization,
     _registration,
     _reporting,
     _type_casting,
@@ -1951,7 +1952,7 @@ def export(
 
     if optimize:
         verbose_print("Optimize the ONNX graph...")
-        onnx_program.optimize()
+        onnx_program.model = _optimization.optimize(onnx_program.model)
         verbose_print("Optimize the ONNX graph... [OK]")
 
     # Run the ONNX passes

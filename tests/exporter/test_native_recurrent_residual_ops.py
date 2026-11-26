@@ -507,8 +507,11 @@ class TestNativeRecurrentResidualOps(common_utils.TestCase):
         ):
             expected = torch.as_tensor(reference(a, b))
             self.assertEqual(_evaluate(native, [a, b], expected), expected)
+        self.assertEqual(
+            _evaluate(residual.aten_signbit, [a], torch.signbit(a), opset=26),
+            torch.signbit(a),
+        )
         for native, expected in (
-            (residual.aten_signbit, torch.signbit(a)),
             (
                 lambda op, x: residual.aten_histc(op, x, 4, -2, 2),
                 torch.histc(a, 4, -2, 2),

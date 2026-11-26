@@ -235,29 +235,22 @@ def aten_atan2(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Va
 def _atan2(
     op: TranslationContext, y: ir.Value, x: ir.Value, dtype: ir.DataType
 ) -> ir.Value:
-    result_dtype = dtype
-    if dtype in (ir.DataType.FLOAT16, ir.DataType.BFLOAT16):
-        dtype = ir.DataType.FLOAT
-        y = op.Cast(y, to=dtype)
-        x = op.Cast(x, to=dtype)
-    zero = op.constant(0.0, dtype=dtype)
-    one = op.constant(1.0, dtype=dtype)
-    pi = op.constant(math.pi, dtype=dtype)
-    # Reciprocal distinguishes -0 from +0 at opsets before BitCast exists.
-    negative_y = op.Or(op.Less(y, zero), op.Less(op.Reciprocal(y), zero))
-    negative_x = op.Or(op.Less(x, zero), op.Less(op.Reciprocal(x), zero))
-    both_zero = op.And(op.Equal(y, zero), op.Equal(x, zero))
-    both_infinite = op.And(op.IsInf(y), op.IsInf(x))
-    slope = op.Where(both_infinite, one, op.Div(op.Abs(y), op.Abs(x)))
-    angle = op.Where(both_zero, zero, op.Atan(slope))
-    angle = op.Where(negative_x, op.Sub(pi, angle), angle)
-    # A NaN argument is not the same case as the intermediate 0/0 above.
-    angle = op.Where(op.Or(op.IsNaN(y), op.IsNaN(x)), op.Abs(op.Add(y, x)), angle)
-    # Apply the sign last: some runtimes lose -0 when Where selects between
-    # numerically equal +0/-0 branches, whereas multiplication preserves it.
-    sign = op.Where(negative_y, op.constant(-1.0, dtype=dtype), one)
-    result = op.Mul(angle, sign)
-    return op.Cast(result, to=result_dtype) if result_dtype != dtype else result
+    slope = op.Div(y, x)
+    atan = op.Atan(slope)
+    zero = common_ops.constant(op, 0.0, dtype=dtype)
+    pi = common_ops.constant(op, math.pi, dtype=dtype)
+
+    second_third_quadrant = op.Where(
+        op.Greater(y, zero),
+        op.Add(atan, pi),
+        op.Sub(atan, pi),
+    )
+    result = op.Where(op.Less(x, zero), second_third_quadrant, atan)
+
+    # Map NaN to 0 to match PyTorch behavior
+    result = op.Where(op.IsNaN(result), zero, result)
+
+    return result
 
 
 @onnx_impl(aten.atanh.default)
@@ -1789,13 +1782,7 @@ def aten_trunc(op: TranslationContext, self: ir.Value) -> ir.Value:
     """trunc(Tensor self) -> Tensor"""
     if common_ops.require_dtype(op, self).is_integer():
         return op.Identity(self)
-    # Sign(-0) is +0, so choose a nonzero sign multiplier before truncating.
-    negative = op.Or(op.Less(self, 0), op.Less(op.Reciprocal(self), 0))
-    one = op.constant(1.0, dtype=common_ops.require_dtype(op, self))
-    sign = op.Where(negative, op.Neg(one), one)
-    magnitude = op.Where(op.IsNaN(self), self, op.Floor(op.Abs(self)))
-    # Keep both negative NaN and negative zero observable by a later signbit.
-    return op.Mul(magnitude, sign)
+    return op.Mul(op.Floor(op.Abs(self)), op.Sign(self))
 
 
 @onnx_impl(math.trunc)

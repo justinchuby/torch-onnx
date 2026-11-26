@@ -29,12 +29,12 @@ half-precision tolerance that still detects the original incorrect class count.
 | [206456](https://github.com/pytorch/pytorch/issues/206456), Add zero | Floating Add-zero is retained because it changes negative zero. Exact integer identity rewrites remain available. |
 | [206457](https://github.com/pytorch/pytorch/issues/206457), signbit | Exact floating signbit uses BitCast at opset 26+. Older opsets reject clearly rather than returning incorrect negative-zero/negative-NaN results. |
 | [206459](https://github.com/pytorch/pytorch/issues/206459), log_ndtr | Confirmed, remains open: float32 inputs -8/-10 produce negative infinity, and -20 produces NaN instead of a finite log probability. A stable tail approximation is still needed. |
-| [206460](https://github.com/pytorch/pytorch/issues/206460), BCE logits | Stable native lowering avoids saturated Sigmoid and compensates rounding in log(1+y), retaining tiny finite losses. |
+| [206460](https://github.com/pytorch/pytorch/issues/206460), BCE logits | Stable native lowering avoids saturated Sigmoid and infinite finite-input losses, preserving mixed-dtype rounding stages. Very small tail losses can still round to zero; avoid a larger compensation graph on the default path. |
 | [206462](https://github.com/pytorch/pytorch/issues/206462), mixed stack | Already promotes input dtypes correctly; regression added. |
 | [206472](https://github.com/pytorch/pytorch/issues/206472), integer Conv | Already rejected during translation when the target schema does not permit the dtype; regression prevents invalid model emission. |
 | [206486](https://github.com/pytorch/pytorch/issues/206486), 8-bit MatMul | Already rejected for invalid schema types; valid int32 MatMul remains supported. |
 | [206539](https://github.com/pytorch/pytorch/issues/206539), erfc | Confirmed, remains open: `1 - Erf(x)` cancels to zero at float32 x=5, where eager returns about 1.54e-12. Both optimization modes reproduce it. |
-| [206626](https://github.com/pytorch/pytorch/issues/206626), atan2 | Fixed quadrants, infinities, NaNs and signed zeros; the final sign is applied after selection to avoid runtime Where losing a negative zero. |
+| [206626](https://github.com/pytorch/pytorch/issues/206626), atan2 | Remains open: special-value reproducers are strict expected failures. Retain the compact lowering while seeking an efficient implementation rather than adding many elementwise guards. |
 | [206627](https://github.com/pytorch/pytorch/issues/206627), BatchNorm training | Training behavior already correct; directed regressions added. |
 | [206790](https://github.com/pytorch/pytorch/issues/206790), squeeze | Known non-unit axes return Identity; symbolic dimensions use a runtime condition. |
 | [206791](https://github.com/pytorch/pytorch/issues/206791), BF16 pool | Already rejected for target schemas lacking BF16; regression prevents invalid models. |
@@ -64,3 +64,9 @@ directed tests or additional generators.
 The independent ORT Where signed-zero observation is documented separately in
 the fuzzing guide. Runtime discrepancies remain failures in differential runs;
 reference evaluation supplies attribution rather than silently accepting them.
+
+The compact floating `trunc` lowering also retains known negative-zero and
+negative-NaN sign limitations, recorded as strict expected failures. Integer
+`trunc` still uses Identity to preserve integer precision and avoid unnecessary
+work. Special-value fixes must account for execution cost before expanding the
+default floating-point graph.

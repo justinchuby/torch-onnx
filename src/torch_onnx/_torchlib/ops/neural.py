@@ -347,13 +347,12 @@ def aten_binary_cross_entropy_with_logits(
     reduction: int = 1,
 ) -> ir.Value:
     """Use stable softplus instead of taking Log of a saturated Sigmoid."""
-    # Compensate Log(1 + y) for the rounding lost when adding tiny y to 1.
-    # Unlike Log(Sigmoid(x)) or a naive Softplus kernel, this retains small
-    # finite losses for confident positive logits at older ONNX opsets.
-    y = op.Exp(op.Neg(op.Abs(self)))
-    z = op.Add(y, 1.0)
-    log1p = op.Add(op.Log(z), op.Div(op.Sub(y, op.Sub(z, 1.0)), z))
-    log_term = op.Add(op.Max(op.Neg(self), 0.0), log1p)
+    # Stable log-sum-exp avoids overflow for large negative logits. Keep this
+    # compact: compensating tiny log1p tails adds several full-tensor passes.
+    log_term = op.Add(
+        op.Max(op.Neg(self), 0.0),
+        op.Log(op.Add(op.Exp(op.Neg(op.Abs(self))), 1.0)),
+    )
     if pos_weight is not None:
         pos_delta, promoted_target = _promotion.promote(
             op, op.Sub(pos_weight, 1.0), target

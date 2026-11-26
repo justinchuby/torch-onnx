@@ -50,7 +50,8 @@ jobs:
           MKL_NUM_THREADS: '1'
           OPENBLAS_NUM_THREADS: '1'
         run: |
-          python tests/fuzz/campaign.py --seed "$FUZZ_SEED" --count "$FUZZ_COUNT" \
+          timeout --signal=INT --kill-after=20s 20m \
+            python tests/fuzz/campaign.py --seed "$FUZZ_SEED" --count "$FUZZ_COUNT" \
             --domain "$FUZZ_DOMAIN" --output-mode both --shape-mode both \
             --opset 18 --opset 23 --opset 26 --timeout "$CASE_TIMEOUT" \
             --keep-going --report fuzz-artifacts/report.json --failure-dir fuzz-artifacts/cases

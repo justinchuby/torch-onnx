@@ -74,13 +74,16 @@ controller itself imports Torch; generation is not covered by the worker timeout
 
 The manual **Differential fuzz campaign** Actions workflow runs the isolated
 matrix and uploads the summary and case artifacts even after a failure. It is
-separate from required PR checks and has no scheduled execution.
+separate from required PR checks and has no scheduled execution. A 20-minute
+campaign interrupt precedes the job's 30-minute limit, leaving time to close
+workers and upload artifacts even when many cases exhaust their budgets.
 
 ## Failure artifacts and replay
 
 Before execution, each case receives a unique directory with atomically saved
-`case.json` and `config.json`. It also retains `stdout.log`, `stderr.log` and
-`result.json`; normal Python failures may include a minimized `failure-case.json`.
+`case.json` and `config.json`. It also retains `stdout.log`, `stderr.log` and,
+when an outcome can be recorded, `result.json`; normal Python failures may
+include a minimized `failure-case.json`.
 The original case survives even when native code crashes before Python can
 raise an exception. Identical seeds with different configurations and repeated
 campaigns do not overwrite previous artifacts.

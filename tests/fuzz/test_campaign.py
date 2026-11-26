@@ -95,3 +95,18 @@ def test_keep_going_records_every_failure_and_still_exits_nonzero(
     assert result["status"] == "failed" and result["failed_cases"] == 3
     assert result["passed_cases"] == 0 and result["validated_exports"] == 0
     assert [failure["seed"] for failure in result["failures"]] == seen
+
+
+def test_controller_interrupt_retains_partial_campaign_summary(tmp_path, monkeypatch):
+    report = tmp_path / "report.json"
+
+    def interrupt(case, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(fuzzer, "check_case", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        campaign.main(["--in-process", "--report", str(report)])
+    result = json.loads(report.read_text())
+    assert result["status"] == "interrupted"
+    assert result["attempted_cases"] == 1 and result["validated_exports"] == 0
+    assert result["failure"]["type"] == "KeyboardInterrupt"

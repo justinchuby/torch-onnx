@@ -5,21 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "torch-onnx"
 version = "0.2.0"
-description = "Experimental tools for converting PyTorch models to ONNX"
+description = "Convert PyTorch models to ONNX"
 authors = [{ name = "Justin Chu", email = "justinchu@microsoft.com" }]
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT AND BSD-3-Clause"}
 keywords = ["onnx", "pytorch", "converter", "convertion", "exporter"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: POSIX",
   "Operating System :: MacOS :: MacOS X",
   "Operating System :: Microsoft :: Windows",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
   "License :: OSI Approved :: MIT License",
 ]
 dependencies = [

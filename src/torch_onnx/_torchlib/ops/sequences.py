@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import onnx_ir as ir
 import torch
 
-from torch_onnx._ir_builder import GraphBuilder, TranslationContext
+from torch_onnx._ir_builder import TranslationContext
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
 from torch_onnx._torchlib.ops import (
     _promotion,
@@ -42,13 +42,13 @@ def _atleast_sequence(
     tensor_type = common_ops.require_sequence_type(op, self).elem_type
     tensor = ir.Value(name="atleast_tensor", type=tensor_type)
     body = ir.Graph([tensor], [], nodes=[], name="atleast_body")
-    local = GraphBuilder(body, opset=builder.opset)
+    local = builder.subgraph(body)
     local_op = TranslationContext(local)
     rank = local_op.Size(local_op.Shape(tensor))
 
     def branch(op: TranslationContext, name, shape=None, *, unsqueeze=False):
         graph = ir.Graph([], [], nodes=[], name=name)
-        sub = GraphBuilder(graph, opset=builder.opset)
+        sub = local.subgraph(graph)
         sub_op = TranslationContext(sub)
         if shape is None:
             result = sub_op.Identity(tensor)
@@ -148,11 +148,11 @@ def aten_hstack(
     first = aten_getitem(op, tensors, 0)
     rank_1d_or_less = op.Less(op.Size(op.Shape(first)), 2)
     then_branch = ir.Graph([], [], nodes=[], name="hstack_flatten")
-    local = GraphBuilder(then_branch, opset=builder.opset)
+    local = builder.subgraph(then_branch)
     local_op = TranslationContext(local)
     then_branch.outputs.append(local_op.Reshape(result, [-1]))
     else_branch = ir.Graph([], [], nodes=[], name="hstack_identity")
-    local = GraphBuilder(else_branch, opset=builder.opset)
+    local = builder.subgraph(else_branch)
     local_op = TranslationContext(local)
     else_branch.outputs.append(local_op.Identity(result))
     for branch in (then_branch, else_branch):

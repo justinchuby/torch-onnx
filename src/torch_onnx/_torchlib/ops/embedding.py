@@ -7,7 +7,7 @@ from __future__ import annotations
 import onnx_ir as ir
 import torch
 
-from torch_onnx._ir_builder import GraphBuilder, TranslationContext
+from torch_onnx._ir_builder import TranslationContext
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
 from torch_onnx._torchlib.ops import common as common_ops
 
@@ -208,7 +208,7 @@ def aten_embedding_bag_padding_idx(
     body = ir.Graph(
         [i, condition, rows, lengths, max_rows], [], nodes=[], name="embedding_bag_body"
     )
-    local = GraphBuilder(body, opset=builder.opset)
+    local = builder.subgraph(body)
     local_op = TranslationContext(local)
     # Process each bag
     start_pos = local_op.Gather(offsets, i)
@@ -235,7 +235,7 @@ def aten_embedding_bag_padding_idx(
         empty = local_op.Equal(start_pos, end_pos)
     expand_shape = local_op.Concat([1], weight_dim_1, axis=0)
     then_branch = ir.Graph([], [], nodes=[], name="embedding_bag_empty")
-    sub = GraphBuilder(then_branch, opset=builder.opset)
+    sub = builder.subgraph(then_branch)
     sub_op = TranslationContext(sub)
     # Empty input get zero value output, not empty output
     # row_result should be 0, need to generate (1,N) shape tensor with 0 values
@@ -245,7 +245,7 @@ def aten_embedding_bag_padding_idx(
     zero_max.type = ir.TensorType(ir.DataType.INT64)
     common_ops.finish_subgraph(op, then_branch, [zero_row, zero_max])
     else_branch = ir.Graph([], [], nodes=[], name="embedding_bag_nonempty")
-    sub = GraphBuilder(else_branch, opset=builder.opset)
+    sub = builder.subgraph(else_branch)
     sub_op = TranslationContext(sub)
     if mode == 0:  # sum
         row_result = sub_op.ReduceSum(row_weight, [0])

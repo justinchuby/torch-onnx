@@ -179,6 +179,152 @@ class TestGraphBuilder(common_utils.TestCase):
         self.assertIs(result.type, self.x.type)
         self.assertIn("incomplete metadata", logs.output[0])
 
+    def test_inference_failure_rolls_back_value_and_propagation(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        original = op.constant([2], dtype=ir.DataType.INT64)
+        original_type = original.type
+        original_const = original.const_value
+        original_metadata = dict(original.metadata_props)
+
+        def broken(context, node):
+            context.set_shape(node.outputs[0], ir.Shape([999]))
+            context.set_dtype(node.outputs[0], ir.DataType.INT64)
+            context.set_symbolic_value(node.outputs[0], [999])
+            context.set_symbolic_value(node.inputs[0], [13])
+            raise ValueError("failed after writing metadata")
+
+        with mock.patch.object(
+            onnx_shape_inference.registry, "get", return_value=broken
+        ):
+            (result,) = self.builder.node("Identity", [original], output_types=[None])
+        self.assertIsNone(result.shape)
+        self.assertIsNone(result.type)
+        self.assertIsNone(result.const_value)
+        self.assertNotIn(onnx_shape_inference.SYM_DATA_KEY, result.metadata_props)
+        self.assertIs(original.type, original_type)
+        self.assertIs(original.const_value, original_const)
+        self.assertEqual(dict(original.metadata_props), original_metadata)
+        self.assertIsNone(self.builder._get_shape_context().get_symbolic_value(result))
+        self.assertEqual(op.Reshape(original, [1]).const_value.numpy().tolist(), [2])
+
+    def test_child_builders_share_symbols_but_not_constant_cache(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        first = op.NonZero(self.x)
+        then_graph = ir.Graph([], [], nodes=[], name="then")
+        else_graph = ir.Graph([], [], nodes=[], name="else")
+        then_builder = self.builder.subgraph(then_graph)
+        else_builder = self.builder.subgraph(else_graph)
+        then_op = _ir_builder.TranslationContext(then_builder)
+        else_op = _ir_builder.TranslationContext(else_builder)
+        then_value = then_op.NonZero(self.x)
+        else_value = else_op.NonZero(self.x)
+        dimensions = [str(value.shape[1]) for value in (first, then_value, else_value)]
+        self.assertEqual(len(set(dimensions)), 3)
+        then_graph.outputs.append(then_value)
+        else_graph.outputs.append(else_value)
+        (merged,) = self.builder.node(
+            "If",
+            [op.constant(True, dtype=ir.DataType.BOOL)],
+            attributes={"then_branch": then_graph, "else_branch": else_graph},
+            output_types=[ir.TensorType(ir.DataType.INT64)],
+        )
+        self.assertNotIn(str(merged.shape[1]), dimensions)
+        parent_constant = op.constant([1], dtype=ir.DataType.INT64)
+        self.assertIsNot(
+            parent_constant, then_op.constant([1], dtype=ir.DataType.INT64)
+        )
+        self.assertIsNot(
+            parent_constant, else_op.constant([1], dtype=ir.DataType.INT64)
+        )
+
+    def test_child_builder_preserves_captured_shape_tensor_data(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        x = ir.Value(type=self.x.type, shape=ir.Shape(["batch", 3]))
+        target = op.Concat(op.Gather(op.Shape(x), [0]), [3], axis=0)
+        child = self.builder.subgraph(ir.Graph([], [], nodes=[], name="child"))
+        child_op = _ir_builder.TranslationContext(child)
+        reshaped = child_op.Reshape(x, target)
+        self.assertEqual(reshaped.shape, x.shape)
+        self.assertIs(child._get_shape_context(), self.builder._get_shape_context())
+
+    def test_shared_context_restores_opsets_after_child_inference(self):
+        parent = self.builder._get_shape_context()
+        original = parent.opset_imports
+        child = self.builder.subgraph(
+            ir.Graph([], [], nodes=[], name="child"), opset=19
+        )
+        _ir_builder.TranslationContext(child).Identity(self.x)
+        self.assertIs(parent.opset_imports, original)
+        self.assertEqual(child.graph.opset_imports[""], 19)
+        _ir_builder.TranslationContext(self.builder).Identity(self.x)
+        self.assertEqual(self.graph.opset_imports[""], 18)
+
+    def test_symbols_for_future_graphs_can_be_reserved_up_front(self):
+        self.builder.reserve_symbol_names(["2*_d0", "_d1 + _d2"])
+        child = self.builder.subgraph(ir.Graph([], [], nodes=[], name="child"))
+        result = _ir_builder.TranslationContext(child).NonZero(self.x)
+        self.assertNotIn(str(result.shape[1]), {"_d0", "_d1", "_d2"})
+
+    def test_ir_schema_is_resolved_once_across_context_and_child_calls(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        child = self.builder.subgraph(ir.Graph([], [], nodes=[], name="child"))
+        original_lookup = onnx.defs.get_schema
+        original_conversion = ir.schemas.OpSignature.from_op_schema
+        with (
+            mock.patch.object(onnx.defs, "get_schema", wraps=original_lookup) as lookup,
+            mock.patch.object(
+                ir.schemas.OpSignature, "from_op_schema", wraps=original_conversion
+            ) as convert,
+        ):
+            first = op.Add(self.x, 1)
+            second = op.Add(first, 2)
+            (third,) = self.builder.call("Add", second, self.x)
+            fourth = _ir_builder.TranslationContext(child).Add(third, 3)
+        self.assertEqual(fourth.dtype, ir.DataType.FLOAT)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 18, "")), 1)
+        self.assertEqual(convert.call_count, 1)
+
+    def test_schema_cache_does_not_keep_tensor_type_bindings(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        first = op.Add(self.x, 1)
+        double = ir.Value(type=ir.TensorType(ir.DataType.DOUBLE), shape=self.x.shape)
+        second = op.Add(double, 1)
+        self.assertEqual(first.dtype, ir.DataType.FLOAT)
+        self.assertEqual(second.dtype, ir.DataType.DOUBLE)
+        self.assertEqual(second.producer().inputs[1].dtype, ir.DataType.DOUBLE)
+        self.assertFalse(any(node.op_type == "Cast" for node in self.graph))
+
+    def test_schema_resolution_is_scoped_to_each_export_and_opset(self):
+        op = _ir_builder.TranslationContext(self.builder)
+        child = self.builder.subgraph(
+            ir.Graph([], [], nodes=[], name="child"), opset=19
+        )
+        independent = _ir_builder.TranslationContext(
+            _ir_builder.GraphBuilder(ir.Graph([], [], nodes=[]))
+        )
+        original_lookup = onnx.defs.get_schema
+        with mock.patch.object(
+            onnx.defs, "get_schema", wraps=original_lookup
+        ) as lookup:
+            op.Add(self.x, self.x)
+            _ir_builder.TranslationContext(child).Add(self.x, self.x)
+            independent.Add(self.x, self.x)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 18, "")), 2)
+        self.assertEqual(lookup.call_args_list.count(mock.call("Add", 19, "")), 1)
+
+    def test_missing_schema_is_not_cached_when_registration_changes(self):
+        schema = onnx.defs.get_schema("Relu", 18, "")
+        with mock.patch.object(
+            onnx.defs,
+            "get_schema",
+            side_effect=[onnx.defs.SchemaError("not registered yet"), schema],
+        ) as lookup:
+            with self.assertWarnsRegex(UserWarning, "Standard ONNX operator 'Relu'"):
+                self.builder.call("Relu", self.x, _num_outputs=1)
+            (result,) = self.builder.call("Relu", self.x)
+        self.assertEqual(lookup.call_count, 2)
+        self.assertEqual(result.shape, self.x.shape)
+
     @parametrize("metadata", ["dtype", "shape"])
     def test_required_metadata_reports_missing_input(self, metadata):
         require = getattr(common, f"require_{metadata}")

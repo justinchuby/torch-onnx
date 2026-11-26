@@ -10,7 +10,7 @@ import numpy as np
 import onnx_ir as ir
 import torch
 
-from torch_onnx._ir_builder import GraphBuilder, TranslationContext
+from torch_onnx._ir_builder import TranslationContext
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
 from torch_onnx._torchlib.ops import (
     _promotion,
@@ -686,7 +686,7 @@ def aten_is_nonzero(op: TranslationContext, self: ir.Value) -> ir.Value:
     # else [0],[True],[0.0] return True, others return False
     result = op.Equal(op.Size(self), 1)
     then_branch = ir.Graph([], [], nodes=[], name="nonzero_single")
-    local = GraphBuilder(then_branch, opset=builder.opset)
+    local = builder.subgraph(then_branch)
     local_op = TranslationContext(local)
     scalar = local_op.Reshape(
         local_op.Cast(self, to=ir.DataType.BOOL),
@@ -695,7 +695,7 @@ def aten_is_nonzero(op: TranslationContext, self: ir.Value) -> ir.Value:
     scalar.type = ir.TensorType(ir.DataType.BOOL)
     common_ops.finish_subgraph(op, then_branch, [scalar])
     else_branch = ir.Graph([], [], nodes=[], name="nonzero_multiple")
-    local = GraphBuilder(else_branch, opset=builder.opset)
+    local = builder.subgraph(else_branch)
     local_op = TranslationContext(local)
     common_ops.finish_subgraph(
         op, else_branch, [local.constant(False, dtype=ir.DataType.BOOL)]
@@ -1060,7 +1060,7 @@ def aten_stft(
         condition = op.Less(op.Squeeze(n_win), n_fft)
         then_branch = ir.Graph([], [], nodes=[], name="stft_pad_window")
         outer = builder
-        builder = GraphBuilder(then_branch, opset=outer.opset)
+        builder = outer.subgraph(then_branch)
         then_op = TranslationContext(builder)
         left = then_op.Div(
             then_op.Sub(n_fft, n_win),
@@ -1081,7 +1081,7 @@ def aten_stft(
         padded_window.type = window.type
         common_ops.finish_subgraph(op, then_branch, [padded_window])
         else_branch = ir.Graph([], [], nodes=[], name="stft_keep_window")
-        builder = GraphBuilder(else_branch, opset=outer.opset)
+        builder = outer.subgraph(else_branch)
         else_op = TranslationContext(builder)
         kept_window = else_op.Identity(window)
         kept_window.type = window.type
@@ -1203,7 +1203,7 @@ def _unique_empty_inverse(
 ):
     builder = op.builder
     then_branch = ir.Graph([], [], nodes=[], name="unique_empty_input")
-    local = GraphBuilder(then_branch, opset=builder.opset)
+    local = builder.subgraph(then_branch)
     local_op = TranslationContext(local)
     reshaped_inverse = local_op.Reshape(inverse_indices, input_size, allowzero=True)
     reshaped_inverse.type = ir.TensorType(ir.DataType.INT64)
@@ -1213,7 +1213,7 @@ def _unique_empty_inverse(
         [reshaped_inverse],
     )
     else_branch = ir.Graph([], [], nodes=[], name="unique_no_inverse")
-    local = GraphBuilder(else_branch, opset=builder.opset)
+    local = builder.subgraph(else_branch)
     local_op = TranslationContext(local)
     common_ops.finish_subgraph(
         op, else_branch, [local.constant([], dtype=ir.DataType.INT64)]

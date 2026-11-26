@@ -987,6 +987,7 @@ def _translate_fx_graph(
     owned_graphs: Mapping[str, ir.Function],
     lower: Literal["at_conversion", "none"],
     registry: _registration.ONNXRegistry,
+    native_builder: _ir_builder.GraphBuilder,
 ) -> dict[str, ir.Value | Sequence[ir.Value]]:
     """Translate a submodule to an ONNX function.
 
@@ -1002,6 +1003,7 @@ def _translate_fx_graph(
         owned_graphs: The subgraphs owned by the current graph.
         lower: The lowering strategy to use.
         registry: The registry of all aten to ONNX decomposition functions.
+        native_builder: Builder sharing this export's inference context.
 
     Returns:
         A mapping of FX node names to their produced ONNX ``Value``.
@@ -1013,8 +1015,6 @@ def _translate_fx_graph(
     node_name_to_local_functions: dict[str, ir.Function] = {}
     constant_farm: dict[Any, ir.Value] = {}
     opset = registry.opset_version
-    graph = graph_like.graph if isinstance(graph_like, ir.Function) else graph_like
-    native_builder = _ir_builder.GraphBuilder(graph, opset=opset)
 
     for node in fx_graph.nodes:
         logger.debug(
@@ -1355,6 +1355,21 @@ def _exported_program_to_onnx_program(
     # A dictionary storing the translated subgraphs as ONNX functions made available to outer graphs
     # {<subgraph_scope>: {<subgraph_name>: <IR function>}}
     scoped_subgraphs: dict[str, dict[str, ir.Function]] = {}
+    native_root = _ir_builder.GraphBuilder(model.graph, opset=registry.opset_version)
+    # Inner functions are translated first. Reserve every captured shape's
+    # symbols before any graph can allocate an anonymous inference dimension.
+    captured_symbols: set[str] = set()
+    for module in exported_program.graph_module.modules():
+        if isinstance(module, torch.fx.GraphModule):
+            for node in module.graph.nodes:
+                for value in torch.utils._pytree.tree_leaves(node.meta.get("val")):
+                    if isinstance(value, torch.Tensor):
+                        captured_symbols.update(
+                            str(dim.node)
+                            for dim in value.shape
+                            if not isinstance(dim, int)
+                        )
+    native_root.reserve_symbol_names(captured_symbols)
     values = None
 
     # 1. Translate all nodes in all subgraphs and the main graph
@@ -1399,6 +1414,15 @@ def _exported_program_to_onnx_program(
             owned_graphs=owned_graphs,
             lower=lower,
             registry=registry,
+            native_builder=(
+                native_root
+                if graph_like is model.graph
+                else native_root.subgraph(
+                    graph_like.graph
+                    if isinstance(graph_like, ir.Function)
+                    else graph_like
+                )
+            ),
         )
 
     if name != "":

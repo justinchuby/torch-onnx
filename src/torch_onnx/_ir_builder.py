@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import dataclasses
 import logging
+import re
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -18,10 +20,28 @@ import onnx_ir as ir
 import onnx_shape_inference
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 
 logger = logging.getLogger(__name__)
+_SYMBOL_IDENTIFIERS = re.compile(r"[A-Za-z_]\w*")
+
+
+@dataclasses.dataclass(frozen=True)
+class _SchemaInfo:
+    """IR signature plus exact ONNX arity limits not represented by it."""
+
+    signature: ir.schemas.OpSignature
+    inputs: tuple[ir.schemas.Parameter, ...]
+    attributes: Mapping[str, ir.schemas.AttributeParameter]
+    min_input: int
+    max_input: int
+    min_output: int
+    max_output: int
+
+    @property
+    def since_version(self) -> int:
+        return self.signature.since_version
 
 
 _CURRENT: contextvars.ContextVar[GraphBuilder | None] = contextvars.ContextVar(
@@ -86,9 +106,7 @@ class TranslationContext:
         if name.startswith("_"):
             raise AttributeError(name)
         try:
-            schema: onnx.defs.OpSchema | None = onnx.defs.get_schema(
-                name, self.builder.opset, ""
-            )
+            schema = self.builder._get_schema(name, "", self.builder.opset)
         except onnx.defs.SchemaError:
             schema = None
 
@@ -132,7 +150,9 @@ class GraphBuilder:
 
     Always returns tuples of plain ir.Value objects. A builder has graph-local
     constants and scoped activation; no symbolic Python operators are installed.
-    Model assembly and optimization belong to the caller.
+    Model assembly and optimization belong to the caller. A root builder and
+    its children share a snapshot of each successfully resolved operator schema;
+    a new root builder observes new schema registrations.
 
     Example::
 
@@ -160,6 +180,79 @@ class GraphBuilder:
         self._warned_missing_schemas: set[str] = set()
         onnx_shape_inference.registry.collect()
         self._shape_context: onnx_shape_inference.ShapeInferenceContext | None = None
+        self._shape_parent: GraphBuilder | None = None
+        self._reserved_expressions: set[str] = set()
+        self._schema_cache: dict[tuple[str, str, int], _SchemaInfo] = {}
+
+    def subgraph(self, graph: ir.Graph, *, opset: int | None = None) -> GraphBuilder:
+        """Build a child graph with this export's symbols and propagated shape data.
+
+        Constants remain graph-local. Share one inference context so captures
+        retain their symbolic contents and unrelated anonymous dimensions never
+        acquire the same name in sibling graphs or local functions.
+        """
+        child = GraphBuilder(graph, opset=self.opset if opset is None else opset)
+        child._shape_parent = self
+        child._schema_cache = self._schema_cache
+        return child
+
+    def _get_schema(self, name: str, domain: str, version: int) -> _SchemaInfo:
+        key = (domain, name, version)
+        cached = self._schema_cache.get(key)
+        if cached is not None:
+            return cached
+        schema = onnx.defs.get_schema(name, version, domain)
+        signature = ir.schemas.OpSignature.from_op_schema(schema)
+        cached = _SchemaInfo(
+            signature=signature,
+            inputs=tuple(signature.inputs),
+            attributes={
+                attribute.name: attribute for attribute in signature.attributes
+            },
+            min_input=schema.min_input,
+            max_input=schema.max_input,
+            min_output=schema.min_output,
+            max_output=schema.max_output,
+        )
+        self._schema_cache[key] = cached
+        return cached
+
+    def reserve_symbol_names(self, names: Iterable[str]) -> None:
+        """Reserve declared names or expressions before allocating anonymous dims.
+
+        This also handles declarations for graphs that have not been built yet.
+        Extra identifiers such as function names are harmless to reserve.
+        """
+        context = self._get_shape_context()
+        for expression in names:
+            if expression not in self._reserved_expressions:
+                context.reserve_symbol_names(
+                    (expression, *_SYMBOL_IDENTIFIERS.findall(expression))
+                )
+                self._reserved_expressions.add(expression)
+
+    def _get_shape_context(self) -> onnx_shape_inference.ShapeInferenceContext:
+        if self._shape_context is None:
+            self._shape_context = (
+                self._shape_parent._get_shape_context()
+                if self._shape_parent is not None
+                else onnx_shape_inference.ShapeInferenceContext(
+                    self.graph.opset_imports
+                )
+            )
+            self._reserve_symbols(self.graph.inputs)
+        return self._shape_context
+
+    def _reserve_symbols(self, values: Iterable[ir.Value | None]) -> None:
+        assert self._shape_context is not None
+        for value in values:
+            if value is None or value.shape is None:
+                continue
+            for dim in value.shape:
+                if not isinstance(dim, ir.SymbolicDim) or dim.value is None:
+                    continue
+                # `2*_d0` must prevent allocating the independent name _d0.
+                self.reserve_symbol_names((str(dim),))
 
     @contextlib.contextmanager
     def activate(self) -> Iterator[GraphBuilder]:
@@ -264,28 +357,16 @@ class GraphBuilder:
         )
         if infer is None:
             return
-        context = self._shape_context
-        if context is None:
-            context = onnx_shape_inference.ShapeInferenceContext(
-                self.graph.opset_imports
-            )
-            self._shape_context = context
-            values = (*self.graph.inputs, *node.inputs)
-        else:
-            values = node.inputs
+        context = self._get_shape_context()
+        previous_opsets = context.opset_imports
         context.opset_imports = self.graph.opset_imports
-        for value in values:
-            if value is not None and value.shape is not None:
-                context.reserve_symbol_names(
-                    str(dim)
-                    for dim in value.shape
-                    if isinstance(dim, ir.SymbolicDim) and dim.value is not None
-                )
+        self._reserve_symbols(node.inputs)
         try:
-            for value in node.inputs:
-                if value is not None:
-                    context.name_anonymous_dims(value)
-            infer(context, node)
+            with context.transaction(node):
+                for value in node.inputs:
+                    if value is not None:
+                        context.name_anonymous_dims(value)
+                infer(context, node)
         except Exception:
             # Partial graphs, unresolved function attributes and custom operators
             # can lack the information needed for inference. Capture metadata and
@@ -296,6 +377,8 @@ class GraphBuilder:
                 node.op_type,
                 exc_info=True,
             )
+        finally:
+            context.opset_imports = previous_opsets
 
     def call(
         self,
@@ -332,9 +415,7 @@ class GraphBuilder:
                 f"{existing}. Use the graph's opset version."
             )
         try:
-            schema: onnx.defs.OpSchema | None = onnx.defs.get_schema(
-                op_type, version, domain
-            )
+            schema = self._get_schema(op_type, domain, version)
         except onnx.defs.SchemaError as error:
             if domain:
                 raise ValueError(
@@ -414,7 +495,7 @@ class GraphBuilder:
 
     @staticmethod
     def _can_fallback_stale_schema(
-        schema: onnx.defs.OpSchema,
+        schema: _SchemaInfo,
         inputs: tuple[Any, ...],
         num_outputs: int | None,
         output_types: Sequence[ir.TypeProtocol | None] | None,
@@ -429,10 +510,7 @@ class GraphBuilder:
             and num_outputs != len(output_types)
         ):
             return False
-        signature = ir.schemas.OpSignature.from_op_schema(schema)
-        parameters = [
-            p for p in signature.params if isinstance(p, ir.schemas.Parameter)
-        ]
+        parameters = schema.inputs
         for index, value in enumerate(inputs):
             if value is None and index < len(parameters) and parameters[index].required:
                 return False
@@ -599,7 +677,7 @@ class GraphBuilder:
 
     def _call_with_schema(
         self,
-        schema: onnx.defs.OpSchema,
+        schema: _SchemaInfo,
         op_type: str,
         inputs: tuple[Any, ...],
         *,
@@ -614,10 +692,7 @@ class GraphBuilder:
                 f"{op_type} expects {schema.min_input}..{schema.max_input} inputs, "
                 f"got {len(inputs)}. Supply optional holes as None and expand variadics."
             )
-        signature = ir.schemas.OpSignature.from_op_schema(schema)
-        parameters = [
-            p for p in signature.params if isinstance(p, ir.schemas.Parameter)
-        ]
+        parameters = schema.inputs
         bindings: dict[ir.schemas.TypeConstraintParam, ir.TypeProtocol] = {}
         expanded = []
         for index, value in enumerate(inputs):
@@ -721,7 +796,7 @@ class GraphBuilder:
                 )
         typed_attributes = {
             name: ir.convenience.convert_attribute(
-                name, value, ir.AttributeType(schema.attributes[name].type)
+                name, value, schema.attributes[name].type
             )
             for name, value in attributes.items()
             if value is not None

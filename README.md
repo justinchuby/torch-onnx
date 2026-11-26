@@ -178,8 +178,13 @@ Use `op.constant(value, dtype=...)` to create explicitly typed constants. It
 shares the builder's graph-local constant cache. Native nodes receive incremental
 dtype and symbolic shape inference through `onnx-shape-inference`, including
 shape-tensor propagation between operations. Missing rules or incomplete metadata
-leave values partially inferred; inference failures are logged at debug level.
-Translations still own tensor casts and type promotion.
+leave values partially inferred. Failed inference attempts roll back metadata and
+propagated shape data before logging a debug diagnostic. Translations still own
+tensor casts and type promotion. Construct nested graphs with
+`op.builder.subgraph(graph)` so they share this export's symbol allocation and
+captured shape data while retaining separate constant caches. When constructing
+graphs incrementally, declare input shapes before inference or use
+`builder.reserve_symbol_names(...)` to reserve symbols for graphs built later.
 
 For per-export overrides, `custom_translation_table` accepts ONNX Script
 functions and takes precedence over global native registrations, which override

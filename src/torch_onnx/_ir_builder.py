@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import logging
+import re
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -18,10 +19,11 @@ import onnx_ir as ir
 import onnx_shape_inference
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
 
 logger = logging.getLogger(__name__)
+_SYMBOL_IDENTIFIERS = re.compile(r"[A-Za-z_]\w*")
 
 
 _CURRENT: contextvars.ContextVar[GraphBuilder | None] = contextvars.ContextVar(
@@ -160,6 +162,56 @@ class GraphBuilder:
         self._warned_missing_schemas: set[str] = set()
         onnx_shape_inference.registry.collect()
         self._shape_context: onnx_shape_inference.ShapeInferenceContext | None = None
+        self._shape_parent: GraphBuilder | None = None
+        self._reserved_expressions: set[str] = set()
+
+    def subgraph(self, graph: ir.Graph, *, opset: int | None = None) -> GraphBuilder:
+        """Build a child graph with this export's symbols and propagated shape data.
+
+        Constants remain graph-local. Share one inference context so captures
+        retain their symbolic contents and unrelated anonymous dimensions never
+        acquire the same name in sibling graphs or local functions.
+        """
+        child = GraphBuilder(graph, opset=self.opset if opset is None else opset)
+        child._shape_parent = self
+        return child
+
+    def reserve_symbol_names(self, names: Iterable[str]) -> None:
+        """Reserve declared names or expressions before allocating anonymous dims.
+
+        This also handles declarations for graphs that have not been built yet.
+        Extra identifiers such as function names are harmless to reserve.
+        """
+        context = self._get_shape_context()
+        for expression in names:
+            if expression not in self._reserved_expressions:
+                context.reserve_symbol_names(
+                    (expression, *_SYMBOL_IDENTIFIERS.findall(expression))
+                )
+                self._reserved_expressions.add(expression)
+
+    def _get_shape_context(self) -> onnx_shape_inference.ShapeInferenceContext:
+        if self._shape_context is None:
+            self._shape_context = (
+                self._shape_parent._get_shape_context()
+                if self._shape_parent is not None
+                else onnx_shape_inference.ShapeInferenceContext(
+                    self.graph.opset_imports
+                )
+            )
+            self._reserve_symbols(self.graph.inputs)
+        return self._shape_context
+
+    def _reserve_symbols(self, values: Iterable[ir.Value | None]) -> None:
+        assert self._shape_context is not None
+        for value in values:
+            if value is None or value.shape is None:
+                continue
+            for dim in value.shape:
+                if not isinstance(dim, ir.SymbolicDim) or dim.value is None:
+                    continue
+                # `2*_d0` must prevent allocating the independent name _d0.
+                self.reserve_symbol_names((str(dim),))
 
     @contextlib.contextmanager
     def activate(self) -> Iterator[GraphBuilder]:
@@ -264,28 +316,16 @@ class GraphBuilder:
         )
         if infer is None:
             return
-        context = self._shape_context
-        if context is None:
-            context = onnx_shape_inference.ShapeInferenceContext(
-                self.graph.opset_imports
-            )
-            self._shape_context = context
-            values = (*self.graph.inputs, *node.inputs)
-        else:
-            values = node.inputs
+        context = self._get_shape_context()
+        previous_opsets = context.opset_imports
         context.opset_imports = self.graph.opset_imports
-        for value in values:
-            if value is not None and value.shape is not None:
-                context.reserve_symbol_names(
-                    str(dim)
-                    for dim in value.shape
-                    if isinstance(dim, ir.SymbolicDim) and dim.value is not None
-                )
+        self._reserve_symbols(node.inputs)
         try:
-            for value in node.inputs:
-                if value is not None:
-                    context.name_anonymous_dims(value)
-            infer(context, node)
+            with context.transaction(node):
+                for value in node.inputs:
+                    if value is not None:
+                        context.name_anonymous_dims(value)
+                infer(context, node)
         except Exception:
             # Partial graphs, unresolved function attributes and custom operators
             # can lack the information needed for inference. Capture metadata and
@@ -296,6 +336,8 @@ class GraphBuilder:
                 node.op_type,
                 exc_info=True,
             )
+        finally:
+            context.opset_imports = previous_opsets
 
     def call(
         self,

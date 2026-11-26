@@ -279,10 +279,10 @@ def higher_order_while_loop(
         if isinstance(inp, ir.Value):
             carried_inputs_values.append(inp)
         elif isinstance(inp, int):
-            const = op.builder.constant(inp, dtype=ir.DataType.INT64)
+            const = op.constant(inp, dtype=ir.DataType.INT64)
             carried_inputs_values.append(const)
         elif isinstance(inp, float):
-            const = op.builder.constant(inp, dtype=ir.DataType.FLOAT)
+            const = op.constant(inp, dtype=ir.DataType.FLOAT)
             carried_inputs_values.append(const)
         else:
             raise NotImplementedError(

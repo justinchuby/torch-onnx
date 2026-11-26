@@ -174,6 +174,13 @@ def custom_add(op: torch_onnx.TranslationContext, self, other, alpha=1):
 torch_onnx.unregister_custom_translation(torch.ops.aten.add.Tensor)
 ```
 
+Use `op.constant(value, dtype=...)` to create explicitly typed constants. It
+shares the builder's graph-local constant cache. Native nodes receive incremental
+dtype and symbolic shape inference through `onnx-shape-inference`, including
+shape-tensor propagation between operations. Missing rules or incomplete metadata
+leave values partially inferred; inference failures are logged at debug level.
+Translations still own tensor casts and type promotion.
+
 For per-export overrides, `custom_translation_table` accepts ONNX Script
 functions and takes precedence over global native registrations, which override
 built-in translations. `torch_onnx.ops` also re-exports PyTorch's symbolic ONNX

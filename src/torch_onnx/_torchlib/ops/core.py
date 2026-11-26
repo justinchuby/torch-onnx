@@ -426,7 +426,6 @@ def aten_bitwise_right_shift(
 ) -> ir.Value:
     """bitwise_right_shift.Tensor(Tensor self, Tensor other) -> Tensor"""
     self, other = _promotion.promote(op, self, other)
-    builder = op.builder
     if not (self.dtype == other.dtype or self.dtype is None or other.dtype is None):
         raise ValueError(
             f"aten_bitwise_right_shift requires matching tensor dtypes, got {self.dtype} and {other.dtype}. Cast operands to the same dtype before translation."
@@ -443,19 +442,19 @@ def aten_bitwise_right_shift(
     if dtype.bitwidth == 8:
         unsigned_dtype = ir.DataType.UINT8
         signed_dtype = ir.DataType.INT8
-        mask = builder.constant(0xFF, dtype=unsigned_dtype)
+        mask = op.constant(0xFF, dtype=unsigned_dtype)
     elif dtype.bitwidth == 16:
         unsigned_dtype = ir.DataType.UINT16
         signed_dtype = ir.DataType.INT16
-        mask = builder.constant(0xFFFF, dtype=unsigned_dtype)
+        mask = op.constant(0xFFFF, dtype=unsigned_dtype)
     elif dtype.bitwidth == 32:
         unsigned_dtype = ir.DataType.UINT32
         signed_dtype = ir.DataType.INT32
-        mask = builder.constant(0xFFFFFFFF, dtype=unsigned_dtype)
+        mask = op.constant(0xFFFFFFFF, dtype=unsigned_dtype)
     elif dtype.bitwidth == 64:
         unsigned_dtype = ir.DataType.UINT64
         signed_dtype = ir.DataType.INT64
-        mask = builder.constant(
+        mask = op.constant(
             0xFFFFFFFFFFFFFFFF, dtype=unsigned_dtype
         )  # 0xFFFFFFFFFFFFFFFF
     else:
@@ -711,11 +710,10 @@ def aten_conj(op: TranslationContext, self: ir.Value) -> ir.Value:
 
 
 def _complex_conjugate(op: TranslationContext, self: ir.Value) -> ir.Value:
-    builder = op.builder
-    zero = builder.constant([0], dtype=ir.DataType.INT64)
-    one = builder.constant([1], dtype=ir.DataType.INT64)
-    two = builder.constant([2], dtype=ir.DataType.INT64)
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    zero = op.constant([0], dtype=ir.DataType.INT64)
+    one = op.constant([1], dtype=ir.DataType.INT64)
+    two = op.constant([2], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     # The last dimension is the real and imaginary parts
 
     real = op.Slice(self, zero, one, neg_1)
@@ -921,9 +919,8 @@ def aten_exp(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_exp2(op: TranslationContext, self: ir.Value) -> ir.Value:
     """exp2(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    builder = op.builder
 
-    two = builder.constant(2, dtype=ir.DataType.INT64)
+    two = op.constant(2, dtype=ir.DataType.INT64)
     two = op.CastLike(two, self)
     return op.Pow(two, self)
 
@@ -1068,7 +1065,6 @@ def aten_isclose(
     equal_nan: bool = False,
 ) -> ir.Value:
     """isclose(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False) -> Tensor"""
-    builder = op.builder
 
     # torch builds isclose out of three terms in aten/src/ATen/native/TensorCompare.cpp:
     # exact equality, NaN against NaN when equal_nan is set, and the tolerance band
@@ -1094,7 +1090,7 @@ def aten_isclose(
         # false, which leaves the equality term above as the only way an infinity is
         # reported close. On finite values the sign of the difference and the direct
         # comparison agree exactly, so the band is unchanged.
-        zero = builder.constant(0, dtype=common_ops.require_dtype(op, self))
+        zero = op.constant(0, dtype=common_ops.require_dtype(op, self))
         within_tolerance = op.LessOrEqual(op.Sub(actual_error, allowed_error), zero)
         if equal_nan:
             result = op.Or(
@@ -1212,11 +1208,10 @@ def aten_log(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_log10(op: TranslationContext, self: ir.Value) -> ir.Value:
     """log10(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    builder = op.builder
 
     return op.Div(
         op.Log(self),
-        builder.constant(math.log(10.0), dtype=common_ops.require_dtype(op, self)),
+        op.constant(math.log(10.0), dtype=common_ops.require_dtype(op, self)),
     )
 
 
@@ -1232,11 +1227,10 @@ def aten_log1p(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_log2(op: TranslationContext, self: ir.Value) -> ir.Value:
     """log2(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    builder = op.builder
 
     return op.Div(
         op.Log(self),
-        builder.constant(math.log(2.0), dtype=common_ops.require_dtype(op, self)),
+        op.constant(math.log(2.0), dtype=common_ops.require_dtype(op, self)),
     )
 
 
@@ -1337,14 +1331,13 @@ def aten_logit(
 ) -> ir.Value:
     """logit(Tensor self, float? eps=None) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
-    builder = op.builder
-    one = builder.constant(1, dtype=common_ops.require_dtype(op, self))
+    one = op.constant(1, dtype=common_ops.require_dtype(op, self))
 
     if eps is None:
         return op.Log(op.Div(self, op.Sub(one, self)))
 
-    one_minus_eps = builder.constant(1 - eps, dtype=common_ops.require_dtype(op, self))
-    eps_tensor = builder.constant(eps, dtype=common_ops.require_dtype(op, self))
+    one_minus_eps = op.constant(1 - eps, dtype=common_ops.require_dtype(op, self))
+    eps_tensor = op.constant(eps, dtype=common_ops.require_dtype(op, self))
 
     # Logit's lower-bound branch takes precedence even when eps > 0.5.
     upper_clamped = op.Where(
@@ -1648,12 +1641,11 @@ def aten_scalar_tensor(
     pin_memory: bool = False,
 ) -> ir.Value:
     """scalar_tensor(Scalar s, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    builder = op.builder
     if dtype == -1:
         dtype = ir.DataType.FLOAT
 
     if isinstance(s, float) and dtype in (ir.DataType.DOUBLE, ir.DataType.COMPLEX128):
-        s = builder.constant(s, dtype=ir.DataType.DOUBLE)
+        s = op.constant(s, dtype=ir.DataType.DOUBLE)
     if not isinstance(s, ir.Value):
         real_dtype = ir.DataType(dtype)
         if real_dtype in (ir.DataType.COMPLEX64, ir.DataType.COMPLEX128):
@@ -1662,7 +1654,7 @@ def aten_scalar_tensor(
                 if real_dtype == ir.DataType.COMPLEX64
                 else ir.DataType.DOUBLE
             )
-        s = builder.constant(s, dtype=real_dtype)
+        s = op.constant(s, dtype=real_dtype)
     return common_ops.cast_to(op, s, dtype=dtype)
 
 
@@ -1843,7 +1835,6 @@ def aten_all_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> ir.Value:
     """all.dim(Tensor self, int dim, bool keepdim=False) -> Tensor"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 0:
         return _promotion.boolean_reduction(
             op, op.Cast(self, to=ir.DataType.BOOL), self
@@ -1851,7 +1842,7 @@ def aten_all_dim(
 
     self_bool = op.Cast(self, to=ir.DataType.BOOL)
     self_int = op.Cast(self_bool, to=ir.DataType.INT64)
-    dims = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+    dims = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
     all_true = op.ReduceMin(self_int, dims, keepdims=keepdim)
     return _promotion.boolean_reduction(
         op, op.Cast(all_true, to=ir.DataType.BOOL), self
@@ -1952,7 +1943,6 @@ def aten_any_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> ir.Value:
     """any.dim(Tensor self, int dim, bool keepdim=False) -> Tensor"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 0:
         return _promotion.boolean_reduction(
             op, op.Cast(self, to=ir.DataType.BOOL), self
@@ -1962,7 +1952,7 @@ def aten_any_dim(
     # op.ReduceMax() in the next step cannot process BOOL inputs, so convert to INT64
     self_int = op.Cast(self_bool, to=ir.DataType.INT64)
     # Change dim from int to INT64[1]
-    dims = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+    dims = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
     any_true = op.ReduceMax(self_int, dims, keepdims=keepdim)
     return _promotion.boolean_reduction(op, op.Greater(any_true, 0), self)
 
@@ -2023,15 +2013,12 @@ def _aten_argmax(
     op: TranslationContext, self: ir.Value, keepdim: bool = False
 ) -> ir.Value:
     """argmax(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
-    builder = op.builder
 
     rank = len(common_ops.require_shape(op, self))
-    self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+    self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
     result = op.ArgMax(self, keepdims=False)
     if keepdim:
-        result = op.Reshape(
-            result, builder.constant([1] * rank, dtype=ir.DataType.INT64)
-        )
+        result = op.Reshape(result, op.constant([1] * rank, dtype=ir.DataType.INT64))
 
     return result
 
@@ -2040,11 +2027,10 @@ def _aten_argmax_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> ir.Value:
     """argmax(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
-    builder = op.builder
 
     self_is_scaler = len(common_ops.require_shape(op, self)) == 0
     if self_is_scaler:
-        self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
 
     result = op.ArgMax(self, axis=dim, keepdims=keepdim)
     if self_is_scaler:
@@ -2073,15 +2059,12 @@ def _aten_argmin(
     op: TranslationContext, self: ir.Value, keepdim: bool = False
 ) -> ir.Value:
     """argmin(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
-    builder = op.builder
 
     rank = len(common_ops.require_shape(op, self))
-    self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+    self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
     result = op.ArgMin(self, keepdims=False)
     if keepdim:
-        result = op.Reshape(
-            result, builder.constant([1] * rank, dtype=ir.DataType.INT64)
-        )
+        result = op.Reshape(result, op.constant([1] * rank, dtype=ir.DataType.INT64))
 
     return result
 
@@ -2090,11 +2073,10 @@ def _aten_argmin_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> ir.Value:
     """argmin(Tensor self, int? dim=None, bool keepdim=False) -> Tensor"""
-    builder = op.builder
 
     self_is_scaler = len(common_ops.require_shape(op, self)) == 0
     if self_is_scaler:
-        self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
 
     result = op.ArgMin(self, axis=dim, keepdims=keepdim)
     if self_is_scaler:
@@ -2106,33 +2088,30 @@ def _aten_argmin_dim(
 @onnx_impl(aten.atleast_1d.default)
 def aten_atleast_1d(op: TranslationContext, self: ir.Value) -> ir.Value:
     """atleast_1d(Tensor self) -> Tensor"""
-    builder = op.builder
 
     if len(common_ops.require_shape(op, self)) == 0:
-        self = op.Reshape(self, builder.constant([1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([1], dtype=ir.DataType.INT64))
     return op.Identity(self)
 
 
 @onnx_impl(aten.atleast_2d.default)
 def aten_atleast_2d(op: TranslationContext, self: ir.Value) -> ir.Value:
     """atleast_2d(Tensor self) -> Tensor"""
-    builder = op.builder
 
     if len(common_ops.require_shape(op, self)) <= 1:
-        self = op.Reshape(self, builder.constant([1, -1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([1, -1], dtype=ir.DataType.INT64))
     return op.Identity(self)
 
 
 @onnx_impl(aten.atleast_3d.default)
 def aten_atleast_3d(op: TranslationContext, self: ir.Value) -> ir.Value:
     """atleast_3d(Tensor self) -> Tensor"""
-    builder = op.builder
 
     rank = len(common_ops.require_shape(op, self))
     if rank <= 1:
-        self = op.Reshape(self, builder.constant([1, -1, 1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([1, -1, 1], dtype=ir.DataType.INT64))
     elif rank == 2:
-        self = op.Unsqueeze(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([-1], dtype=ir.DataType.INT64))
     return op.Identity(self)
 
 
@@ -2241,7 +2220,6 @@ def aten_flatten(
     op: TranslationContext, self: ir.Value, start_dim: int = 0, end_dim: int = -1
 ) -> ir.Value:
     """flatten.using_ints(Tensor(a) self, int start_dim=0, int end_dim=-1) -> Tensor(a)"""
-    builder = op.builder
     dim = len(common_ops.require_shape(op, self))
     if dim == 0:
         return op.Reshape(self, [1])
@@ -2263,21 +2241,21 @@ def aten_flatten(
     input_size = op.Shape(self)
     dim_head = op.Slice(
         input_size,
-        builder.constant([0], dtype=ir.DataType.INT64),
-        builder.constant([start_dim], dtype=ir.DataType.INT64),
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
+        op.constant([start_dim], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
     )
-    final_dims = [dim_head, builder.constant([-1], dtype=ir.DataType.INT64)]
+    final_dims = [dim_head, op.constant([-1], dtype=ir.DataType.INT64)]
     if end_dim < dim - 1:
         dim_tail = op.Slice(
             input_size,
-            builder.constant([end_dim + 1], dtype=ir.DataType.INT64),
-            builder.constant([dim], dtype=ir.DataType.INT64),
-            builder.constant([0], dtype=ir.DataType.INT64),
+            op.constant([end_dim + 1], dtype=ir.DataType.INT64),
+            op.constant([dim], dtype=ir.DataType.INT64),
+            op.constant([0], dtype=ir.DataType.INT64),
         )
         final_dims = [
             dim_head,
-            builder.constant([-1], dtype=ir.DataType.INT64),
+            op.constant([-1], dtype=ir.DataType.INT64),
             dim_tail,
         ]
 
@@ -2288,21 +2266,20 @@ def aten_flatten(
 @onnx_impl(aten.flip.default)
 def aten_flip(op: TranslationContext, self: ir.Value, dims: Sequence[int]) -> ir.Value:
     """flip(Tensor self, int[] dims) -> Tensor"""
-    builder = op.builder
 
     if not dims:
         # Nothing to flip
         return op.Identity(self)
 
     rank = len(dims)
-    starts = builder.constant(
+    starts = op.constant(
         [-1] * rank, dtype=ir.DataType.INT64
     )  # something like [-1, -1, -1]
     steps = starts  # something like [-1, -1, -1]
-    ends = builder.constant(
+    ends = op.constant(
         [_INT64_MIN] * rank, dtype=ir.DataType.INT64
     )  # something like [-xxx, -xxx, -xxx]
-    axes = builder.constant(dims, dtype=ir.DataType.INT64)
+    axes = op.constant(dims, dtype=ir.DataType.INT64)
     return op.Slice(self, starts, ends, axes, steps)
 
 
@@ -2551,14 +2528,13 @@ def aten_index_select(
     op: TranslationContext, self: ir.Value, dim: int, index: ir.Value
 ) -> ir.Value:
     """index_select(Tensor self, int dim, Tensor index) -> Tensor"""
-    builder = op.builder
 
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     if self_is_scalar:
-        self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
 
     # Index may be a scalar. Reshape it to a rank 1 tensor.
-    index = op.Reshape(index, builder.constant([-1], dtype=ir.DataType.INT64))
+    index = op.Reshape(index, op.constant([-1], dtype=ir.DataType.INT64))
     index = op.Cast(index, to=ir.DataType.INT64)
     result = op.Gather(self, index, axis=dim)
 
@@ -2631,7 +2607,6 @@ def aten_masked_scatter(
     op: TranslationContext, self: ir.Value, mask: ir.Value, source: ir.Value
 ) -> ir.Value:
     """masked_scatter(Tensor self, Tensor mask, Tensor source) -> Tensor"""
-    builder = op.builder
 
     # Broadcast self and mask to their common shape so NonZero enumerates every
     # masked element. The previous rank-only check missed same-rank broadcasting
@@ -2644,12 +2619,12 @@ def aten_masked_scatter(
     # NOTE: source can have more elements than needed.
     # It could also have arbitrary shape.
     # This is not supported by ONNX::ScatterND, so we need to flatten and slice source tensor.
-    source = op.Reshape(source, builder.constant([-1], dtype=ir.DataType.INT64))
-    axes = builder.constant([0], dtype=ir.DataType.INT64)
-    starts = builder.constant([0], dtype=ir.DataType.INT64)
+    source = op.Reshape(source, op.constant([-1], dtype=ir.DataType.INT64))
+    axes = op.constant([0], dtype=ir.DataType.INT64)
+    starts = op.constant([0], dtype=ir.DataType.INT64)
     ends = op.Gather(
         op.Shape(index),
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
         axis=0,
     )
     source = op.Slice(source, starts, ends, axes)
@@ -2669,13 +2644,12 @@ def aten_max_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> tuple[ir.Value, ir.Value]:
     """max.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)"""
-    builder = op.builder
 
     if len(common_ops.require_shape(op, self)) == 0:
         result = self
-        indices = builder.constant(0, dtype=ir.DataType.INT64)
+        indices = op.constant(0, dtype=ir.DataType.INT64)
     else:
-        dims = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+        dims = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
         result = op.ReduceMax(self, dims, keepdims=keepdim)
         indices = op.ArgMax(self, axis=dim, keepdims=keepdim)
     return result, indices
@@ -2710,7 +2684,6 @@ def aten_mean_dim(
     dtype, result_dtype = _promotion.reduction_dtypes(
         op, self, dtype, integral_to_long=False
     )
-    builder = op.builder
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     if dtype != -1 and dtype is not None:
         self = op.Cast(self, to=dtype)
@@ -2721,8 +2694,8 @@ def aten_mean_dim(
         result = op.ReduceMean(self, keepdims=keepdim)
     else:
         if not isinstance(dim, ir.Value):
-            dim = builder.constant(dim, dtype=ir.DataType.INT64)
-        dims = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+            dim = op.constant(dim, dtype=ir.DataType.INT64)
+        dims = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
         result = op.ReduceMean(self, dims, keepdims=keepdim)
 
     if dtype != -1 and dtype is not None:
@@ -2736,12 +2709,11 @@ def aten_mean_complex(
     op: TranslationContext, self: ir.Value, dtype: int = -1
 ) -> ir.Value:
     """mean(Tensor self, *, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
     rank = len(common_ops.require_shape(op, self)) - 1
     if rank == 0:
         result = op.Identity(self)
     else:
-        dim = builder.constant(list(range(rank)), dtype=ir.DataType.INT64)
+        dim = op.constant(list(range(rank)), dtype=ir.DataType.INT64)
         result = op.ReduceMean(self, dim, keepdims=False)
 
     if dtype != -1 and dtype is not None:
@@ -2762,16 +2734,15 @@ def aten_mean_dim_complex(
     dtype: int = -1,
 ) -> ir.Value:
     """mean.dim(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
     rank = len(common_ops.require_shape(op, self)) - 1
     if rank == 0:
         result = op.Identity(self)
     else:
         if dim is None:
-            dims = builder.constant(list(range(rank)), dtype=ir.DataType.INT64)
+            dims = op.constant(list(range(rank)), dtype=ir.DataType.INT64)
         else:
             if not isinstance(dim, ir.Value):
-                dim = builder.constant(dim, dtype=ir.DataType.INT64)
+                dim = op.constant(dim, dtype=ir.DataType.INT64)
             dims = op.Reshape(dim, [-1])
             dims = op.Where(
                 op.Less(dims, 0),
@@ -2808,12 +2779,11 @@ def aten_min_dim(
     op: TranslationContext, self: ir.Value, dim: int, keepdim: bool = False
 ) -> tuple[ir.Value, ir.Value]:
     """min.dim(Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 0:
         result = self
-        indices = builder.constant(0, dtype=ir.DataType.INT64)
+        indices = op.constant(0, dtype=ir.DataType.INT64)
     else:
-        dims = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+        dims = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
         result = op.ReduceMin(self, dims, keepdims=keepdim)
         indices = op.ArgMin(self, axis=dim, keepdims=keepdim)
 
@@ -2829,11 +2799,10 @@ def aten_narrow(
     length: ir.Value,
 ) -> ir.Value:
     """narrow(Tensor(a) self, int dim, SymInt start, SymInt length) -> Tensor(a)"""
-    builder = op.builder
 
-    dim = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
-    start = op.Reshape(start, builder.constant([-1], dtype=ir.DataType.INT64))
-    length = op.Reshape(length, builder.constant([-1], dtype=ir.DataType.INT64))
+    dim = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
+    start = op.Reshape(start, op.constant([-1], dtype=ir.DataType.INT64))
+    length = op.Reshape(length, op.constant([-1], dtype=ir.DataType.INT64))
 
     end = op.Add(start, length)
     return op.Slice(self, start, end, dim)
@@ -3038,7 +3007,7 @@ def aten_scatter_reduce(
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     index_rank = max(len(common_ops.require_shape(op, index)), 1)
     if self_is_scalar:  # assert (index_rank == 0 and rank_src == 0)
-        neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+        neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
         self = op.Reshape(self, neg_1)
         index = op.Reshape(index, neg_1)
         src = op.Reshape(src, neg_1)
@@ -3060,8 +3029,8 @@ def aten_scatter_reduce(
         return op.Squeeze(result) if self_is_scalar else result
     if reduce == "mean":
         original = self
-        zero = builder.constant(0, dtype=dtype)
-        one = builder.constant(1, dtype=dtype)
+        zero = op.constant(0, dtype=dtype)
+        one = op.constant(1, dtype=dtype)
         zeros = op.ConstantOfShape(
             op.Shape(self),
             value=ir.tensor([0], dtype=dtype),
@@ -3196,29 +3165,28 @@ def aten_slice(
     step: ir.Value | None = None,
 ) -> ir.Value:
     """slice.Tensor(Tensor(a) self, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor(a)"""
-    builder = op.builder
 
     # TODO: using OptionalHasElement() to check start/end value
     if start is not None:
         start = op.Cast(start, to=ir.DataType.INT64)
-        start = op.Reshape(start, builder.constant([-1], dtype=ir.DataType.INT64))
+        start = op.Reshape(start, op.constant([-1], dtype=ir.DataType.INT64))
     else:
-        start = builder.constant([0], dtype=ir.DataType.INT64)
+        start = op.constant([0], dtype=ir.DataType.INT64)
 
     if end is not None:
         end = op.Cast(end, to=ir.DataType.INT64)
-        end = op.Reshape(end, builder.constant([-1], dtype=ir.DataType.INT64))
+        end = op.Reshape(end, op.constant([-1], dtype=ir.DataType.INT64))
     else:
-        end = builder.constant([_INT64_MAX], dtype=ir.DataType.INT64)
+        end = op.constant([_INT64_MAX], dtype=ir.DataType.INT64)
 
     dim = op.Cast(dim, to=ir.DataType.INT64)
-    dim = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+    dim = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
 
     if step is not None:
         step = op.Cast(step, to=ir.DataType.INT64)
-        step = op.Reshape(step, builder.constant([-1], dtype=ir.DataType.INT64))
+        step = op.Reshape(step, op.constant([-1], dtype=ir.DataType.INT64))
     else:
-        step = builder.constant([1], dtype=ir.DataType.INT64)
+        step = op.constant([1], dtype=ir.DataType.INT64)
 
     return op.Slice(self, start, end, dim, step)
 
@@ -3234,7 +3202,6 @@ def aten_slice_scatter(
     step: ir.Value | int = 1,
 ) -> ir.Value:
     """slice_scatter(Tensor self, Tensor src, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor"""
-    builder = op.builder
 
     # 'start' and 'end' are optional (aten schema: SymInt? start=None, SymInt? end=None).
     # When absent, default start to 0 and end to _INT64_MAX (a full slice), mirroring aten_slice.
@@ -3246,13 +3213,13 @@ def aten_slice_scatter(
     # For the example, the output of this step is Slice([0, ..., 7], 6, 64, 1) = [6, 7]
 
     # Scatter ND
-    zero = builder.constant([0], dtype=ir.DataType.INT64)
+    zero = op.constant([0], dtype=ir.DataType.INT64)
     self_shape = op.Shape(self)
     dim_shape = op.Gather(self_shape, dim, axis=0)
     index_base = op.Range(0, dim_shape, 1)
     start_index = zero if start is None else op.Unsqueeze(start, zero)
     end_index = (
-        builder.constant([_INT64_MAX], dtype=ir.DataType.INT64)
+        op.constant([_INT64_MAX], dtype=ir.DataType.INT64)
         if end is None
         else op.Unsqueeze(end, zero)
     )
@@ -3294,14 +3261,13 @@ def aten_sort(
     stable: bool = False,
 ) -> tuple[ir.Value, ir.Value]:
     """sort(Tensor self, int dim=-1, bool descending=False, bool stable=False) -> (Tensor values, Tensor indices)"""
-    builder = op.builder
 
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     if self_is_scalar:
-        return op.Identity(self), builder.constant(0, dtype=ir.DataType.INT64)
+        return op.Identity(self), op.constant(0, dtype=ir.DataType.INT64)
     shape = op.Shape(self)
     dim_size = op.Gather(shape, dim, axis=0)
-    dim_size = op.Reshape(dim_size, builder.constant([1], dtype=ir.DataType.INT64))
+    dim_size = op.Reshape(dim_size, op.constant([1], dtype=ir.DataType.INT64))
     values, indices = op.TopK(self, dim_size, axis=dim, largest=descending, sorted=True)
     return values, indices
 
@@ -3359,12 +3325,11 @@ def aten_sum_complex(
     op: TranslationContext, self: ir.Value, dtype: int = -1
 ) -> ir.Value:
     """sum(Tensor self, *, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 1:
         result = op.Identity(self)
     else:
         rank = len(common_ops.require_shape(op, self)) - 1
-        dim = builder.constant(list(range(rank)), dtype=ir.DataType.INT64)
+        dim = op.constant(list(range(rank)), dtype=ir.DataType.INT64)
         result = op.ReduceSum(self, dim, keepdims=False)
     if dtype != -1 and dtype is not None:
         raise NotImplementedError(
@@ -3417,12 +3382,11 @@ def aten_sum_dim_IntList_complex(
     dtype: int = -1,
 ) -> ir.Value:
     """sum.dim_IntList(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 1:
         result = op.Identity(self)
     elif dim is None or (isinstance(dim, Sequence) and len(dim) == 0):
         rank = len(common_ops.require_shape(op, self)) - 1
-        axes = builder.constant(list(range(rank)), dtype=ir.DataType.INT64)
+        axes = op.constant(list(range(rank)), dtype=ir.DataType.INT64)
         result = op.ReduceSum(self, axes, keepdims=keepdim)
     else:
         dims = [dim] if isinstance(dim, int) else dim
@@ -3446,10 +3410,9 @@ def aten_sym_storage_offset(
     op: TranslationContext, self: ir.Value, dim: int = 0
 ) -> ir.Value:
     """sym_storage_offset(Tensor self, int dim) -> SymInt"""
-    builder = op.builder
     # storage offset is not used in onnx world.
     # the output of this function is not used.
-    return builder.constant(0, dtype=ir.DataType.INT64)
+    return op.constant(0, dtype=ir.DataType.INT64)
 
 
 @onnx_impl(aten.t.default)
@@ -3544,7 +3507,6 @@ def aten_unflatten(
     op: TranslationContext, self: ir.Value, dim: int, sizes: Sequence[int | ir.Value]
 ) -> ir.Value:
     """unflatten(Tensor(a) self, int dim, SymInt[] sizes) -> Tensor(a)"""
-    builder = op.builder
 
     self_size = op.Shape(self)
 
@@ -3553,17 +3515,16 @@ def aten_unflatten(
     if dim < 0:
         dim = self_rank + dim
 
-    head_start_idx = builder.constant([0], dtype=ir.DataType.INT64)
-    head_end_idx = op.Reshape(dim, builder.constant([1], dtype=ir.DataType.INT64))
+    head_start_idx = op.constant([0], dtype=ir.DataType.INT64)
+    head_end_idx = op.Reshape(dim, op.constant([1], dtype=ir.DataType.INT64))
     head_part_rank = op.Slice(self_size, head_start_idx, head_end_idx)
 
-    tail_start_idx = op.Reshape(dim + 1, builder.constant([1], dtype=ir.DataType.INT64))
-    tail_end_idx = builder.constant([_INT64_MAX], dtype=ir.DataType.INT64)
+    tail_start_idx = op.Reshape(dim + 1, op.constant([1], dtype=ir.DataType.INT64))
+    tail_end_idx = op.constant([_INT64_MAX], dtype=ir.DataType.INT64)
     tail_part_rank = op.Slice(self_size, tail_start_idx, tail_end_idx)
 
     sizes = [
-        op.Reshape(size, builder.constant([1], dtype=ir.DataType.INT64))
-        for size in sizes
+        op.Reshape(size, op.constant([1], dtype=ir.DataType.INT64)) for size in sizes
     ]
 
     # corner case 1: head part is None
@@ -3582,7 +3543,6 @@ def aten_unfold(
     op: TranslationContext, self: ir.Value, dimension: int, size: int, step: int
 ) -> ir.Value:
     """unfold(Tensor(a) self, int dimension, int size, int step) -> Tensor(a)"""
-    builder = op.builder
 
     self_rank = len(common_ops.require_shape(op, self))
     if self_rank == 0:
@@ -3598,9 +3558,9 @@ def aten_unfold(
         dim_size = op.Squeeze(
             op.Gather(
                 input_shape,
-                builder.constant([dimension], dtype=ir.DataType.INT64),
+                op.constant([dimension], dtype=ir.DataType.INT64),
             ),
-            builder.constant([0], dtype=ir.DataType.INT64),
+            op.constant([0], dtype=ir.DataType.INT64),
         )
 
         # Create indices for each window
@@ -3746,7 +3706,6 @@ def aten_as_strided(
     storage_offset: ir.Value | int | None = None,
 ) -> ir.Value:
     """as_strided(Tensor(a) self, SymInt[] size, SymInt[] stride, SymInt? storage_offset=None) -> Tensor(a)"""
-    builder = op.builder
 
     # torch.as_strided produces a view of `self`'s underlying linear storage
     # with the requested `size` (the output shape) and `stride` (the step, in
@@ -3761,7 +3720,7 @@ def aten_as_strided(
     # ONNX exposes logical values, not backing storage. Flattening is correct only
     # when logical row-major order matches storage order; non-contiguous views remain
     # unsupported, as they were in the previous lowering.
-    self_flatten = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+    self_flatten = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
 
     # A missing storage_offset means "start at the beginning of the storage".
     if storage_offset is None:
@@ -3800,8 +3759,8 @@ def aten_as_strided(
         # Build runtime indices when a SymInt is dynamic or a static index tensor
         # would exceed the optimizer's default folded-output size limit. The loop
         # is unrolled at trace time because rank is static, so no Loop/Scan is emitted.
-        zero = builder.constant(0, dtype=ir.DataType.INT64)
-        one = builder.constant(1, dtype=ir.DataType.INT64)
+        zero = op.constant(0, dtype=ir.DataType.INT64)
+        one = op.constant(1, dtype=ir.DataType.INT64)
         # `scalar_shape` reshapes a value to a 0-D scalar (shape []).
         scalar_shape = op.Constant(value=ir.tensor(np.array([], dtype=np.int64)))
         # Start the running index from storage_offset as an INT64 scalar; SymInt
@@ -3821,7 +3780,7 @@ def aten_as_strided(
             if unsqueeze_axes:
                 add_value = op.Unsqueeze(
                     add_value,
-                    builder.constant(unsqueeze_axes, dtype=ir.DataType.INT64),
+                    op.constant(unsqueeze_axes, dtype=ir.DataType.INT64),
                 )
             indices = op.Add(indices, add_value)
 
@@ -3838,7 +3797,6 @@ def aten_diagonal(
     dim2: int = 1,
 ) -> ir.Value:
     """diagonal(Tensor(a) self, int offset=0, int dim1=0, int dim2=1) -> Tensor(a)"""
-    builder = op.builder
 
     is_bool = self.dtype == ir.DataType.BOOL
 
@@ -3862,7 +3820,7 @@ def aten_diagonal(
     # This is because computing diagonal sum is on dim2 after transpose by perm
     axes = [self_rank - 2]
 
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     dim1_size = op.Reshape(
         op.Gather(op.Shape(self), dim1),
         neg_1,
@@ -3909,11 +3867,11 @@ def aten_diagonal(
     # 6       0           4       0
 
     # From above table, we can get the logic below
-    offset_val = builder.constant([offset], dtype=ir.DataType.INT64)
+    offset_val = op.constant([offset], dtype=ir.DataType.INT64)
     if offset < 0:
         # row + offset
         length = op.Add(dim1_size, offset_val)
-        start = builder.constant([0], dtype=ir.DataType.INT64)
+        start = op.constant([0], dtype=ir.DataType.INT64)
     else:  # offset >= 0
         # col - offset
         length = op.Sub(dim2_size, offset_val)
@@ -3922,7 +3880,7 @@ def aten_diagonal(
     # max(min(length, min(row, col)), 0)
     length = op.Max(
         op.Min(length, min_dim_size),
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
     )
     end = op.Add(start, length)
     result = op.Slice(result, start, end, axes)
@@ -3946,7 +3904,6 @@ def aten_index_put(
     See implementation of `torch.onnx.symbolic_opset11.index_put
     <https://github.com/pytorch/pytorch/blob/main/torch/onnx/symbolic_opset11.py#L212>`_.
     """
-    builder = op.builder
     if any(index is not None and index.dtype == ir.DataType.BOOL for index in indices):
         return _aten_index_put_bool(op, self, indices, values, accumulate)
 
@@ -4013,7 +3970,7 @@ def aten_index_put(
                 index_rank = len(common_ops.require_shape(op, index))
                 index_shape = op.Shape(index)
                 if index_rank < advanced_index_rank:
-                    padding = builder.constant(
+                    padding = op.constant(
                         [1 for _ in range(advanced_index_rank - index_rank)],
                         dtype=ir.DataType.INT64,
                     )
@@ -4042,14 +3999,14 @@ def aten_index_put(
     # advanced indices appear first, and then transpose the result back to original
     # order at the end.
 
-    none_indices_constant = builder.constant(none_indices, dtype=ir.DataType.INT64)
+    none_indices_constant = op.constant(none_indices, dtype=ir.DataType.INT64)
     none_indices_shape = op.Gather(self_shape, none_indices_constant, axis=0)
     target_shape = op.Concat(advanced_indices_shape, none_indices_shape, axis=0)
     target_rank = advanced_index_rank + num_none_indices
 
     # Generate indices tensor required by ONNX ScatterND by unsqueezing an extra dimension and
     # concatenating all advanced indices along this new dimension.
-    minus_one = builder.constant([-1], dtype=ir.DataType.INT64)
+    minus_one = op.constant([-1], dtype=ir.DataType.INT64)
     advanced_index_values = [
         op.Unsqueeze(indices[i], minus_one) for i in advanced_indices
     ]
@@ -4071,7 +4028,7 @@ def aten_index_put(
         # values may need to be transposed before expanding to target shape
         num_padded_dims = target_rank - len(common_ops.require_shape(op, values))
         if num_padded_dims > 0:
-            unsqueezed_dims = builder.constant(
+            unsqueezed_dims = op.constant(
                 list(range(num_padded_dims)), dtype=ir.DataType.INT64
             )
             values = op.Unsqueeze(values, unsqueezed_dims)
@@ -4115,7 +4072,6 @@ def _aten_index_put_bool(
     accumulate: bool = False,
 ) -> ir.Value:
     """index_put(Tensor self, Tensor?[] indices, Tensor values, bool accumulate=False) -> Tensor"""
-    builder = op.builder
 
     bool_mask = indices[0]
     if len(indices) > 1:
@@ -4125,7 +4081,7 @@ def _aten_index_put_bool(
             )
 
         selected_positions = []
-        minus_one = builder.constant([-1], dtype=ir.DataType.INT64)
+        minus_one = op.constant([-1], dtype=ir.DataType.INT64)
         for index in indices:
             if (
                 index is None
@@ -4169,7 +4125,7 @@ def _aten_index_put_bool(
             "Boolean index_put expects a boolean mask as the first index."
         )
 
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     self_rank = len(common_ops.require_shape(op, self))
     mask_rank = len(common_ops.require_shape(op, bool_mask))
 
@@ -4374,10 +4330,9 @@ def _aten_var_dim_onnx(
     correction: float,
     keepdim: bool = False,
 ) -> ir.Value:
-    builder = op.builder
     dims = op.Reshape(
         common_ops.merge_dims(op, dims),
-        builder.constant([-1], dtype=ir.DataType.INT64),
+        op.constant([-1], dtype=ir.DataType.INT64),
     )
     # Computer mean and var
     sub_mean = op.Sub(self, op.ReduceMean(self, dims, keepdims=True))
@@ -4477,10 +4432,9 @@ def _aten_var_mean_dim_onnx(
     correction: float,
     keepdim: bool = False,
 ) -> tuple[ir.Value, ir.Value]:
-    builder = op.builder
     dims = op.Reshape(
         common_ops.merge_dims(op, dims),
-        builder.constant([-1], dtype=ir.DataType.INT64),
+        op.constant([-1], dtype=ir.DataType.INT64),
     )
     # Computer mean and var
     mean = op.ReduceMean(self, dims, keepdims=keepdim)

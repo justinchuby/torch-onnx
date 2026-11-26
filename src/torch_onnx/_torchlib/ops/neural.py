@@ -323,42 +323,36 @@ def aten_gelu(
 
 def _aten_gelu_approximate_none(op: TranslationContext, self: ir.Value) -> ir.Value:
     """gelu(Tensor self, *, str approximate='none') -> Tensor"""
-    builder = op.builder
 
     # GELU(x) = 0.5 * x * [1 + ERF(x/sqrt(2)]
     inner = op.Div(
         self,
-        builder.constant(1.4142135623730951, dtype=common_ops.require_dtype(op, self)),
+        op.constant(1.4142135623730951, dtype=common_ops.require_dtype(op, self)),
     )
     erf = op.Erf(inner)
-    inner = op.Add(erf, builder.constant(1, dtype=common_ops.require_dtype(op, self)))
-    inner = op.Mul(
-        builder.constant(0.5, dtype=common_ops.require_dtype(op, self)), inner
-    )
+    inner = op.Add(erf, op.constant(1, dtype=common_ops.require_dtype(op, self)))
+    inner = op.Mul(op.constant(0.5, dtype=common_ops.require_dtype(op, self)), inner)
     result = op.Mul(self, inner)
     return result
 
 
 def _aten_gelu_approximate_tanh(op: TranslationContext, self: ir.Value) -> ir.Value:
     """gelu(Tensor self, *, str approximate='none') -> Tensor"""
-    builder = op.builder
 
     # GELU(x) = 0.5 * x * {1 + Tanh[\sqrt(2/pi) * (x + 0.044715 * x^3)]}
-    cubed = op.Pow(self, builder.constant(3, dtype=common_ops.require_dtype(op, self)))
+    cubed = op.Pow(self, op.constant(3, dtype=common_ops.require_dtype(op, self)))
     inner = op.Mul(
-        builder.constant(0.044715, dtype=common_ops.require_dtype(op, self)), cubed
+        op.constant(0.044715, dtype=common_ops.require_dtype(op, self)), cubed
     )
     inner = op.Add(self, inner)
     # math.sqrt(2.0/math.pi) = 0.7978845608028654
-    sqrt_two_over_pi = builder.constant(
+    sqrt_two_over_pi = op.constant(
         0.7978845608028654, dtype=common_ops.require_dtype(op, self)
     )
     inner = op.Mul(sqrt_two_over_pi, inner)
     inner = op.Tanh(inner)
-    inner = op.Add(inner, builder.constant(1, dtype=common_ops.require_dtype(op, self)))
-    inner = op.Mul(
-        builder.constant(0.5, dtype=common_ops.require_dtype(op, self)), inner
-    )
+    inner = op.Add(inner, op.constant(1, dtype=common_ops.require_dtype(op, self)))
+    inner = op.Mul(op.constant(0.5, dtype=common_ops.require_dtype(op, self)), inner)
     result = op.Mul(self, inner)
     return result
 
@@ -459,15 +453,14 @@ def _get_im2col_indices_along_dim(
 
 
 def _get_im2col_padded_input(op: TranslationContext, input, padding_h, padding_w):
-    builder = op.builder
     # Input is always 4-D tensor (N, C, H, W)
     # Padding tensor has the following format: (padding_h, padding_w)
     # Reshape the padding to follow ONNX format: (dim1_begin, dim2_begin,...,dim1_end, dim2_end,...)
     pad = op.Concat(
-        builder.constant([0, 0], dtype=ir.DataType.INT64),
+        op.constant([0, 0], dtype=ir.DataType.INT64),
         op.Unsqueeze(padding_h, [0]),
         op.Unsqueeze(padding_w, [0]),
-        builder.constant([0, 0], dtype=ir.DataType.INT64),
+        op.constant([0, 0], dtype=ir.DataType.INT64),
         op.Unsqueeze(padding_h, [0]),
         op.Unsqueeze(padding_w, [0]),
         axis=0,
@@ -476,7 +469,6 @@ def _get_im2col_padded_input(op: TranslationContext, input, padding_h, padding_w
 
 
 def _get_im2col_output_shape(op: TranslationContext, input, kernel_h, kernel_w):
-    builder = op.builder
     input_shape = op.Shape(input)
     batch_dim = op.Gather(input_shape, 0, axis=0)
     channel_dim = op.Gather(input_shape, 1, axis=0)
@@ -485,7 +477,7 @@ def _get_im2col_output_shape(op: TranslationContext, input, kernel_h, kernel_w):
     return op.Concat(
         op.Unsqueeze(batch_dim, [0]),
         op.Unsqueeze(channel_unfolded, [0]),
-        builder.constant([-1], dtype=ir.DataType.INT64),
+        op.constant([-1], dtype=ir.DataType.INT64),
         axis=0,
     )
 
@@ -929,7 +921,6 @@ def _aten_max_pool_with_indices_onnx(
     n_dims_zero: Sequence[int],
     n_dims_axes: Sequence[int],
 ) -> tuple[ir.Value, ir.Value]:
-    builder = op.builder
     padding, ceil_mode = _static_ceil_pool_padding(
         op, self, kernel_size, stride, padding, dilation, ceil_mode
     )
@@ -989,9 +980,9 @@ def _aten_max_pool_with_indices_onnx(
         outputs=2,
     )
 
-    ends = builder.constant(n_dims_one, dtype=ir.DataType.INT64)
-    starts = builder.constant(n_dims_zero, dtype=ir.DataType.INT64)
-    axes = builder.constant(n_dims_axes, dtype=ir.DataType.INT64)
+    ends = op.constant(n_dims_one, dtype=ir.DataType.INT64)
+    starts = op.constant(n_dims_zero, dtype=ir.DataType.INT64)
+    axes = op.constant(n_dims_axes, dtype=ir.DataType.INT64)
 
     delta = op.Slice(flatten_indices, starts, ends, axes)
     indices = op.Sub(indices, delta)
@@ -1104,7 +1095,6 @@ def _process_padding(
     op: TranslationContext, padding: Sequence[ir.Value | int], rank: int
 ) -> ir.Value:
     """Convert PyTorch padding for ONNX Pad."""
-    builder = op.builder
     if not isinstance(padding, list | tuple):
         raise ValueError(
             f"ONNX padding expects a list or tuple, got {type(padding).__name__}. "
@@ -1120,12 +1110,12 @@ def _process_padding(
         paddings = []
         for pad in padding:
             if isinstance(pad, int):
-                paddings.append(builder.constant([pad], dtype=ir.DataType.INT64))
+                paddings.append(op.constant([pad], dtype=ir.DataType.INT64))
             else:
                 # Dynamic value
                 paddings.append(op.Reshape(pad, [-1]))
         # Create a series of 1d zero tensors
-        zero = builder.constant([0], dtype=ir.DataType.INT64)
+        zero = op.constant([0], dtype=ir.DataType.INT64)
         zeros = [zero] * (rank * 2 - len(paddings))
         paddings = [*paddings, *zeros]
         # Interleave the padding values
@@ -1203,10 +1193,9 @@ def aten_relu(op: TranslationContext, self: ir.Value) -> ir.Value:
 @onnx_impl(aten.relu6.default)
 def aten_relu6(op: TranslationContext, self: ir.Value) -> ir.Value:
     """relu6(Tensor self) -> Tensor"""
-    builder = op.builder
 
-    zero = op.CastLike(builder.constant(0, dtype=ir.DataType.INT64), self)
-    six = op.CastLike(builder.constant(6, dtype=ir.DataType.INT64), self)
+    zero = op.CastLike(op.constant(0, dtype=ir.DataType.INT64), self)
+    six = op.CastLike(op.constant(6, dtype=ir.DataType.INT64), self)
     return op.Clip(self, zero, six)
 
 
@@ -1260,23 +1249,22 @@ def _causal_attention_mask(
     Returns:
         Tensor of shape [L, S]
     """
-    builder = op.builder
     q_shape = op.Shape(query)
     k_shape = op.Shape(key)
 
     target_length = op.Slice(
         q_shape,
-        builder.constant([-2], dtype=ir.DataType.INT64),
-        builder.constant([-1], dtype=ir.DataType.INT64),
+        op.constant([-2], dtype=ir.DataType.INT64),
+        op.constant([-1], dtype=ir.DataType.INT64),
     )
     source_length = op.Slice(
         k_shape,
-        builder.constant([-2], dtype=ir.DataType.INT64),
-        builder.constant([-1], dtype=ir.DataType.INT64),
+        op.constant([-2], dtype=ir.DataType.INT64),
+        op.constant([-1], dtype=ir.DataType.INT64),
     )
     # attn_mask = torch.ones(L, S) := {
     size = op.Concat(target_length, source_length, axis=0)
-    attn_mask = op.Expand(builder.constant(1.0, dtype=ir.DataType.FLOAT), size)
+    attn_mask = op.Expand(op.constant(1.0, dtype=ir.DataType.FLOAT), size)
     # }
     attn_mask = op.Trilu(attn_mask, upper=0)
     # The causal mask has 0s in the lower triangle and the lowest representable value
@@ -1286,7 +1274,7 @@ def _causal_attention_mask(
     # The constants are built in the query dtype directly rather than in float32 and
     # cast down, because casting float32's lowest value to float16 overflows to -inf.
     attn_mask = op.Where(
-        op.Equal(attn_mask, builder.constant(0.0, dtype=ir.DataType.FLOAT)),
+        op.Equal(attn_mask, op.constant(0.0, dtype=ir.DataType.FLOAT)),
         op.Constant(
             value=ir.tensor(
                 common_ops.require_dtype(op, query).min,
@@ -1420,7 +1408,6 @@ def aten__scaled_dot_product_flash_attention_for_cpu(
 
 
 def _attention(op: TranslationContext, query, key, value, attn_mask, scale, dropout_p):
-    builder = op.builder
     # Swap the last two axes of key.
     key_shape = op.Shape(key)
     key_last_dim = op.Slice(key_shape, [-1], [_INT64_MAX])
@@ -1444,7 +1431,7 @@ def _attention(op: TranslationContext, query, key, value, attn_mask, scale, drop
     )
     logits = op.MatMul(query_scaled, key_scaled)
     boolean_mask = attn_mask is not None and attn_mask.dtype == ir.DataType.BOOL
-    zero = builder.constant(0.0, dtype=query.dtype)
+    zero = op.constant(0.0, dtype=query.dtype)
     if attn_mask is not None:
         mask = attn_mask
         if boolean_mask:
@@ -1452,7 +1439,7 @@ def _attention(op: TranslationContext, query, key, value, attn_mask, scale, drop
             mask = op.Where(
                 mask,
                 zero,
-                builder.constant(query.dtype.min, dtype=query.dtype),
+                op.constant(query.dtype.min, dtype=query.dtype),
             )
         logits = op.Add(logits, mask)
     attn_weight = op.Softmax(logits, axis=-1)
@@ -1490,8 +1477,8 @@ def aten_softplus(
 ) -> ir.Value:
     """softplus(Tensor self, Scalar beta=1, Scalar threshold=20) -> Tensor"""
     dtype = common_ops.require_dtype(op, self)
-    beta_val = op.builder.constant(beta, dtype=dtype)
-    threshold_val = op.builder.constant(threshold, dtype=dtype)
+    beta_val = op.constant(beta, dtype=dtype)
+    threshold_val = op.constant(threshold, dtype=dtype)
     self_scaled = op.Mul(self, beta_val)
     softplus = op.Div(op.Softplus(self_scaled), beta_val)
     return op.Where(op.Greater(self_scaled, threshold_val), self, softplus)
@@ -1544,12 +1531,11 @@ def _aten_upsample_scales(
     cubic_coeff_a: float = -0.75,
     exclude_outside: int = 0,
 ) -> ir.Value:
-    builder = op.builder
     # For 2D the format is [1.0, 1.0, scale_h, scale_w]; include every spatial axis.
     return op.Resize(
         self,
         None,
-        builder.constant(
+        op.constant(
             [1.0] * (len(common_ops.require_shape(op, self)) - len(scale_factors))
             + list(scale_factors),
             dtype=ir.DataType.FLOAT,
@@ -1944,11 +1930,10 @@ def _aten__scaled_dot_product_flash_attention_fillin_empty_outputs(
     op: TranslationContext,
     query: ir.Value,
 ) -> tuple[ir.Value, ir.Value, ir.Value, ir.Value]:
-    builder = op.builder
     query_first_three_dims = op.Slice(
         op.Shape(query),
-        builder.constant([0], dtype=ir.DataType.INT64),
-        builder.constant([3], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
+        op.constant([3], dtype=ir.DataType.INT64),
     )
     logsumexp = op.Expand(0.0, query_first_three_dims)
     empty_tensor_int = op.ConstantOfShape(
@@ -1958,7 +1943,7 @@ def _aten__scaled_dot_product_flash_attention_fillin_empty_outputs(
     empty_tensor_float = op.ConstantOfShape(
         op.Constant(value=ir.tensor([], dtype=ir.DataType.INT64)),
     )
-    empty_int = builder.constant(0, dtype=ir.DataType.INT64)
+    empty_int = op.constant(0, dtype=ir.DataType.INT64)
 
     return logsumexp, empty_tensor_int, empty_int, empty_tensor_float
 
@@ -2024,13 +2009,12 @@ def _aten_scaled_dot_product_efficient_attention_fillin_empty_outputs(
     compute_log_sumexp: bool,
 ) -> tuple[ir.Value, ir.Value]:
     """_scaled_dot_product_efficient_attention(Tensor query, Tensor key, Tensor value, Tensor? attn_bias, bool compute_log_sumexp, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor log_sumexp, Tensor philox_seed, Tensor philox_offset)"""
-    builder = op.builder
 
     query = op.Transpose(query, perm=[0, 2, 1, 3])
     query_shape = op.Shape(query)
     query_first_dims = op.Slice(
         query_shape,
-        builder.constant([_INT64_MIN], dtype=ir.DataType.INT64),
+        op.constant([_INT64_MIN], dtype=ir.DataType.INT64),
         [1],
     )
     query_second_dims = op.Slice(query_shape, [1], [2])

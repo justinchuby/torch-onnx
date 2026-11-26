@@ -32,16 +32,15 @@ def aten__log_softmax(
     op: TranslationContext, self: ir.Value, dim: int, half_to_float: bool
 ) -> ir.Value:
     """_log_softmax(Tensor self, int dim, bool half_to_float) -> Tensor"""
-    builder = op.builder
 
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     if half_to_float and self.dtype in {ir.DataType.FLOAT16, ir.DataType.BFLOAT16}:
         self = op.Cast(self, to=ir.DataType.FLOAT)
     if self_is_scalar:
-        self = op.Unsqueeze(self, builder.constant([0], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([0], dtype=ir.DataType.INT64))
     result = op.LogSoftmax(self, axis=dim)
     if self_is_scalar:
-        result = op.Squeeze(result, builder.constant([0], dtype=ir.DataType.INT64))
+        result = op.Squeeze(result, op.constant([0], dtype=ir.DataType.INT64))
     return result
 
 
@@ -50,7 +49,6 @@ def aten__softmax(
     op: TranslationContext, self: ir.Value, dim: int, half_to_float: bool
 ) -> ir.Value:
     """_softmax(Tensor self, int dim, bool half_to_float) -> Tensor"""
-    builder = op.builder
 
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
 
@@ -58,7 +56,7 @@ def aten__softmax(
         self = op.Cast(self, to=ir.DataType.FLOAT)
 
     if self_is_scalar:
-        self = op.Unsqueeze(self, builder.constant([0], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([0], dtype=ir.DataType.INT64))
     result = op.Softmax(self, axis=dim)
     if self_is_scalar:
         # Convert to scalar when input is scalar
@@ -81,8 +79,8 @@ def aten_allclose(
     # FIXME: check equal_nan when self and other are all NaN
     # |input - other| <= atol + rtol x |other|
     dtype = common_ops.require_dtype(op, other)
-    atol_val = op.builder.constant(atol, dtype=dtype)
-    rtol_val = op.builder.constant(rtol, dtype=dtype)
+    atol_val = op.constant(atol, dtype=dtype)
+    rtol_val = op.constant(rtol, dtype=dtype)
     left_part = op.Abs(op.Sub(self, other))
     right_part = op.Add(atol_val, op.Mul(rtol_val, op.Abs(other)))
     is_close = op.LessOrEqual(left_part, right_part)
@@ -105,7 +103,6 @@ def aten_bilinear(
     bias: ir.Value | None = None,
 ) -> ir.Value:
     """bilinear(Tensor input1, Tensor input2, Tensor weight, Tensor? bias=None) -> Tensor"""
-    builder = op.builder
 
     # Bilinear transformation: y = x1^T A x2 + b
     # input1 shape: (..., in1_features)
@@ -120,7 +117,7 @@ def aten_bilinear(
     input1_shape = op.Shape(input1, start=-1)
     input2_shape = op.Shape(input2, start=-1)
     output_shape = op.Shape(weight, start=0, end=1)
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
 
     # (out_features, in1_features, in2_features) -> (in1_features, out_features, in2_features)
     W_permute = op.Transpose(weight, perm=[1, 0, 2])
@@ -170,17 +167,16 @@ def aten_bincount(
     ``weights`` is not supported. Negative inputs are rejected by torch and are not
     handled here (ONNX integer ops would wrap them around).
     """
-    builder = op.builder
     if weights is not None:
         raise NotImplementedError("aten::bincount with weights is not supported.")
 
     self = op.Cast(self, to=ir.DataType.INT64)
-    axis_0 = builder.constant([0], dtype=ir.DataType.INT64)
+    axis_0 = op.constant([0], dtype=ir.DataType.INT64)
     # Append a 0 so ReduceMax is defined even when ``self`` is empty. It only sizes the
     # output and never contributes to the counts (the scatter below uses ``self``).
     data_max = op.Unsqueeze(
         op.ReduceMax(
-            op.Concat(self, builder.constant([0], dtype=ir.DataType.INT64), axis=0),
+            op.Concat(self, op.constant([0], dtype=ir.DataType.INT64), axis=0),
             keepdims=0,
         ),
         axis_0,
@@ -190,25 +186,25 @@ def aten_bincount(
         op.Cast(
             op.Greater(
                 op.Size(self),
-                builder.constant(0, dtype=ir.DataType.INT64),
+                op.constant(0, dtype=ir.DataType.INT64),
             ),
             to=ir.DataType.INT64,
         ),
         axis_0,
     )
     depth = op.Mul(
-        op.Add(data_max, builder.constant([1], dtype=ir.DataType.INT64)),
+        op.Add(data_max, op.constant([1], dtype=ir.DataType.INT64)),
         non_empty,
     )
     if minlength > 0:
-        depth = op.Max(depth, builder.constant([minlength], dtype=ir.DataType.INT64))
+        depth = op.Max(depth, op.constant([minlength], dtype=ir.DataType.INT64))
 
     # Scatter-add 1 for each value into a zero vector of length ``depth``. This uses
     # O(N + depth) memory instead of the dense O(N * depth) one-hot, and behaves
     # correctly for empty inputs.
-    zeros = op.Expand(builder.constant(0, dtype=ir.DataType.INT64), depth)
+    zeros = op.Expand(op.constant(0, dtype=ir.DataType.INT64), depth)
     ones = op.Expand(
-        builder.constant(1, dtype=ir.DataType.INT64),
+        op.constant(1, dtype=ir.DataType.INT64),
         op.Shape(self),
     )
     return op.ScatterElements(zeros, self, ones, axis=0, reduction="add")
@@ -289,7 +285,7 @@ def aten_cdist_forward(
     difference = op.Abs(op.Sub(op.Unsqueeze(x1, [-2]), op.Unsqueeze(x2, [-3])))
     dtype = common_ops.require_dtype(op, x1)
     if p == 0:
-        zero = op.builder.constant(0, dtype=dtype)
+        zero = op.constant(0, dtype=dtype)
         return op.ReduceSum(
             op.CastLike(op.Not(op.Equal(difference, zero)), difference),
             [-1],
@@ -298,8 +294,8 @@ def aten_cdist_forward(
     if p == float("inf"):
         maxima = op.ReduceMax(difference, [-1], keepdims=False)
         return op.Max(maxima, op.CastLike(0, maxima))
-    p_val = op.builder.constant(p, dtype=dtype)
-    inv_p = op.builder.constant(1.0 / p, dtype=dtype)
+    p_val = op.constant(p, dtype=dtype)
+    inv_p = op.constant(1.0 / p, dtype=dtype)
     return op.Pow(op.ReduceSum(op.Pow(difference, p_val), [-1], keepdims=False), inv_p)
 
 
@@ -325,13 +321,12 @@ def aten_dropout(
     op: TranslationContext, input: ir.Value, p: float | ir.Value, train: bool | ir.Value
 ) -> ir.Value:
     """dropout(Tensor input, float p, bool train) -> Tensor"""
-    builder = op.builder
     # ONNX Dropout requires ratio < 1; PyTorch also supports dropping every element.
     if isinstance(p, int | float) and p == 1 and train is True:
         return op.Mul(input, op.CastLike(0, input))
 
     if input.shape is not None and len(input.shape) == 0:
-        input = op.Reshape(input, builder.constant([-1], dtype=ir.DataType.INT64))
+        input = op.Reshape(input, op.constant([-1], dtype=ir.DataType.INT64))
         result, _ = op.Dropout(input, p, train, outputs=2)
         result = op.Squeeze(result)
     else:
@@ -520,7 +515,6 @@ def aten_grouped_mm(
     out_dtype: int = -1,
 ) -> ir.Value:
     """_grouped_mm(Tensor self, Tensor mat2, *, Tensor? offs=None, Tensor? bias=None, int? out_dtype=None) -> Tensor"""
-    builder = op.builder
 
     if offs is not None:
         if self.shape is None or mat2.shape is None:
@@ -560,7 +554,7 @@ def aten_grouped_mm(
             )
             if a_is_2d and b_is_2d:
                 output_shape = op.Concat(
-                    builder.constant([0], dtype=ir.DataType.INT64),
+                    op.constant([0], dtype=ir.DataType.INT64),
                     output_shape,
                     axis=0,
                 )
@@ -568,7 +562,7 @@ def aten_grouped_mm(
 
         # Only the group count is static. Boundaries remain values in the graph.
         ends = op.Cast(offs, to=ir.DataType.INT64)
-        start = builder.constant([0], dtype=ir.DataType.INT64)
+        start = op.constant([0], dtype=ir.DataType.INT64)
         outputs = []
         for i in range(groups):
             end = op.Gather(ends, [i], axis=0)
@@ -600,7 +594,7 @@ def aten_grouped_mm(
             else op.Shape(mat2, start=1, end=2)
         )
         pads = op.Concat(
-            builder.constant([0], dtype=ir.DataType.INT64),
+            op.constant([0], dtype=ir.DataType.INT64),
             op.Sub(length, start),
             axis=0,
         )
@@ -768,11 +762,10 @@ def aten_native_dropout(
     op: TranslationContext, input: ir.Value, p: float, train: bool = True
 ) -> tuple[ir.Value, ir.Value]:
     """native_dropout(Tensor input, float p, bool? train) -> (Tensor, Tensor)"""
-    builder = op.builder
     if p == 1 and train is True:
         result = aten_dropout(op, input, p, train)
         mask = op.Expand(
-            builder.constant(False, dtype=ir.DataType.BOOL),
+            op.constant(False, dtype=ir.DataType.BOOL),
             op.Shape(input),
         )
         return result, mask
@@ -786,7 +779,6 @@ def aten_pixel_shuffle(
     op: TranslationContext, self: ir.Value, upscale_factor: int
 ) -> ir.Value:
     """pixel_shuffle(Tensor self, int upscale_factor) -> Tensor"""
-    builder = op.builder
     if len(common_ops.require_shape(op, self)) == 4:
         return op.DepthToSpace(self, blocksize=upscale_factor, mode="CRD")
 
@@ -797,7 +789,7 @@ def aten_pixel_shuffle(
     reshaped_self = op.Reshape(
         self,
         op.Concat(
-            builder.constant([-1], dtype=ir.DataType.INT64),
+            op.constant([-1], dtype=ir.DataType.INT64),
             chw_in_dims,
             axis=0,
         ),
@@ -815,7 +807,6 @@ def aten_pixel_unshuffle(
     op: TranslationContext, self: ir.Value, downscale_factor: int
 ) -> ir.Value:
     """pixel_unshuffle(Tensor self, int downscale_factor) -> Tensor"""
-    builder = op.builder
     # pixel_unshuffle is the inverse of pixel_shuffle (which uses DepthToSpace with mode="CRD").
     # SpaceToDepth only supports DCR channel ordering, so we implement via Reshape->Transpose->Reshape
     # to get the correct CRD ordering.
@@ -827,13 +818,13 @@ def aten_pixel_unshuffle(
     self_4d = op.Reshape(
         self,
         op.Concat(
-            builder.constant([-1], dtype=ir.DataType.INT64),
+            op.constant([-1], dtype=ir.DataType.INT64),
             chw_in_dims,
             axis=0,
         ),
     )
 
-    r = builder.constant([downscale_factor], dtype=ir.DataType.INT64)
+    r = op.constant([downscale_factor], dtype=ir.DataType.INT64)
     c = op.Shape(self_4d, start=1, end=2)
     h_r = op.Shape(self_4d, start=2, end=3)
     w_r = op.Shape(self_4d, start=3, end=4)
@@ -842,7 +833,7 @@ def aten_pixel_unshuffle(
 
     # Step 1: Reshape to [batch, C, H, r, W, r]
     shape_6d = op.Concat(
-        builder.constant([-1], dtype=ir.DataType.INT64), c, h, r, w, r, axis=0
+        op.constant([-1], dtype=ir.DataType.INT64), c, h, r, w, r, axis=0
     )
     tmp = op.Reshape(self_4d, shape_6d)
 
@@ -852,7 +843,7 @@ def aten_pixel_unshuffle(
     # Step 3: Reshape to [batch, C*r*r, H, W]
     c_out = op.Mul(c, op.Mul(r, r))
     shape_4d_out = op.Concat(
-        builder.constant([-1], dtype=ir.DataType.INT64), c_out, h, w, axis=0
+        op.constant([-1], dtype=ir.DataType.INT64), c_out, h, w, axis=0
     )
     pixel_unshuffled = op.Reshape(tmp, shape_4d_out)
 
@@ -1012,11 +1003,10 @@ def aten_softmax(
     op: TranslationContext, self: ir.Value, dim: int, dtype: int = -1
 ) -> ir.Value:
     """softmax(Tensor self, int dim, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
 
     self_is_scalar = len(common_ops.require_shape(op, self)) == 0
     if self_is_scalar:
-        self = op.Unsqueeze(self, builder.constant([0], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([0], dtype=ir.DataType.INT64))
     result = op.Softmax(self, axis=dim)
     if dtype != -1 and dtype is not None:
         result = op.Cast(result, to=dtype)
@@ -1057,10 +1047,10 @@ def aten_stft(
     is_signal_rank1 = len(common_ops.require_shape(op, self)) == 1
     if is_signal_rank1:
         # [signal_length] -> [1, signal_length, 1]: add batch dim and trailing real-component dim
-        self = op.Unsqueeze(self, builder.constant([0, -1], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([0, -1], dtype=ir.DataType.INT64))
     else:
         # [batch_size, signal_length] -> [batch_size, signal_length, 1]
-        self = op.Unsqueeze(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Unsqueeze(self, op.constant([-1], dtype=ir.DataType.INT64))
 
     # Get window and make sure it's the same size as `win_length` or `n_fft`
     if window is not None:
@@ -1074,17 +1064,15 @@ def aten_stft(
         then_op = TranslationContext(builder)
         left = then_op.Div(
             then_op.Sub(n_fft, n_win),
-            builder.constant([2], dtype=ir.DataType.INT64),
+            op.constant([2], dtype=ir.DataType.INT64),
         )
 
         right = then_op.Sub(then_op.Sub(n_fft, left), n_win)
-        left = then_op.Reshape(left, builder.constant([1], dtype=ir.DataType.INT64))
-        right = then_op.Reshape(right, builder.constant([1], dtype=ir.DataType.INT64))
+        left = then_op.Reshape(left, op.constant([1], dtype=ir.DataType.INT64))
+        right = then_op.Reshape(right, op.constant([1], dtype=ir.DataType.INT64))
 
-        left_win = then_op.Expand(builder.constant([0], dtype=ir.DataType.INT64), left)
-        right_win = then_op.Expand(
-            builder.constant([0], dtype=ir.DataType.INT64), right
-        )
+        left_win = then_op.Expand(op.constant([0], dtype=ir.DataType.INT64), left)
+        right_win = then_op.Expand(op.constant([0], dtype=ir.DataType.INT64), right)
         right_win = then_op.CastLike(right_win, window)
         left_win = then_op.CastLike(left_win, window)
         padded_window = then_op.Concat(left_win, window, right_win, axis=0)
@@ -1115,7 +1103,7 @@ def aten_stft(
     result = op.Transpose(result, perm=[0, 2, 1, 3])
     # Remove batch dimension, if needed
     if is_signal_rank1:
-        result = op.Squeeze(result, builder.constant([0], dtype=ir.DataType.INT64))
+        result = op.Squeeze(result, op.constant([0], dtype=ir.DataType.INT64))
 
     # Normalize, if needed
     if normalized:
@@ -1147,7 +1135,6 @@ def aten_unique_consecutive(
     dim: int | None = None,
 ) -> tuple[ir.Value, ir.Value, ir.Value]:
     """unique_consecutive(Tensor self, bool return_inverse=False, bool return_counts=False, int? dim=None) -> (Tensor, Tensor, Tensor)"""
-    builder = op.builder
     if x.dtype not in {ir.DataType.INT64, ir.DataType.INT32}:
         raise ValueError(
             "unique_consecutive not implemented for other type than int32, int64"
@@ -1174,15 +1161,15 @@ def aten_unique_consecutive(
     tail = op.Slice(x, [1], op.Shape(x))
     eq = op.Equal(tail, lag)
     first = op.Expand(
-        builder.constant([True], dtype=ir.DataType.BOOL),
+        op.constant([True], dtype=ir.DataType.BOOL),
         op.Min(op.Shape(x), [1]),
     )
     diff = op.Concat(first, op.Not(eq), axis=0)
     res = op.Compress(x, diff, axis=0)
 
-    zero_no_dim = builder.constant(0, dtype=ir.DataType.INT64)
-    one_no_dim = builder.constant(1, dtype=ir.DataType.INT64)
-    one = builder.constant([1], dtype=ir.DataType.INT64)
+    zero_no_dim = op.constant(0, dtype=ir.DataType.INT64)
+    one_no_dim = op.constant(1, dtype=ir.DataType.INT64)
+    one = op.constant([1], dtype=ir.DataType.INT64)
 
     inverse = op.Sub(
         op.CumSum(op.Cast(diff, to=ir.DataType.INT64), 0),
@@ -1203,9 +1190,9 @@ def aten_unique_consecutive(
     if return_inverse:
         inverse = op.Reshape(inverse, op.Shape(self_input), allowzero=True)
     else:
-        inverse = builder.constant([], dtype=ir.DataType.INT64)
+        inverse = op.constant([], dtype=ir.DataType.INT64)
     if not return_counts:
-        counts = builder.constant([], dtype=ir.DataType.INT64)
+        counts = op.constant([], dtype=ir.DataType.INT64)
     return res, inverse, counts
 
 
@@ -1298,7 +1285,6 @@ def aten_unique_dim(
     return_counts: bool = False,
 ) -> tuple[ir.Value, ir.Value, ir.Value]:
     """unique_dim(Tensor self, int dim, bool sorted=True, bool return_inverse=False, bool return_counts=False) -> (Tensor, Tensor, Tensor)"""
-    builder = op.builder
 
     unique_values, _, inverse_indices, counts = op.Unique(
         self, axis=dim, sorted=True, outputs=4
@@ -1307,7 +1293,7 @@ def aten_unique_dim(
     # Normalize dim to be non-negative
     input_ndim = op.Max(
         op.Size(input_size),
-        builder.constant([1], dtype=ir.DataType.INT64),
+        op.constant([1], dtype=ir.DataType.INT64),
     )
     dim = op.Mod(dim, input_ndim)
     if return_inverse:
@@ -1315,7 +1301,7 @@ def aten_unique_dim(
             inverse_indices,
             op.Reshape(
                 op.Slice(input_size, dim, op.Add(dim, 1)),
-                builder.constant([-1], dtype=ir.DataType.INT64),
+                op.constant([-1], dtype=ir.DataType.INT64),
             ),
         )
     else:
@@ -1396,7 +1382,6 @@ def _aten_fake_quantize_per_tensor_affine(
 def _aten_roll_shift_no_dim_onnx(
     op: TranslationContext, self: ir.Value, shift: int
 ) -> ir.Value:
-    builder = op.builder
     # Source implementation context (the native divisor is guarded below):
     # The element count is the divisor of the Mod below, and Mod by zero is undefined in
     # ONNX. Both callers return a tensor with no elements unchanged before reaching here.
@@ -1409,19 +1394,19 @@ def _aten_roll_shift_no_dim_onnx(
             "the element count must not be zero because Mod by zero is undefined"
         )
 
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     # flatten the self tensor: from [[A,B],[C,D]] to [A,B,C,D]
     self_flatten = op.Reshape(self, neg_1)
     total_length = op.Shape(self_flatten)
-    divisor = op.Max(total_length, builder.constant([1], dtype=ir.DataType.INT64))
+    divisor = op.Max(total_length, op.constant([1], dtype=ir.DataType.INT64))
     # Compute slice length. roll is circular, so the shift is taken modulo the number
     # of elements. For [A,B,C,D], if shift is 1, slice_length = 3, means move [A,B,C]
     # to the end. The effect equals to move [D] to the beginning.
-    slice_length = op.Mod(builder.constant([-shift], dtype=ir.DataType.INT64), divisor)
+    slice_length = op.Mod(op.constant([-shift], dtype=ir.DataType.INT64), divisor)
     # Get second part of the tensor, e.g. [A,B,C]
     suffix = op.Slice(
         self_flatten,
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
         slice_length,
     )
     # Get first part of the tensor, e.g. [D]
@@ -1436,7 +1421,6 @@ def _aten_roll_shift_no_dim_onnx(
 def _aten_roll_shift_and_dim_onnx(
     op: TranslationContext, self: ir.Value, shift: int, dim: int
 ) -> ir.Value:
-    builder = op.builder
     # Source implementation context (the native divisor is guarded below):
     # dim must already be normalized to a nonnegative axis, because Shape below
     # reads an empty range when start is negative and end is zero.
@@ -1450,15 +1434,15 @@ def _aten_roll_shift_and_dim_onnx(
             "the dimension length must not be zero because Mod by zero is undefined"
         )
 
-    dim_tensor = builder.constant([dim], dtype=ir.DataType.INT64)
+    dim_tensor = op.constant([dim], dtype=ir.DataType.INT64)
     dim_length = op.Shape(self, start=dim, end=dim + 1)
-    divisor = op.Max(dim_length, builder.constant([1], dtype=ir.DataType.INT64))
+    divisor = op.Max(dim_length, op.constant([1], dtype=ir.DataType.INT64))
     # roll is circular, so the shift is taken modulo the length of the dimension
-    slice_length = op.Mod(builder.constant([-shift], dtype=ir.DataType.INT64), divisor)
+    slice_length = op.Mod(op.constant([-shift], dtype=ir.DataType.INT64), divisor)
     # from [A,B,C,D] -> [D,A,B,C], [D] is prefix, [A,B,C] is suffix
     suffix = op.Slice(
         self,
-        builder.constant([0], dtype=ir.DataType.INT64),
+        op.constant([0], dtype=ir.DataType.INT64),
         slice_length,
         dim_tensor,
     )
@@ -1470,35 +1454,32 @@ def _aten_roll_shift_and_dim_onnx(
 def _create_window_from_win_length(
     op: TranslationContext, win_length: int, n_fft: int
 ) -> ir.Value:
-    builder = op.builder
     left = op.Div(
         op.Sub(n_fft, win_length),
-        builder.constant([2], dtype=ir.DataType.INT64),
+        op.constant([2], dtype=ir.DataType.INT64),
     )
 
     right = op.Sub(op.Sub(n_fft, left), win_length)
-    left = op.Reshape(left, builder.constant([1], dtype=ir.DataType.INT64))
-    right = op.Reshape(right, builder.constant([1], dtype=ir.DataType.INT64))
-    win_length = op.Reshape(win_length, builder.constant([1], dtype=ir.DataType.INT64))
+    left = op.Reshape(left, op.constant([1], dtype=ir.DataType.INT64))
+    right = op.Reshape(right, op.constant([1], dtype=ir.DataType.INT64))
+    win_length = op.Reshape(win_length, op.constant([1], dtype=ir.DataType.INT64))
 
-    left_win = op.Expand(builder.constant([0], dtype=ir.DataType.INT64), left)
-    right_win = op.Expand(builder.constant([0], dtype=ir.DataType.INT64), right)
-    window_list = op.Expand(builder.constant([1], dtype=ir.DataType.INT64), win_length)
+    left_win = op.Expand(op.constant([0], dtype=ir.DataType.INT64), left)
+    right_win = op.Expand(op.constant([0], dtype=ir.DataType.INT64), right)
+    window_list = op.Expand(op.constant([1], dtype=ir.DataType.INT64), win_length)
     return op.Concat(left_win, window_list, right_win, axis=0)
 
 
 def _create_window_from_n_fft(op: TranslationContext, n_fft: int) -> ir.Value:
-    builder = op.builder
-    n_fft_tensor = op.Reshape(n_fft, builder.constant([1], dtype=ir.DataType.INT64))
-    window = op.Expand(builder.constant([1], dtype=ir.DataType.INT64), n_fft_tensor)
+    n_fft_tensor = op.Reshape(n_fft, op.constant([1], dtype=ir.DataType.INT64))
+    window = op.Expand(op.constant([1], dtype=ir.DataType.INT64), n_fft_tensor)
     return window
 
 
 def _normalize_fft_result(
     op: TranslationContext, signal: ir.Value, result: ir.Value, n_fft: int
 ) -> ir.Value:
-    builder = op.builder
-    n_fft_tensor = op.Reshape(n_fft, builder.constant([1], dtype=ir.DataType.INT64))
+    n_fft_tensor = op.Reshape(n_fft, op.constant([1], dtype=ir.DataType.INT64))
     sqrt_nfft = op.Sqrt(op.CastLike(n_fft_tensor, signal))
     result = op.Div(result, sqrt_nfft)
     return result

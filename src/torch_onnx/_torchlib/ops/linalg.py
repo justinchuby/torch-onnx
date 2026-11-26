@@ -130,10 +130,9 @@ def aten_addbmm(
 
     `batch1` and `batch2` must be 3-D tensors each containing the same number of matrices.
     """
-    builder = op.builder
 
-    axes = builder.constant([0], dtype=ir.DataType.INT64)
-    alpha_val = builder.constant(alpha, dtype=common_ops.require_dtype(op, batch1))
+    axes = op.constant([0], dtype=ir.DataType.INT64)
+    alpha_val = op.constant(alpha, dtype=common_ops.require_dtype(op, batch1))
     reduced_batches = op.ReduceSum(op.MatMul(batch1, batch2), axes, keepdims=False)
     if beta == 0:
         return op.Mul(reduced_batches, alpha_val)
@@ -164,7 +163,7 @@ def aten_baddbmm(
     else:
         mul_b = op.Mul(self, op.CastLike(beta, self))
         if isinstance(beta, ir.Value):
-            zero = op.builder.constant(0, dtype=common_ops.require_dtype(op, self))
+            zero = op.constant(0, dtype=common_ops.require_dtype(op, self))
             mul_b = op.Where(op.Equal(beta, 0), zero, mul_b)
     return op.Add(mul_a, mul_b)
 
@@ -179,7 +178,7 @@ def aten_addmv(
     alpha: float = 1.0,
 ) -> ir.Value:
     """addmv(Tensor self, Tensor mat, Tensor vec, *, Scalar beta=1, Scalar alpha=1) -> Tensor"""
-    alpha_val = op.builder.constant(alpha, dtype=common_ops.require_dtype(op, mat))
+    alpha_val = op.constant(alpha, dtype=common_ops.require_dtype(op, mat))
     product = op.Mul(op.MatMul(mat, vec), alpha_val)
     if beta == 0:
         return product
@@ -200,9 +199,8 @@ def aten_addr(
     Performs the outer-product of vectors vec1 and vec2 and adds it to the matrix input.
     """
     self, vec1, vec2 = _promotion.promote(op, self, vec1, vec2)
-    builder = op.builder
-    vec1_shape = builder.constant([-1, 1], dtype=ir.DataType.INT64)
-    vec2_shape = builder.constant([1, -1], dtype=ir.DataType.INT64)
+    vec1_shape = op.constant([-1, 1], dtype=ir.DataType.INT64)
+    vec2_shape = op.constant([1, -1], dtype=ir.DataType.INT64)
     vec1_reshaped = op.Reshape(vec1, vec1_shape)
     vec2_reshaped = op.Reshape(vec2, vec2_shape)
 
@@ -316,7 +314,6 @@ def aten_linalg_vector_norm(
     dtype: int = -1,
 ) -> ir.Value:
     """linalg_vector_norm(Tensor self, Scalar ord=2, int[1]? dim=None, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor"""
-    builder = op.builder
 
     if dtype != -1 and dtype is not None:
         self = op.Cast(self, to=dtype)
@@ -324,12 +321,12 @@ def aten_linalg_vector_norm(
     else:
         elem_dtype = common_ops.require_dtype(op, self)
     if dim is None:
-        self = op.Reshape(self, builder.constant([-1], dtype=ir.DataType.INT64))
+        self = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
         keepdim = False
     else:
         if not isinstance(dim, ir.Value):
-            dim = builder.constant(dim, dtype=ir.DataType.INT64)
-        dim = op.Reshape(dim, builder.constant([-1], dtype=ir.DataType.INT64))
+            dim = op.constant(dim, dtype=ir.DataType.INT64)
+        dim = op.Reshape(dim, op.constant([-1], dtype=ir.DataType.INT64))
 
     if math.isinf(ord):
         self = op.Abs(self)
@@ -346,8 +343,8 @@ def aten_linalg_vector_norm(
     elif ord == 2.0:
         return op.ReduceL2(self, dim, keepdims=keepdim)
     else:
-        ord_val = op.builder.constant(ord, dtype=elem_dtype)
-        exp = op.builder.constant(1 / ord, dtype=elem_dtype)
+        ord_val = op.constant(ord, dtype=elem_dtype)
+        exp = op.constant(1 / ord, dtype=elem_dtype)
         if ord < 0 or ord % 2 != 0:
             # Not an even integer (could be odd, fractional or negative), use Abs
             self = op.Abs(self)

@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
   "torch>=2.15,<2.16",
   "onnx-ir>=1.1.0",
+  "onnx-shape-inference>=0.4.3",
   "onnxscript>=0.7.2",
   "onnx>=1.23.2",
   "typing-extensions",

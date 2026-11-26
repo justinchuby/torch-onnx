@@ -37,7 +37,6 @@ def aten_embedding_renorm(
     norm_type: float = 2.0,
 ) -> ir.Value:
     """embedding_renorm(Tensor weight, Tensor indices, float max_norm, float norm_type) -> Tensor"""
-    builder = op.builder
 
     unique_indices, _, _, _ = op.Unique(indices, outputs=4)
     partial_weight = op.Gather(weight, unique_indices)
@@ -53,15 +52,15 @@ def aten_embedding_renorm(
         partial_weight_abs = op.Abs(partial_weight)
         partial_weight_pow = op.Pow(
             partial_weight_abs,
-            builder.constant(norm_type, dtype=ir.DataType.FLOAT),
+            op.constant(norm_type, dtype=ir.DataType.FLOAT),
         )
         partial_weight_norm = op.ReduceSum(partial_weight_pow, [1], keepdims=True)
         pow_value = op.CastLike(1.0 / norm_type, weight)
         partial_weight_norm = op.Pow(partial_weight_norm, pow_value)
 
-    max_norm = op.CastLike(builder.constant(max_norm, dtype=ir.DataType.FLOAT), weight)
+    max_norm = op.CastLike(op.constant(max_norm, dtype=ir.DataType.FLOAT), weight)
     # This is to avoid weight is zero
-    err = op.CastLike(builder.constant(1e-7, dtype=ir.DataType.FLOAT), weight)
+    err = op.CastLike(op.constant(1e-7, dtype=ir.DataType.FLOAT), weight)
     partial_weight_norm_ = op.Add(partial_weight_norm, err)
     scales = op.Div(max_norm, partial_weight_norm_)
     partial_weight_renorm = op.Mul(partial_weight, scales)
@@ -142,7 +141,7 @@ def aten_embedding_bag_padding_idx(
     # assert(rank(indices) in [1,2])
     # assert(rank(offsets) == 1)
     # assert(op.Size(per_sample_weights) == op.Size(indices))
-    neg_1 = builder.constant([-1], dtype=ir.DataType.INT64)
+    neg_1 = op.constant([-1], dtype=ir.DataType.INT64)
     # Assume indices is shape(5,2), indices_1d is shape(10,)
     indices_1d = op.Reshape(indices, neg_1)
     indices_size = op.Shape(indices_1d)
@@ -300,7 +299,7 @@ def aten_embedding_bag_padding_idx(
         "Loop",
         [
             num_bag,
-            builder.constant(True, dtype=ir.DataType.BOOL),
+            op.constant(True, dtype=ir.DataType.BOOL),
             result,
             sizes,
             maxima,
@@ -310,7 +309,7 @@ def aten_embedding_bag_padding_idx(
     )
     # Seed sequences after the loop so zero bags have a well-defined empty concatenation.
     empty_shape = op.Concat([0], weight_dim_1, axis=0)
-    empty_row = op.Expand(builder.constant([0.0], dtype=ir.DataType.FLOAT), empty_shape)
+    empty_row = op.Expand(op.constant([0.0], dtype=ir.DataType.FLOAT), empty_shape)
     result = op.SequenceInsert(result, empty_row, output_types=[float_sequence])
     result = op.ConcatFromSequence(
         result,
@@ -320,7 +319,7 @@ def aten_embedding_bag_padding_idx(
     result = op.CastLike(result, weight)
     sizes = op.SequenceInsert(
         sizes,
-        builder.constant([], dtype=ir.DataType.INT64),
+        op.constant([], dtype=ir.DataType.INT64),
         output_types=[int_sequence],
     )
     bag_size = op.ConcatFromSequence(
@@ -330,7 +329,7 @@ def aten_embedding_bag_padding_idx(
     )
     maxima = op.SequenceInsert(
         maxima,
-        op.Expand(builder.constant([0], dtype=ir.DataType.INT64), empty_shape),
+        op.Expand(op.constant([0], dtype=ir.DataType.INT64), empty_shape),
         output_types=[int_sequence],
     )
     max_indices = op.ConcatFromSequence(
@@ -341,7 +340,7 @@ def aten_embedding_bag_padding_idx(
     # Only compute the shape of other 3 outputs, we don't care the value
     # The native path also supplies the auxiliary values for consumers that use them.
     if mode == 0 and padding_idx is None:
-        offset2bag = builder.constant([], dtype=ir.DataType.INT64)
+        offset2bag = op.constant([], dtype=ir.DataType.INT64)
     else:
         indices_length = op.Gather(op.Shape(indices), 0)
         positions = op.Range(0, indices_length, 1)
@@ -360,7 +359,7 @@ def aten_embedding_bag_padding_idx(
         )
     if mode == 0:  # sum
         bag_size = op.Expand(
-            builder.constant(0, dtype=ir.DataType.INT64),
+            op.constant(0, dtype=ir.DataType.INT64),
             op.Shape(offsets),
         )
         if not include_last_offset:

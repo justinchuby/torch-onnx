@@ -45,6 +45,23 @@ def test_version_one_json_keeps_legacy_observation_contract():
     )
 
 
+@pytest.mark.parametrize(
+    "dtypes,expected_count", [(("float32", "int64"), 2), (("int64", "float32"), 0)]
+)
+def test_version_one_mixed_input_probe_arity_is_preserved(dtypes, expected_count):
+    raw = {
+        "version": 1,
+        "seed": 0,
+        "nodes": [],
+        "inputs": [
+            {"dtype": dtype, "shape": [2], "layout": "contiguous", "values": [-1, 1]}
+            for dtype in dtypes
+        ],
+    }
+    case = fuzzer.Case.from_json(json.dumps(raw))
+    assert len(fuzzer.GraphModule(case)(*fuzzer.materialize(case))) == expected_count
+
+
 def test_final_output_mode_does_not_expose_intermediate_or_input_probes():
     case = fuzzer.generate_case(1, output_mode="final")
     assert not case.input_probes

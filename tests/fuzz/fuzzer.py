@@ -269,11 +269,17 @@ class GraphModule(torch.nn.Module):
         # Explicit observable probes: compare signbit as Boolean output, including
         # signed NaNs on original inputs, without demanding NaN payload identity.
         if self.case.input_probes:
-            outputs.extend(
-                torch.signbit(value)
-                for value, spec in zip(inputs, self.case.inputs, strict=True)
-                if spec["dtype"] in _FLOATS
-            )
+            if self.case.version == 1:
+                # V1 used the first input's dtype to enable probes for both
+                # inputs, including integer peers in hand-authored artifacts.
+                probe_inputs = inputs if self.case.inputs[0]["dtype"] in _FLOATS else ()
+            else:
+                probe_inputs = [
+                    value
+                    for value, spec in zip(inputs, self.case.inputs, strict=True)
+                    if spec["dtype"] in _FLOATS
+                ]
+            outputs.extend(torch.signbit(value) for value in probe_inputs)
         return tuple(outputs)
 
     def case_dtype(self, index):

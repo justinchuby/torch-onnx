@@ -91,11 +91,7 @@ def _rules() -> Any:
 
 
 def optimize(model: ir.Model) -> ir.Model:
-    """Use upstream constant/structural optimization with safe no-op rewrites.
-
-    This is the standalone export pipeline. ONNXProgram remains PyTorch's class;
-    calling its optimize method explicitly uses the installed PyTorch policy.
-    """
+    """Use upstream constant/structural optimization with safe no-op rewrites."""
     from onnxscript import optimizer, rewriter
     from onnxscript.rewriter import onnx_fusions
 

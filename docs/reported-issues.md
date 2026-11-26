@@ -49,9 +49,11 @@ matching with exact, dtype-aware rules. It reuses the other upstream rules
 without changing their process-global configuration. This also preserves scales
 such as DOUBLE `1.0000000001`.
 
-`torch_onnx.ONNXProgram` remains the PyTorch class. An explicit later call to
-`program.optimize()` therefore uses the installed PyTorch/ONNX Script policy;
-the safeguards here apply to `torch_onnx.export(..., optimize=True)`.
+`torch_onnx.ONNXProgram` subclasses the PyTorch class and overrides `optimize()`
+to use the same standalone optimization pipeline as
+`torch_onnx.export(..., optimize=True)`. Existing inference sessions are released
+before optimization so subsequent execution uses the updated model. Other
+PyTorch program methods are inherited without modifying the upstream class.
 
 ## Fuzzing and remaining work
 

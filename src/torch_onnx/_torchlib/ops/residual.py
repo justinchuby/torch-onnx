@@ -988,14 +988,21 @@ def aten_sigmoid(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_signbit(op: TranslationContext, self: ir.Value) -> ir.Value:
     """signbit(Tensor self) -> Tensor"""
 
-    if self.dtype == ir.DataType.BOOL:
+    dtype = common_ops.require_dtype(op, self)
+    if dtype == ir.DataType.BOOL or (dtype.is_integer() and not dtype.is_signed()):
         return op.ConstantOfShape(op.Shape(self), value=ir.tensor([False]))
-
-    # -0.0 should return True, but ONNX does not have an appropriate operator to handle it.
-    return op.Less(
-        self,
-        op.Constant(value=ir.tensor([0], dtype=self.dtype)),
-    )
+    if dtype.is_integer():
+        return op.Less(self, 0)
+    if op.builder.opset < 26:
+        raise ValueError(
+            "Floating-point signbit requires opset_version >= 26 for BitCast; "
+            "comparison with zero cannot preserve negative zero or negative NaN."
+        )
+    signed_types = {16: ir.DataType.INT16, 32: ir.DataType.INT32, 64: ir.DataType.INT64}
+    if dtype.bitwidth not in signed_types:
+        raise ValueError(f"signbit does not support floating-point dtype {dtype}.")
+    bits = op.BitCast(self, to=signed_types[dtype.bitwidth])
+    return op.Less(bits, 0)
 
 
 @onnx_impl((aten.softmax.int, aten.special_softmax.default))

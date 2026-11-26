@@ -7,22 +7,29 @@ from __future__ import annotations
 import math
 import operator
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import numpy as np
 import onnx_ir as ir
 import torch
 
+from torch_onnx._ir_builder import TranslationContext
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
 from torch_onnx._torchlib.ops import _promotion
 from torch_onnx._torchlib.ops import common as common_ops
 
-if TYPE_CHECKING:
-    from torch_onnx._ir_builder import TranslationContext
-
-
 aten = torch.ops.aten
 prims = torch.ops.prims
+
+
+def _floating_unary(op: TranslationContext, name: str, self: ir.Value) -> ir.Value:
+    """Widen BF16 losslessly when the requested operator schema excludes it."""
+    dtype = common_ops.require_dtype(op, self)
+    if dtype == ir.DataType.BFLOAT16:
+        schema = op.builder._get_schema(name, "", op.builder.opset)
+        if self.type not in schema.inputs[0].type_constraint.allowed_types:
+            result = getattr(op, name)(op.Cast(self, to=ir.DataType.FLOAT))
+            return op.Cast(result, to=dtype)
+    return getattr(op, name)(self)
 
 
 @onnx_impl((aten.abs.default, operator.abs))
@@ -61,7 +68,7 @@ def aten_acos(op: TranslationContext, self: ir.Value) -> ir.Value:
     """acos(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Acos(self)
+    return _floating_unary(op, "Acos", self)
 
 
 @onnx_impl(aten.acosh.default)
@@ -199,7 +206,7 @@ def aten_asin(op: TranslationContext, self: ir.Value) -> ir.Value:
     """asin(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Asin(self)
+    return _floating_unary(op, "Asin", self)
 
 
 @onnx_impl(aten.asinh.default)
@@ -215,7 +222,7 @@ def aten_atan(op: TranslationContext, self: ir.Value) -> ir.Value:
     """atan(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Atan(self)
+    return _floating_unary(op, "Atan", self)
 
 
 @onnx_impl(aten.atan2.default)
@@ -228,22 +235,29 @@ def aten_atan2(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Va
 def _atan2(
     op: TranslationContext, y: ir.Value, x: ir.Value, dtype: ir.DataType
 ) -> ir.Value:
-    slope = op.Div(y, x)
-    atan = op.Atan(slope)
-    zero = common_ops.constant(op, 0.0, dtype=dtype)
-    pi = common_ops.constant(op, math.pi, dtype=dtype)
-
-    second_third_quadrant = op.Where(
-        op.Greater(y, zero),
-        op.Add(atan, pi),
-        op.Sub(atan, pi),
-    )
-    result = op.Where(op.Less(x, zero), second_third_quadrant, atan)
-
-    # Map NaN to 0 to match PyTorch behavior
-    result = op.Where(op.IsNaN(result), zero, result)
-
-    return result
+    result_dtype = dtype
+    if dtype in (ir.DataType.FLOAT16, ir.DataType.BFLOAT16):
+        dtype = ir.DataType.FLOAT
+        y = op.Cast(y, to=dtype)
+        x = op.Cast(x, to=dtype)
+    zero = op.constant(0.0, dtype=dtype)
+    one = op.constant(1.0, dtype=dtype)
+    pi = op.constant(math.pi, dtype=dtype)
+    # Reciprocal distinguishes -0 from +0 at opsets before BitCast exists.
+    negative_y = op.Or(op.Less(y, zero), op.Less(op.Reciprocal(y), zero))
+    negative_x = op.Or(op.Less(x, zero), op.Less(op.Reciprocal(x), zero))
+    both_zero = op.And(op.Equal(y, zero), op.Equal(x, zero))
+    both_infinite = op.And(op.IsInf(y), op.IsInf(x))
+    slope = op.Where(both_infinite, one, op.Div(op.Abs(y), op.Abs(x)))
+    angle = op.Where(both_zero, zero, op.Atan(slope))
+    angle = op.Where(negative_x, op.Sub(pi, angle), angle)
+    # A NaN argument is not the same case as the intermediate 0/0 above.
+    angle = op.Where(op.Or(op.IsNaN(y), op.IsNaN(x)), op.Abs(op.Add(y, x)), angle)
+    # Apply the sign last: some runtimes lose -0 when Where selects between
+    # numerically equal +0/-0 branches, whereas multiplication preserves it.
+    sign = op.Where(negative_y, op.constant(-1.0, dtype=dtype), one)
+    result = op.Mul(angle, sign)
+    return op.Cast(result, to=result_dtype) if result_dtype != dtype else result
 
 
 @onnx_impl(aten.atanh.default)
@@ -556,13 +570,15 @@ def aten_bitwise_xor_scalar_tensor(
 def aten_ceil(op: TranslationContext, self: ir.Value) -> ir.Value:
     """ceil(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self).is_integer():
+        return op.Identity(self)
     return op.Ceil(self)
 
 
 @onnx_impl(math.ceil)
 def python_math_ceil(op: TranslationContext, self: ir.Value) -> ir.Value:
     """ceil(Tensor self) -> Tensor"""
-    ceil = op.Ceil(self)
+    ceil = aten_ceil(op, self)
     return op.Cast(ceil, to=ir.DataType.INT64)
 
 
@@ -753,7 +769,7 @@ def aten_cos(op: TranslationContext, self: ir.Value) -> ir.Value:
     """cos(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Cos(self)
+    return _floating_unary(op, "Cos", self)
 
 
 @onnx_impl(aten.cosh.default)
@@ -863,26 +879,14 @@ def aten_div_mode(
         )
 
     if common_ops.require_dtype(op, self).is_integer():
-        quotient = op.Div(
-            op.Cast(self, to=ir.DataType.FLOAT),
-            op.Cast(other, to=ir.DataType.FLOAT),
-        )
-
-        if rounding_mode == "trunc":
-            # Rounds the results of the division towards zero.
-            # Equivalent to C-style integer division
-            result = aten_trunc(op, quotient)
-            return op.CastLike(result, self)
         if rounding_mode == "floor":
-            result = op.Floor(quotient)
-            return op.CastLike(result, self)
-
-        if rounding_mode is not None:
-            raise ValueError(
-                "Expected rounding_mode=None after handling trunc and floor."
-            )
-        # When rounding_mode is None, the return type is float32
-        return quotient
+            return aten_floor_divide(op, self, other)
+        # ONNX integer Div truncates toward zero without losing int64 bits.
+        if rounding_mode == "trunc":
+            return op.Div(self, other)
+        return op.Div(
+            op.Cast(self, to=ir.DataType.FLOAT), op.Cast(other, to=ir.DataType.FLOAT)
+        )
 
     # Float inputs
 
@@ -929,13 +933,15 @@ def aten_exp2(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_floor(op: TranslationContext, self: ir.Value) -> ir.Value:
     """floor(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self).is_integer():
+        return op.Identity(self)
     return op.Floor(self)
 
 
 @onnx_impl(math.floor)
 def python_math_floor(op: TranslationContext, self: ir.Value) -> ir.Value:
     """floor(Tensor self) -> Tensor"""
-    floor = op.Floor(self)
+    floor = aten_floor(op, self)
     return op.Cast(floor, to=ir.DataType.INT64)
 
 
@@ -1460,6 +1466,10 @@ def aten_ne(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value
 def aten_neg(op: TranslationContext, self: ir.Value) -> ir.Value:
     """neg(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self) == ir.DataType.UINT8:
+        return op.Cast(
+            op.Neg(op.Cast(self, to=ir.DataType.INT32)), to=ir.DataType.UINT8
+        )
     return op.Neg(self)
 
 
@@ -1606,7 +1616,7 @@ def aten_round(op: TranslationContext, self: ir.Value) -> ir.Value:
 
     if common_ops.require_dtype(op, self).is_integer():
         return op.Identity(self)
-    return op.Round(self)
+    return _floating_unary(op, "Round", self)
 
 
 @onnx_impl(aten.round.decimals)
@@ -1701,7 +1711,7 @@ def aten_sin(op: TranslationContext, self: ir.Value) -> ir.Value:
     """sin(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Sin(self)
+    return _floating_unary(op, "Sin", self)
 
 
 @onnx_impl(aten.sinh.default)
@@ -1763,7 +1773,7 @@ def aten_tan(op: TranslationContext, self: ir.Value) -> ir.Value:
     """tan(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Tan(self)
+    return _floating_unary(op, "Tan", self)
 
 
 @onnx_impl(aten.tanh.default)
@@ -1777,11 +1787,15 @@ def aten_tanh(op: TranslationContext, self: ir.Value) -> ir.Value:
 @onnx_impl(aten.trunc.default)
 def aten_trunc(op: TranslationContext, self: ir.Value) -> ir.Value:
     """trunc(Tensor self) -> Tensor"""
-    # Reference https://github.com/onnx/onnx/issues/4588#issuecomment-2658170591
-    return op.Mul(
-        op.Floor(op.Abs(self)),
-        op.Sign(self),
-    )
+    if common_ops.require_dtype(op, self).is_integer():
+        return op.Identity(self)
+    # Sign(-0) is +0, so choose a nonzero sign multiplier before truncating.
+    negative = op.Or(op.Less(self, 0), op.Less(op.Reciprocal(self), 0))
+    one = op.constant(1.0, dtype=common_ops.require_dtype(op, self))
+    sign = op.Where(negative, op.Neg(one), one)
+    magnitude = op.Where(op.IsNaN(self), self, op.Floor(op.Abs(self)))
+    # Keep both negative NaN and negative zero observable by a later signbit.
+    return op.Mul(magnitude, sign)
 
 
 @onnx_impl(math.trunc)
@@ -3281,9 +3295,27 @@ def aten_squeeze(op: TranslationContext, self: ir.Value) -> ir.Value:
 
 @onnx_impl(aten.squeeze.dim)
 def aten_squeeze_dim(op: TranslationContext, self: ir.Value, dim: int) -> ir.Value:
-    if len(common_ops.require_shape(op, self)) == 0:
+    shape = common_ops.require_shape(op, self)
+    if len(shape) == 0:
         return op.Identity(self)
-    return op.Squeeze(self, [dim])
+    axis = dim % len(shape)
+    size = shape[axis]
+    if isinstance(size, int):
+        return op.Squeeze(self, [dim]) if size == 1 else op.Identity(self)
+
+    # PyTorch leaves a nonunit dimension unchanged; ONNX Squeeze would reject it.
+    then_graph = ir.Graph([], [], nodes=[], name=f"squeeze_axis_{axis}")
+    then_op = TranslationContext(op.builder.subgraph(then_graph))
+    common_ops.finish_subgraph(then_op, then_graph, [then_op.Squeeze(self, [axis])])
+    else_graph = ir.Graph([], [], nodes=[], name=f"keep_axis_{axis}")
+    else_op = TranslationContext(op.builder.subgraph(else_graph))
+    common_ops.finish_subgraph(else_op, else_graph, [else_op.Identity(self)])
+    return op.builder.node(
+        "If",
+        [op.Equal(op.Gather(op.Shape(self), axis), 1)],
+        attributes={"then_branch": then_graph, "else_branch": else_graph},
+        output_types=[self.type],
+    )[0]
 
 
 @onnx_impl(aten.squeeze.dim, complex=True)

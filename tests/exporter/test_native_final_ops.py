@@ -25,6 +25,7 @@ from torch_onnx import (
     _core,
     _custom_translation,
     _ir_builder,
+    _optimization,
     _registration,
     _schemas,
 )
@@ -1103,10 +1104,10 @@ class TestNativeCutover(common_utils.TestCase):
         with (
             native_only(),
             mock.patch.object(
-                torch.onnx.ONNXProgram,
+                _optimization,
                 "optimize",
                 autospec=True,
-                side_effect=torch.onnx.ONNXProgram.optimize,
+                side_effect=_optimization.optimize,
             ) as optimizer,
         ):
             program = torch_onnx.export(

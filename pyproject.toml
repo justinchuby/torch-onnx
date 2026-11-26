@@ -44,9 +44,10 @@ license-files = ["LICENSE", "LICENSE-PYTORCH"]
 [tool.pytest.ini_options]
 pythonpath = ["tests", "tests/torchlib", "tests/models/regressions"]
 filterwarnings = ["ignore::DeprecationWarning"]
-addopts = '--tb=short --color=yes -m "not integration and not opinfo and not opset29"'
+addopts = '--tb=short --color=yes -m "not integration and not opinfo and not opset29 and not fuzz_long"'
 testpaths = [
   "tests/exporter",
+  "tests/fuzz",
   "tests/torchlib",
   "tests/conversion_test.py",
   "tests/decomp_test.py",
@@ -55,6 +56,8 @@ testpaths = [
   "tests/models/regressions",
 ]
 markers = [
+  "fuzz: bounded deterministic exporter differential smoke cases",
+  "fuzz_long: explicit larger differential fuzz campaign; excluded by default",
   "integration: optional model-family or backend-specific suites (FBGEMM references run explicitly in CI)",
   "opinfo: expanded PyTorch OpInfo operator coverage",
   "opset29: requires the pinned ONNX main build; separate development-schema CI job",

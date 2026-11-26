@@ -255,41 +255,127 @@ def aten_cross_entropy_loss(
     self: ir.Value,
     target: ir.Value,
     weight: ir.Value | None = None,
-    reduction: int = 1,  # default is 'mean'
+    reduction: int = 1,
     ignore_index: int = -100,
-    label_smoothing: float = 0.0,  # this was ignored due to ONNX not support
+    label_smoothing: float = 0.0,
 ) -> ir.Value:
-    """cross_entropy_loss(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, SymInt ignore_index=-100, float label_smoothing=0.0) -> Tensor"""
+    """Cross entropy with class-index or probability targets and label smoothing."""
+    unbatched = len(common_ops.require_shape(op, self)) == 1
+    if unbatched:
+        self = op.Unsqueeze(self, [0])
+        target = op.Unsqueeze(target, [0])
+    rank = len(common_ops.require_shape(op, self))
+    reduction_name = {0: "none", 1: "mean", 2: "sum"}[reduction]
+    if not 0.0 <= label_smoothing <= 1.0:
+        raise ValueError("label_smoothing must be between 0 and 1")
+    # Keep the integer class count exact until the consuming loss computation
+    # chooses its dtype (probability targets can be wider than the logits).
+    classes = op.Gather(op.Shape(self), 1)
+    if weight is not None:
+        broadcast_weight = op.Reshape(weight, [1, -1, *([1] * (rank - 2))])
+    else:
+        broadcast_weight = None
 
-    if reduction == 0:  # "none"
-        result, _ = op.SoftmaxCrossEntropyLoss(
+    if common_ops.require_dtype(op, target).is_floating_point():
+        log_probs = op.LogSoftmax(self, axis=1)
+        probabilities = target
+        if label_smoothing:
+            probabilities = op.Add(
+                op.Mul(target, 1.0 - label_smoothing),
+                op.Div(
+                    op.CastLike(label_smoothing, target), op.CastLike(classes, target)
+                ),
+            )
+        probabilities, log_probs = _promotion.promote(op, probabilities, log_probs)
+        loss = op.Mul(probabilities, log_probs)
+        if broadcast_weight is not None:
+            loss, broadcast_weight = _promotion.promote(op, loss, broadcast_weight)
+            loss = op.Mul(loss, broadcast_weight)
+        loss = op.Neg(op.ReduceSum(loss, [1], keepdims=False))
+        if reduction == 1:
+            loss = op.ReduceMean(loss, keepdims=False)
+        elif reduction == 2:
+            loss = op.ReduceSum(loss, keepdims=False)
+    else:
+        loss, log_probs = op.SoftmaxCrossEntropyLoss(
             self,
             target,
             weight,
-            reduction="none",
+            reduction=reduction_name,
             ignore_index=ignore_index,
             outputs=2,
         )
-    elif reduction == 2:  # "sum"
-        result, _ = op.SoftmaxCrossEntropyLoss(
-            self,
-            target,
-            weight,
-            reduction="sum",
-            ignore_index=ignore_index,
-            outputs=2,
-        )
-    else:  # "mean", default
-        result, _ = op.SoftmaxCrossEntropyLoss(
-            self,
-            target,
-            weight,
-            reduction="mean",
-            ignore_index=ignore_index,
-            outputs=2,
-        )
+        if label_smoothing:
+            smooth = log_probs
+            if broadcast_weight is not None:
+                smooth = op.Mul(smooth, broadcast_weight)
+            smooth = op.Neg(op.ReduceSum(smooth, [1], keepdims=False))
+            valid = op.Not(op.Equal(target, ignore_index))
+            smooth = op.Where(valid, smooth, 0.0)
+            if reduction != 0:
+                smooth = op.ReduceSum(smooth, keepdims=False)
+                if reduction == 1:
+                    if weight is None:
+                        normalizer = op.CastLike(valid, self)
+                    else:
+                        safe_target = op.Where(valid, target, 0)
+                        normalizer = op.Where(
+                            valid, op.Gather(weight, safe_target), 0.0
+                        )
+                    smooth = op.Div(smooth, op.ReduceSum(normalizer, keepdims=False))
+            loss = op.Add(
+                op.Mul(loss, 1.0 - label_smoothing),
+                op.Mul(
+                    smooth,
+                    op.Div(
+                        op.CastLike(label_smoothing, self), op.CastLike(classes, self)
+                    ),
+                ),
+            )
+    if unbatched and reduction == 0:
+        loss = op.Squeeze(loss, [0])
+    return loss
 
-    return result
+
+@onnx_impl(aten.binary_cross_entropy_with_logits.default)
+def aten_binary_cross_entropy_with_logits(
+    op: TranslationContext,
+    self: ir.Value,
+    target: ir.Value,
+    weight: ir.Value | None = None,
+    pos_weight: ir.Value | None = None,
+    reduction: int = 1,
+) -> ir.Value:
+    """Use stable softplus instead of taking Log of a saturated Sigmoid."""
+    # Compensate Log(1 + y) for the rounding lost when adding tiny y to 1.
+    # Unlike Log(Sigmoid(x)) or a naive Softplus kernel, this retains small
+    # finite losses for confident positive logits at older ONNX opsets.
+    y = op.Exp(op.Neg(op.Abs(self)))
+    z = op.Add(y, 1.0)
+    log1p = op.Add(op.Log(z), op.Div(op.Sub(y, op.Sub(z, 1.0)), z))
+    log_term = op.Add(op.Max(op.Neg(self), 0.0), log1p)
+    if pos_weight is not None:
+        pos_delta, promoted_target = _promotion.promote(
+            op, op.Sub(pos_weight, 1.0), target
+        )
+        log_weight = op.Add(op.Mul(pos_delta, promoted_target), 1.0)
+        log_weight, log_term = _promotion.promote(op, log_weight, log_term)
+        # ATen multiplies log_sigmoid_input in place, retaining input dtype.
+        log_term = op.CastLike(op.Mul(log_weight, log_term), self)
+    negative_weight, promoted_self = _promotion.promote(op, op.Sub(1.0, target), self)
+    # Match ATen's (1-target).mul_(input).sub_(log_sigmoid_input) stages.
+    # Delaying these casts changes cancellation for mixed input/target dtypes.
+    linear_term = op.CastLike(op.Mul(negative_weight, promoted_self), target)
+    linear_term, log_term = _promotion.promote(op, linear_term, log_term)
+    loss = op.CastLike(op.Add(linear_term, log_term), target)
+    if weight is not None:
+        loss, weight = _promotion.promote(op, loss, weight)
+        loss = op.CastLike(op.Mul(loss, weight), target)
+    if reduction == 1:
+        loss = op.ReduceMean(loss, keepdims=False)
+    elif reduction == 2:
+        loss = op.ReduceSum(loss, keepdims=False)
+    return loss
 
 
 @onnx_impl(aten.elu.default)
@@ -1134,6 +1220,33 @@ def aten_pad(
     """pad(Tensor self, SymInt[] pad, str mode="constant", float? value=None) -> Tensor"""
 
     rank = len(common_ops.require_shape(op, self))
+    if mode == "circular" and (
+        op.builder.opset < 19 or any(not isinstance(p, int) or p < 0 for p in pad)
+    ):
+        # Pad's wrap mode was introduced in opset 19. Modular gather indices
+        # also handle negative pads cropping an axis to zero, which inference
+        # runtimes can reject in their Pad wrap kernel.
+        result = self
+        for index in range(0, len(pad), 2):
+            before, after = pad[index : index + 2]
+            axis = rank - index // 2 - 1
+            before = op.CastLike(before, op.constant(0, dtype=ir.DataType.INT64))
+            after = op.CastLike(after, before)
+            size = op.Gather(op.Shape(result), axis)
+            start = op.Max(op.Neg(before), 0)
+            end = op.Sub(size, op.Max(op.Neg(after), 0))
+            cropped = op.Slice(
+                result, op.Reshape(start, [1]), op.Reshape(end, [1]), [axis]
+            )
+            cropped_size = op.Gather(op.Shape(cropped), axis)
+            positions = op.Range(
+                op.Neg(op.Max(before, 0)), op.Add(cropped_size, op.Max(after, 0)), 1
+            )
+            # An empty range still needs a nonzero divisor: runtimes may
+            # validate a constant Mod divisor before seeing its empty input.
+            indices = op.Mod(positions, op.Max(cropped_size, 1))
+            result = op.Gather(cropped, indices, axis=axis)
+        return result
     paddings = _process_padding(op, pad, rank)
     const_value = (
         op.Constant(value=ir.tensor(value, dtype=ir.DataType(self.dtype)))
@@ -1187,6 +1300,13 @@ def aten_reflection_pad3d(
 def aten_relu(op: TranslationContext, self: ir.Value) -> ir.Value:
     """relu(Tensor self) -> Tensor"""
 
+    if common_ops.require_dtype(op, self) in (
+        ir.DataType.UINT8,
+        ir.DataType.UINT16,
+        ir.DataType.UINT32,
+        ir.DataType.UINT64,
+    ):
+        return op.Identity(self)
     return op.Relu(self)
 
 

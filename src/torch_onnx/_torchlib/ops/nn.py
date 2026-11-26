@@ -8,7 +8,7 @@ import onnx_ir as ir
 import torch
 
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
-from torch_onnx._torchlib.ops import common
+from torch_onnx._torchlib.ops import _promotion, common
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -94,7 +94,7 @@ def aten_rms_norm(
 
     # Default eps value if not provided
     if eps is None:
-        eps = torch.finfo(torch.float).eps  # Observed from decomp
+        eps = torch.finfo(_promotion.source_dtype(op, input)).eps
 
     # Calculate axis: the first normalization dimension
     # For normalized_shape with D dimensions, normalize over last D dimensions
@@ -164,6 +164,24 @@ def aten_scaled_dot_product_attention_23(
         # This dimension is usually static but it could not be dynamic if also given as an attribute.
         # num_heads attributes are needed for 3D attention inputs:
         # (shape: [B, S, N*H]), 4D shape is ([B, N, S, H]).
+
+        if attn_mask is not None:
+            # PyTorch broadcasts both sequence dimensions. Attention kernels
+            # require the full query/key lengths even for a singleton mask row.
+            # Preserve singleton batch/head dimensions instead of materializing
+            # an unnecessarily large [batch, heads, query, key] mask.
+            mask_rank = len(common.require_shape(op, attn_mask))
+            sequence_shape = op.Concat(
+                op.Shape(query, start=2, end=3),
+                op.Shape(key, start=2, end=3),
+                axis=0,
+            )
+            if mask_rank > 2:
+                leading_shape = op.Shape(attn_mask, start=0, end=mask_rank - 2)
+                if mask_rank == 3:
+                    leading_shape = op.Concat([1], leading_shape, axis=0)
+                sequence_shape = op.Concat(leading_shape, sequence_shape, axis=0)
+            attn_mask = op.Expand(attn_mask, sequence_shape)
 
         Y, _, _, _ = op.Attention(
             query,

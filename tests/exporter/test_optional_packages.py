@@ -24,7 +24,8 @@ def test_missing_optional_packages():
         program = torch_onnx.export(
             torch.nn.ReLU().eval(), (torch.randn(2),), verbose=False
         )
-    assert type(program) is torch.onnx.ONNXProgram
+    assert isinstance(program, torch.onnx.ONNXProgram)
+    assert type(program) is torch_onnx.ONNXProgram
 
 
 def test_broken_optional_import_is_actionable():
@@ -110,7 +111,8 @@ def test_torchao_affine_roundtrip(dtype, opset, block, tmp_path):
     program = torch_onnx.export(
         Model().eval(), args, opset_version=opset, verbose=False
     )
-    assert type(program) is torch.onnx.ONNXProgram
+    assert isinstance(program, torch.onnx.ONNXProgram)
+    assert type(program) is torch_onnx.ONNXProgram
     assert any(n.op_type == "DequantizeLinear" for n in program.model.graph)
     if dtype != torch.int32:
         assert any(n.op_type == "QuantizeLinear" for n in program.model.graph)
@@ -217,7 +219,8 @@ def test_torchao_real_int8_weight_only_linear(tmp_path):
         opset_version=21,
         verbose=False,
     )
-    assert type(program) is torch.onnx.ONNXProgram
+    assert isinstance(program, torch.onnx.ONNXProgram)
+    assert type(program) is torch_onnx.ONNXProgram
     onnx.checker.check_model(program.model_proto, full_check=True)
     torch_onnx.testing.assert_onnx_program(program)
     program.save(tmp_path / "weight_only.onnx")

@@ -444,9 +444,10 @@ operator/frontend skips are used.
 
 Recovered regressions found and fixed runtime shape handling for dynamic `-1`
 expansion, oversized scatter-add sources, missing masked-select translation, and
-batch normalization without running statistics. The public result type is now
-the exact `torch.onnx.ONNXProgram` class for downstream compatibility; its
-optimizer, save, external-data, inference and weight APIs are reused unchanged.
+batch normalization without running statistics. The public result type subclasses
+`torch.onnx.ONNXProgram` for downstream compatibility. Its `optimize()` method
+uses the standalone optimizer; save, external-data, inference and weight APIs
+are inherited unchanged.
 Historical floor-division skips are not retained: the recovered cases now pass.
 Historical dtype-check suppressions on power/full-like are also not retained;
 the modern harness verifies their actual output dtypes.
@@ -470,7 +471,7 @@ The fake-quantization model uses the same frozen affine inference parameters,
 checks equivalence with the original module, and avoids tensor-valued observer
 flags unsupported by torch.export. Observer-updating quantization remains
 explicitly blocked. External-data reload materializes the saved tensor data
-before constructing the exact upstream ONNXProgram.
+before constructing the PyTorch-compatible ONNXProgram.
 
 Legacy byte where predicates are converted explicitly to boolean. Dynamic
 repeat lengths share the corresponding input dimension; broadcast length-one
@@ -1447,7 +1448,7 @@ against the ordinary float64 operation, including tile boundaries.
 | `test_pytorch_onnx_onnxruntime.py:13572::test_affine_grid_2d` | migrated | tests/torchlib/test_parameterized_regressions.py::test_affine_grid_2d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13617::test_affine_grid_3d` | migrated | tests/torchlib/test_parameterized_regressions.py::test_affine_grid_3d; original parameter matrix |
 | `test_pytorch_onnx_onnxruntime.py:13660::test_grid_sample` | migrated | tests/torchlib/test_parameterized_regressions.py::test_grid_sample; original parameter matrix |
-| `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Optional None output is not restored: minimal valid native Optional(empty) model passes full schema checking and ordinary ORT returns None, but exact reused torch.onnx.ONNXProgram crashes this Windows Torch2.15/ORT1.32 process in _from_ort_value/OrtValue.element_type; no replacement class, monkeypatch or new skip |
+| `test_pytorch_onnx_onnxruntime.py:13761::test_optional_output` | blocked | Optional None output is not restored: minimal valid native Optional(empty) model passes full schema checking and ordinary ORT returns None, but inherited torch.onnx.ONNXProgram inference crashes this Windows Torch2.15/ORT1.32 process in _from_ort_value/OrtValue.element_type; the standalone optimize override does not replace inference or add a skip |
 | `test_pytorch_onnx_onnxruntime.py:13801::test_uninitialized_optional` | blocked | Exact original Tensor fixture exports but specializes away the singleton branch: 1x4 input returns ones instead of fives; None-capable Optional input/output and dynamic branch behavior are not restored by that export |
 | `test_pytorch_onnx_onnxruntime.py:13820::test_device_eq` | migrated | `tests/exporter/test_capture_regressions.py::test_device_eq`; modern Module capture, schema/save/reload/runtime |
 | `test_pytorch_onnx_onnxruntime.py:13846::test_lerp` | migrated | tests/torchlib/test_additional_regressions.py::test_lerp |

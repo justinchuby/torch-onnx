@@ -25,7 +25,8 @@ def test_swish_export_and_execution(opset):
         dynamic_shapes=({0: torch.export.Dim("batch")},),
         verbose=False,
     )
-    assert type(program) is torch.onnx.ONNXProgram
+    assert isinstance(program, torch.onnx.ONNXProgram)
+    assert type(program) is torch_onnx.ONNXProgram
     assert program.model.opset_imports[""] == opset
     assert [node.op_type for node in program.model.graph] == ["Swish"]
     onnx.checker.check_model(program.model_proto, full_check=True)

@@ -66,10 +66,12 @@ def test_torch_export_state_is_visible_without_patching():
     assert not torch.onnx.is_in_onnx_export()
 
 
-def test_program_is_exact_pytorch_type():
+def test_program_preserves_pytorch_type_compatibility():
+    original_optimize = torch.onnx.ONNXProgram.optimize
     program = torch_onnx.export(torch.nn.Linear(3, 2).eval(), (torch.randn(4, 3),))
-    assert torch_onnx.ONNXProgram is torch.onnx.ONNXProgram
-    assert type(program) is torch.onnx.ONNXProgram
+    assert isinstance(program, torch.onnx.ONNXProgram)
+    assert type(program) is torch_onnx.ONNXProgram
+    assert torch.onnx.ONNXProgram.optimize is original_optimize
     assert torch.onnx.ONNXProgram.__module__ == "torch.onnx"
     torch_onnx.testing.assert_onnx_program(program)
     program.release()

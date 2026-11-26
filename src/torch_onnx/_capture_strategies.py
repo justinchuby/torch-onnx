@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from torch_onnx import _capture_flags as _flags
+from torch_onnx import _torch_compat
 
 if TYPE_CHECKING:
     import os
@@ -58,7 +59,7 @@ def _patch_dynamo_unsupported_functions():
 
 
 @contextlib.contextmanager
-def patch_dynamic_shape_rnn_decompositions(dynamic: object):
+def patch_dynamic_shape_rnn_decompositions(dynamic: object, model: object = None):
     """Use while_loop based RNN decompositions when the model has dynamic shapes.
 
     The default LSTM/GRU decompositions unroll the sequence loop in Python, which
@@ -69,16 +70,7 @@ def patch_dynamic_shape_rnn_decompositions(dynamic: object):
         yield
         return
 
-    # Import lazily to avoid loading decomposition registrations on torch.onnx import.
-    from torch.export._patches import (
-        register_gru_while_loop_decomposition,
-        register_lstm_while_loop_decomposition,
-    )
-
-    with (
-        register_lstm_while_loop_decomposition(),
-        register_gru_while_loop_decomposition(),
-    ):
+    with _torch_compat.dynamic_rnn_decompositions(model):
         yield
 
 
@@ -182,7 +174,7 @@ class TorchExportStrictStrategy(CaptureStrategy):
     ) -> torch.export.ExportedProgram:
         with (
             _patch_dynamo_unsupported_functions(),
-            patch_dynamic_shape_rnn_decompositions(dynamic_shapes),
+            patch_dynamic_shape_rnn_decompositions(dynamic_shapes, model),
             # Support the dynamism with 0/1 input dim
             torch.fx.experimental._config.patch(backed_size_oblivious=True),  # type: ignore[attr-defined]
         ):
@@ -238,7 +230,7 @@ class TorchExportNonStrictStrategy(CaptureStrategy):
         self, model, args, kwargs, dynamic_shapes
     ) -> torch.export.ExportedProgram:
         with (
-            patch_dynamic_shape_rnn_decompositions(dynamic_shapes),
+            patch_dynamic_shape_rnn_decompositions(dynamic_shapes, model),
             # Support the dynamism with 0/1 input dim
             torch.fx.experimental._config.patch(backed_size_oblivious=True),  # type: ignore[attr-defined]
         ):

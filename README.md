@@ -3,9 +3,15 @@
 [![PyPI version](https://badge.fury.io/py/torch-onnx.svg)](https://badge.fury.io/py/torch-onnx)
 
 Standalone native ONNX exporter synchronized with the modern `torch.export`-based
-PyTorch exporter. **Version 0.2.0 targets PyTorch 2.15.x** (`2.15.0`) and
-Python 3.11+ (older releases and nightly/main are not supported). This project is
-experimental.
+PyTorch exporter. Development follows PyTorch 2.15 and requires Python 3.11+.
+Compatibility CI tests the stable PyTorch releases published in the past year:
+2.10.0, 2.11.0, 2.12.0, 2.12.1, 2.13.0, 2.14.0, 2.14.1 and 2.15.0.
+Installation preserves your chosen PyTorch version. Other versions may work;
+unvalidated or incompatible installations receive an actionable warning once.
+This project is experimental.
+
+Exporter releases use the current development PyTorch major/minor version and
+increment their own patch number for each release; see [AGENTS.md](AGENTS.md).
 
 ## Installation
 

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+# Bootstrap diagnostics before importing consumers of private PyTorch APIs.
+# isort: off
+from . import _torch_compat  # noqa: F401
+# isort: on
+
 from torch.onnx import ops
 
 from . import _flags, errors

@@ -37,6 +37,7 @@ from torch_onnx import (
     _onnx_program,
     _registration,
     _reporting,
+    _torch_compat,
     _type_casting,
     _verification,
 )
@@ -160,7 +161,7 @@ class TorchTensor(ir.Tensor):
             # Disable any fake mode so calling detach() etc. will return a real tensor
             tensor = self.raw.detach().cpu().contiguous()
 
-        if torch._subclasses.fake_tensor.is_fake_tensor(tensor):
+        if _torch_compat.is_fake_tensor(tensor):
             raise TypeError(
                 f"Cannot take content out from the FakeTensor ('{self.name}'). Please replace the tensor "
                 "with a tensor backed by real data using ONNXProgram.apply_weights() "
@@ -1268,7 +1269,7 @@ def _prepare_exported_program_for_export(
         # recomputes their meta values. Keep the while_loop based decompositions so
         # that dynamic sequence lengths are not specialized to the example length.
         _capture_strategies.patch_dynamic_shape_rnn_decompositions(
-            exported_program.range_constraints
+            exported_program.range_constraints, exported_program.graph_module
         ),
     ):
         # Decompose the graph given the implemented torch ops in ONNX

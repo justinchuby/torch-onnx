@@ -187,14 +187,9 @@ def aten_embedding_bag_padding_idx(
     else:
         # Change [0,2,3] -> [0,2,3,end], means [0:2],[2:3],[3:end]
         offsets = op.Concat(offsets, indices_size, axis=0)  # Replace end with number
-    # The element in sequence must be FLOAT32 dtype due to ORT bug
+    # Loop scan outputs have fixed per-bag shapes, so no tensor sequences or
+    # repeated append/concatenate allocations are needed.
     new_weight = op.Cast(new_weight, to=ir.DataType.FLOAT)
-    # FIXME: https://github.com/microsoft/onnxruntime/issues/16846
-    float_sequence = ir.SequenceType(ir.TensorType(ir.DataType.FLOAT))
-    int_sequence = ir.SequenceType(ir.TensorType(ir.DataType.INT64))
-    result = op.SequenceEmpty(dtype=ir.DataType.FLOAT, output_types=[float_sequence])
-    sizes = op.SequenceEmpty(dtype=ir.DataType.INT64, output_types=[int_sequence])
-    maxima = op.SequenceEmpty(dtype=ir.DataType.INT64, output_types=[int_sequence])
     # Used for iterator
     i = ir.Value(
         name="bag_iteration", type=ir.TensorType(ir.DataType.INT64), shape=ir.Shape([])
@@ -202,12 +197,7 @@ def aten_embedding_bag_padding_idx(
     condition = ir.Value(
         name="bag_condition", type=ir.TensorType(ir.DataType.BOOL), shape=ir.Shape([])
     )
-    rows = ir.Value(name="bag_rows", type=float_sequence)
-    lengths = ir.Value(name="bag_lengths", type=int_sequence)
-    max_rows = ir.Value(name="bag_maxima", type=int_sequence)
-    body = ir.Graph(
-        [i, condition, rows, lengths, max_rows], [], nodes=[], name="embedding_bag_body"
-    )
+    body = ir.Graph([i, condition], [], nodes=[], name="embedding_bag_body")
     local = builder.subgraph(body)
     local_op = TranslationContext(local)
     # Process each bag
@@ -286,75 +276,54 @@ def aten_embedding_bag_padding_idx(
             ir.TensorType(ir.DataType.INT64),
         ],
     )
-    # Something like the 'append' operation
-    rows = local_op.SequenceInsert(rows, row_result, output_types=[float_sequence])
-    lengths = local_op.SequenceInsert(
-        lengths, local_op.Reshape(count, [1]), output_types=[int_sequence]
+    row_result = local_op.Squeeze(row_result, [0])
+    max_indices = local_op.Squeeze(max_indices, [0])
+    scan_count = count
+    if mode == 1 and padding_idx is None:
+        # ATen reports the remaining indices as the last mean bag size even
+        # when an explicit end offset truncates its numerator.
+        scan_count = local_op.Where(
+            last_bag, local_op.Sub(local_op.Size(indices_1d), start_pos), count
+        )
+    common_ops.finish_subgraph(
+        op, body, [condition, row_result, scan_count, max_indices]
     )
-    max_rows = local_op.SequenceInsert(
-        max_rows, max_indices, output_types=[int_sequence]
-    )
-    common_ops.finish_subgraph(op, body, [condition, rows, lengths, max_rows])
-    result, sizes, maxima = builder.node(
+    result, bag_size, max_indices = builder.node(
         "Loop",
-        [
-            num_bag,
-            op.constant(True, dtype=ir.DataType.BOOL),
-            result,
-            sizes,
-            maxima,
-        ],
+        [num_bag, op.constant(True, dtype=ir.DataType.BOOL)],
         attributes={"body": body},
-        output_types=[float_sequence, int_sequence, int_sequence],
+        output_types=[
+            ir.TensorType(ir.DataType.FLOAT),
+            ir.TensorType(ir.DataType.INT64),
+            ir.TensorType(ir.DataType.INT64),
+        ],
     )
-    # Seed sequences after the loop so zero bags have a well-defined empty concatenation.
-    empty_shape = op.Concat([0], weight_dim_1, axis=0)
-    empty_row = op.Expand(op.constant([0.0], dtype=ir.DataType.FLOAT), empty_shape)
-    result = op.SequenceInsert(result, empty_row, output_types=[float_sequence])
-    result = op.ConcatFromSequence(
-        result,
-        axis=0,
-        output_types=[ir.TensorType(ir.DataType.FLOAT)],
-    )
+    # An unexecuted scan may have an unspecified trailing shape at runtime.
+    # Explicit target shapes also cover zero bags and zero embedding width.
+    result_shape = op.Concat(op.Reshape(num_bag, [1]), weight_dim_1, axis=0)
+    result = op.Reshape(result, result_shape, allowzero=1)
     result = op.CastLike(result, weight)
-    sizes = op.SequenceInsert(
-        sizes,
-        op.constant([], dtype=ir.DataType.INT64),
-        output_types=[int_sequence],
-    )
-    bag_size = op.ConcatFromSequence(
-        sizes,
-        axis=0,
-        output_types=[ir.TensorType(ir.DataType.INT64)],
-    )
-    maxima = op.SequenceInsert(
-        maxima,
-        op.Expand(op.constant([0], dtype=ir.DataType.INT64), empty_shape),
-        output_types=[int_sequence],
-    )
-    max_indices = op.ConcatFromSequence(
-        maxima,
-        axis=0,
-        output_types=[ir.TensorType(ir.DataType.INT64)],
-    )
-    # Only compute the shape of other 3 outputs, we don't care the value
-    # The native path also supplies the auxiliary values for consumers that use them.
+    bag_size = op.Reshape(bag_size, op.Reshape(num_bag, [1]), allowzero=1)
+    max_indices = op.Reshape(max_indices, result_shape, allowzero=1)
+    # Preserve the auxiliary outputs for consumers that use them.
     if mode == 0 and padding_idx is None:
         offset2bag = op.constant([], dtype=ir.DataType.INT64)
     else:
         indices_length = op.Gather(op.Shape(indices), 0)
-        positions = op.Range(0, indices_length, 1)
         starts = op.Slice(offsets, [0], op.Reshape(num_bag, [1]))
-        membership = op.GreaterOrEqual(
-            op.Unsqueeze(positions, [1]),
-            op.Unsqueeze(starts, [0]),
+        # Count bag starts at each index, including duplicate starts for empty
+        # bags. Prefix sums assign each position to its latest bag in O(N+B)
+        # space/work instead of broadcasting an N-by-B membership matrix.
+        markers = op.Expand(
+            op.constant(0, dtype=ir.DataType.INT64),
+            op.Reshape(op.Add(indices_length, 1), [1]),
         )
+        starts_count = op.Expand(
+            op.constant(1, dtype=ir.DataType.INT64), op.Shape(starts)
+        )
+        markers = op.ScatterElements(markers, starts, starts_count, reduction="add")
         offset2bag = op.Sub(
-            op.ReduceSum(
-                op.Cast(membership, to=ir.DataType.INT64),
-                [1],
-                keepdims=0,
-            ),
+            op.Slice(op.CumSum(markers, 0), [0], op.Reshape(indices_length, [1])),
             1,
         )
     if mode == 0:  # sum

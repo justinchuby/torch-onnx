@@ -1,0 +1,74 @@
+name: PyTorch compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      torch: ${{ steps.matrix.outputs.torch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Read the shared tested-version manifest
+        id: matrix
+        run: |
+          python - <<'PY'
+          import json, os, runpy
+          versions = runpy.run_path('src/torch_onnx/_torch_compat.py')['SUPPORTED_TORCH_VERSIONS']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('torch=' + json.dumps(versions), file=output)
+          PY
+  compatibility:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        torch: ${{ fromJSON(needs.versions.outputs.torch) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Install the selected CPU PyTorch release
+        env:
+          TORCH_VERSION: ${{ matrix.torch }}
+        run: |
+          python -m pip install "torch==$TORCH_VERSION" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e . pytest onnxruntime
+          python -m pip check
+          python - <<'PY'
+          import os, torch
+          print(torch.__version__)
+          assert torch.__version__.split('+')[0] == os.environ['TORCH_VERSION']
+          PY
+      - name: Export, check and execute public API compatibility cases
+        env:
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          python -m pytest tests/compatibility \
+            tests/exporter/test_torch_compat_adapters.py \
+            tests/exporter/test_embedding_bag_tensor_scan.py \
+            --junitxml=compatibility.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: compatibility-${{ matrix.torch }}
+          path: compatibility.xml

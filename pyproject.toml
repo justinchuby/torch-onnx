@@ -21,7 +21,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-  "torch>=2.15,<2.16",
+  "torch",
   "onnx-ir>=1.1.0",
   "onnx-shape-inference>=0.4.5",
   "onnxscript>=0.7.2",
@@ -44,6 +44,7 @@ pythonpath = ["tests", "tests/torchlib", "tests/models/regressions"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = '--tb=short --color=yes -m "not integration and not opinfo and not opset29 and not fuzz_long"'
 testpaths = [
+  "tests/compatibility",
   "tests/exporter",
   "tests/fuzz",
   "benchmarks/test_performance.py",

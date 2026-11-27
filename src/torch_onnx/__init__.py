@@ -57,7 +57,6 @@ for _public_class in (
     ExportableModule,
     GraphBuilder,
     InputObserver,
-    OnnxExporterError,
     TranslationContext,
 ):
     _public_class.__module__ = __name__

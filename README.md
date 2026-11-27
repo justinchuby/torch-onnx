@@ -25,7 +25,7 @@ Install `onnxruntime` as well to execute or numerically verify exported
 ## Quick start
 
 `torch_onnx.export` returns a `torch.onnx.ONNXProgram` (also exposed as
-`torch_onnx.ONNXProgram`) with graph optimization enabled by default:
+`torch_onnx.ONNXProgram`) targeting opset 28 with graph optimization enabled by default:
 
 ```python
 import torch

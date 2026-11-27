@@ -75,7 +75,21 @@ pip install "onnx @ git+https://github.com/onnx/onnx.git@622adf94d4e720142950aa8
 pytest tests/exporter/test_opsets.py -m opset29
 ```
 
-Default exports still use PyTorch's established default opset, not development 29.
+Default exports target opset 28. Omitting `opset_version` or passing `None`
+selects 28 through both `torch_onnx.export` and patched `torch.onnx.export`.
+Pass an explicit `opset_version` when targeting an older runtime.
+
+ORT 1.32 also lacks kernels for QuantizeLinear-28, RoiAlign-22 and
+RandomNormalLike-22. Quantization tests validate the default graph with ONNX
+reference execution and retain ORT coverage at opset 20. The ROI/RNG runtime
+regressions explicitly select 20. Selecting a newer export schema does not
+imply that every installed execution provider implements it.
+
+Construct local function bodies using the active `op.builder.opset`. Fixtures
+with fixed opset-18/20 function definitions explicitly export at that version;
+they do not depend on automatic conversion to the new default. The current
+ONNX Script converter only supports targets through 25, so legacy functions
+requiring cross-version conversion need a compatible explicit target.
 
 ## Semantic normalization operators
 

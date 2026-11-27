@@ -397,9 +397,16 @@ class TestNativeTorchlib(common_utils.TestCase):
                 )
 
         args = (x,) if parameter_shape is None else (x, scale, zero)
-        program = torch_onnx.export(Model().eval(), args, verbose=False)
-        onnx.checker.check_model(program.model_proto, full_check=True)
-        torch.testing.assert_close(program(*args)[0], expected, rtol=0, atol=0)
+        for options in ({"opset_version": 20}, {}):
+            program = torch_onnx.export(Model().eval(), args, verbose=False, **options)
+            try:
+                onnx.checker.check_model(program.model_proto, full_check=True)
+                # ORT 1.32 has no QuantizeLinear-28 kernel. Preserve ORT coverage
+                # at 20 and check the default graph with ONNX reference.
+                actual = program(*args) if options else program.call_reference(*args)
+                torch.testing.assert_close(actual[0], expected, rtol=0, atol=0)
+            finally:
+                program.release()
 
     def test_per_channel_quantization(self):
         x = np.array([[-1.0, 0.0, 1.0], [-4.0, 0.0, 4.0]], dtype=np.float32)

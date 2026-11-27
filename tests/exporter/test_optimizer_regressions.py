@@ -422,7 +422,8 @@ class TestRecoveredOptimizer(common_utils.TestCase):
 
         model = PReluModel().eval()
         x = torch.randn(2, 3, 4, 5, 8, 7)
-        program = torch_onnx.export(model, (x,), verbose=False)
+        # ORT 1.32 does not implement RandomNormalLike-22 or later.
+        program = torch_onnx.export(model, (x,), opset_version=20, verbose=False)
         onnx.checker.check_model(program.model_proto, full_check=True)
         for node in program.model.graph:
             self.assertNotIn(node.op_type, {"Unsqueeze", "Cast"})

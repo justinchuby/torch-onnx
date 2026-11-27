@@ -266,9 +266,23 @@ def test_transformers_default_config(family):
     model = make_model(family)
     sample = inputs(family, 2, 12 if family == "vit" else 4)
     exported = OnnxExporter().export(model, copy.deepcopy(sample), config=OnnxConfig())
+    assert exported.program.opset_imports[""] == 28
     onnx.checker.check_model(ir.to_proto(exported.program), full_check=True)
     if family == "vit":
         assert any(node.op_type == "Resize" for node in exported.program.graph)
     with torch.no_grad():
         expected = model(**copy.deepcopy(sample))
-    assert_outputs(exported(**copy.deepcopy(sample)), expected)
+    if family == "qwen3":
+        # ORT 1.32 cannot expand Swish at opset 25-28. Verify the default
+        # graph numerically with ONNX reference; explicit-opset-23 cases above
+        # continue exercising the real Transformers ORT runner and reload.
+        from onnx.reference import ReferenceEvaluator
+
+        proto = ir.to_proto(exported.program)
+        feed = {value.name: sample[value.name].numpy() for value in proto.graph.input}
+        (actual,) = ReferenceEvaluator(proto).run(None, feed)
+        torch.testing.assert_close(
+            torch.from_numpy(actual), expected.logits, rtol=1e-4, atol=1e-5
+        )
+    else:
+        assert_outputs(exported(**copy.deepcopy(sample)), expected)

@@ -95,6 +95,7 @@ class TestRecoveredNestedContracts(RecoveredRuntimeHarness):
                 i,
                 [boxes],
             ),
+            opset_version=20,  # ORT 1.32 does not implement RoiAlign-22 or later.
             additional_test_inputs=[
                 (
                     i,

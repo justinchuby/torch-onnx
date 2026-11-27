@@ -40,8 +40,10 @@ opset-28 Conv graph keeps bf16 input and weight without Cast nodes.
 
 Export targets ONNX specification semantics. Runtime-only workarounds are not
 part of torchlib: inverse/onesided DFT, int16 Where and broadcast Attention masks
-retain their standard forms. Function-local opset imports stay scoped to each
-function. Control-flow values use normal IR naming rather than ORT-specific names.
+retain their standard forms. As an explicit exception, function-local opset
+imports are also mirrored into the model for ORT's nested-function inliner,
+retaining each function's declarations. Control-flow values use normal IR naming
+rather than ORT-specific names.
 Circular padding uses native Pad wrap from opset 19; older schemas use tensor
 operations because wrap is absent from those ONNX schemas. Negative-pad graphs
 are schema-checked separately from runtimes that reject them.

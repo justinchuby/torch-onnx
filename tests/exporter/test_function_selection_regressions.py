@@ -5,11 +5,9 @@ Source: e2c2673d00500d268fcb1cc63fa7cc3173876505. Explicit native functions
 replace export_modules_as_functions; automatic module extraction is not claimed.
 """
 
-import onnx
 import onnx_ir as ir
 import pytest
 import torch
-from _common.assertions import reload_onnx_program
 from test_function_scope_regressions import _check_roundtrip_and_optimize
 
 import torch_onnx
@@ -272,41 +270,17 @@ def test_local_function(selection):
                 tuple(torch.randn(5, 3) for _ in range(3)),
             ]
             if selection == "all":
-                # ORT loses nested-function imports during its own inlining.
-                # Keep those imports scoped as specified by ONNX, and execute
-                # the original and reloaded graph with ONNX reference instead.
-                onnx.checker.check_model(program.model_proto, full_check=True)
+                # Keep function declarations and mirror their imports for ORT's
+                # nested-function inliner, including the unoptimized graph.
                 imports = {entry.domain for entry in program.model_proto.opset_import}
-                assert "torch.nn.modules.activation" not in imports
-                assert "torch.nn.modules.normalization" not in imports
                 nested_imports = {entry.domain for entry in functions["M"].opset_import}
-                assert {
+                domains = {
                     "torch.nn.modules.activation",
                     "torch.nn.modules.normalization",
-                } <= nested_imports
-                reloaded = reload_onnx_program(program)
-                try:
-                    for candidate in (program, reloaded):
-                        for example in examples:
-                            torch.testing.assert_close(
-                                tuple(candidate.call_reference(*example)),
-                                original(*example),
-                                rtol=1e-3,
-                                atol=1e-7,
-                            )
-                finally:
-                    reloaded.release()
-                program.optimize()
-                onnx.checker.check_model(program.model_proto, full_check=True)
-                for example in examples:
-                    torch.testing.assert_close(
-                        tuple(program(*example)),
-                        original(*example),
-                        rtol=1e-3,
-                        atol=1e-7,
-                    )
-            else:
-                _check_roundtrip_and_optimize(program, original, examples)
+                }
+                assert domains <= imports
+                assert domains <= nested_imports
+            _check_roundtrip_and_optimize(program, original, examples)
         finally:
             if program is not None:
                 program.release()

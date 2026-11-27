@@ -84,3 +84,39 @@ translations. Training supplies the computed batch mean and biased variance to
 the inference-mode operator, while separately preserving PyTorch's saved
 statistics and unbiased running-variance update. This retains a fusible
 normalization operator without requiring a training-capable runtime.
+
+## Public `torch.onnx.ops` custom operators
+
+[`torch.onnx.ops.symbolic` and `symbolic_multi_out`](https://docs.pytorch.org/docs/stable/onnx_ops.html)
+are supported directly by `torch_onnx.export` and by patched `torch.onnx.export`.
+No custom translation registration is necessary:
+
+```python
+class Model(torch.nn.Module):
+    def forward(self, x):
+        if torch.onnx.is_in_onnx_export():
+            return torch.onnx.ops.symbolic(
+                "my.domain::CustomRelu", (x,),
+                dtype=x.dtype, shape=x.shape, version=1,
+                metadata_props={"implementation": "my-runtime-plugin"},
+            )
+        return x.relu()
+
+program = torch_onnx.export(Model().eval(), (torch.randn(2, 3),))
+program.save("custom.onnx")
+```
+
+These APIs preserve custom domain/opset imports, scalar/list attributes,
+optional input holes, node metadata, and declared output shapes and dtypes.
+`symbolic_multi_out` supports differently typed outputs, and declared shapes can
+contain symbolic input dimensions. The symbolic operations do not implement eager
+computation; use `torch.onnx.is_in_onnx_export()` to select the export branch.
+Executing a custom-domain node requires its implementation in the chosen runtime.
+
+The native `torch.onnx.ops.attention` and `rotary_embedding` APIs also export as
+ONNX `Attention` and `RotaryEmbedding` at opset 23. Compatibility tests check these
+against ONNX Runtime. Custom-domain tests use registered ONNX reference kernels
+to check optimized/unoptimized graphs after save/reload at multiple batch sizes,
+through both public export entry points. These tests live in
+`tests/compatibility/test_onnx_ops.py`, so the annual PyTorch compatibility CI
+matrix runs them on every supported stable release.

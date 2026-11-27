@@ -200,8 +200,10 @@ graphs incrementally, declare input shapes before inference or use
 
 For per-export overrides, `custom_translation_table` accepts ONNX Script
 functions and takes precedence over global native registrations, which override
-built-in translations. `torch_onnx.ops` also re-exports PyTorch's symbolic ONNX
-operators (`torch.onnx.ops.symbolic`).
+built-in translations. PyTorch's `torch.onnx.ops.symbolic` and
+`symbolic_multi_out` are supported through both export entry points;
+`torch_onnx.ops` also re-exports these APIs. See the
+[custom-domain example and CI coverage](docs/opsets.md#public-torchonnxops-custom-operators).
 
 ## Limitations and documentation
 

@@ -48,6 +48,8 @@ onnx_program.release()
 `torch_onnx.patch_torch()` supports Transformers’ `OnnxExporter`, including its
 custom translations and export patches. See [integration and CI coverage](docs/transformers.md)
 for forward and generation exports, dynamic shapes, and saving/reloading.
+The [native implementation audit](docs/transformers-native.md) records operator
+implementations and measured performance.
 
 ## Dynamic shapes
 

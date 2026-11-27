@@ -29,3 +29,11 @@
 - Prefer tensor operations over ONNX Sequence operations when they improve
   performance without changing observable outputs or creating excessive memory
   use. Preserve dynamic-shape and empty-input behavior.
+
+# Runtime boundaries
+
+- Target ONNX specification semantics. Do not add graph rewrites, casts, or
+  operator decompositions solely to work around ONNX Runtime limitations.
+- Keep spec-valid graphs when a runtime lacks support. Test with reference
+  execution or explicit graph/schema assertions and document runtime limits.
+- Pure downstream FX graph repairs remain with the downstream framework.

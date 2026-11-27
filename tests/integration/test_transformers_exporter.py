@@ -175,7 +175,9 @@ def test_transformers_forward_export_and_reload(
     )
     assert len(patched_exporter) == 1
     assert exported.program is patched_exporter[0].model
-    assert calls.count("onnx") >= 2  # Before AND after decomposition.
+    assert (
+        calls.count("onnx") >= 2
+    )  # Transformers owns pre/post-decomposition FX repairs.
     assert torch_core._prepare_exported_program_for_export is upstream_prepare
     onnx.checker.check_model(ir.to_proto(exported.program), full_check=True)
     assert (
@@ -286,3 +288,32 @@ def test_transformers_default_config(family):
         )
     else:
         assert_outputs(exported(**copy.deepcopy(sample)), expected)
+
+
+@pytest.mark.parametrize("family", ["bert", "qwen3", "moe", "hybrid", "vit"])
+def test_native_torchlib_without_transformers_operator_patches(
+    family, monkeypatch, tmp_path
+):
+    """Native operator lowerings work while Transformers retains its FX fixes."""
+    import contextlib
+
+    monkeypatch.setattr(
+        exporter_onnx, "apply_patches", lambda _backend: contextlib.nullcontext()
+    )
+    monkeypatch.setattr(exporter_onnx, "apply_onnx_ir_fixes", lambda _program: None)
+    monkeypatch.setattr(exporter_onnx, "_ONNX_TRANSLATION_TABLE", {})
+    model = make_model(family)
+    sample = inputs(family, 2, 12 if family == "vit" else 4)
+    exported = OnnxExporter().export(
+        model,
+        copy.deepcopy(sample),
+        config=OnnxConfig(dynamic=True, opset_version=23, optimize=True),
+    )
+    onnx.checker.check_model(ir.to_proto(exported.program), full_check=True)
+    exported.save_pretrained(tmp_path)
+    loaded = ExportedModel.from_pretrained(tmp_path)
+    for data in (sample, inputs(family, 3, 16 if family == "vit" else 6)):
+        with torch.no_grad():
+            expected = model(**copy.deepcopy(data))
+        assert_outputs(exported(**copy.deepcopy(data)), expected)
+        assert_outputs(loaded(**copy.deepcopy(data)), expected)

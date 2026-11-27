@@ -106,7 +106,7 @@ def aten_rms_norm(
     # Create weight tensor if not provided
     if weight is None:
         weight = op.ConstantOfShape(
-            op.Shape(input),
+            op.Shape(input, start=axis),
             value=ir.tensor([1], dtype=input.dtype),
         )
 
@@ -164,24 +164,6 @@ def aten_scaled_dot_product_attention_23(
         # This dimension is usually static but it could not be dynamic if also given as an attribute.
         # num_heads attributes are needed for 3D attention inputs:
         # (shape: [B, S, N*H]), 4D shape is ([B, N, S, H]).
-
-        if attn_mask is not None:
-            # PyTorch broadcasts both sequence dimensions. Attention kernels
-            # require the full query/key lengths even for a singleton mask row.
-            # Preserve singleton batch/head dimensions instead of materializing
-            # an unnecessarily large [batch, heads, query, key] mask.
-            mask_rank = len(common.require_shape(op, attn_mask))
-            sequence_shape = op.Concat(
-                op.Shape(query, start=2, end=3),
-                op.Shape(key, start=2, end=3),
-                axis=0,
-            )
-            if mask_rank > 2:
-                leading_shape = op.Shape(attn_mask, start=0, end=mask_rank - 2)
-                if mask_rank == 3:
-                    leading_shape = op.Concat([1], leading_shape, axis=0)
-                sequence_shape = op.Concat(leading_shape, sequence_shape, axis=0)
-            attn_mask = op.Expand(attn_mask, sequence_shape)
 
         Y, _, _, _ = op.Attention(
             query,

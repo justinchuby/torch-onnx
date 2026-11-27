@@ -159,3 +159,8 @@ def add_opset_imports(model: ir.Model) -> None:
         for node in ir.traversal.RecursiveGraphIterator(function):
             domain = node.domain
             _maybe_set_opset_version(function.opset_imports, domain, node.version)
+        # Explicit runtime-boundary exception: ORT inlines nested functions
+        # without carrying their imports into the model. Mirror those imports
+        # here while retaining each function's own declarations.
+        for domain, version in function.opset_imports.items():
+            _maybe_set_opset_version(model.opset_imports, domain, version)

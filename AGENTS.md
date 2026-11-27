@@ -37,3 +37,6 @@
 - Keep spec-valid graphs when a runtime lacks support. Test with reference
   execution or explicit graph/schema assertions and document runtime limits.
 - Pure downstream FX graph repairs remain with the downstream framework.
+- Explicit exception: mirror function-local opset imports into the model for
+  ONNX Runtime's nested-function inliner, while retaining the function imports.
+  This metadata-only compatibility measure must not rewrite operator semantics.

@@ -68,6 +68,7 @@ jobs:
             tests/exporter/test_embedding_bag_tensor_scan.py \
             tests/exporter/test_rotary_fusion_broadcast.py \
             tests/exporter/test_strided_scatter.py \
+            tests/exporter/test_sdpa_input_ranks.py \
             --junitxml=compatibility.xml \
             --cov=torch_onnx --cov-branch --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json

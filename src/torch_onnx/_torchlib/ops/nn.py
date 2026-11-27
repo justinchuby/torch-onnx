@@ -28,11 +28,11 @@ def _validate_attention_heads(
     enable_gqa: bool,
 ) -> None:
     shapes = [common.require_shape(op, tensor) for tensor in (query, key, value)]
-    if any(len(shape) != 4 for shape in shapes):
+    if any(len(shape) < 3 for shape in shapes):
         raise ValueError(
-            "SDPA requires rank-4 query, key and value; set their shapes before translation."
+            "SDPA head validation requires query, key and value with at least 3 dimensions."
         )
-    q, k, v = (shape[1] for shape in shapes)
+    q, k, v = (shape[-3] for shape in shapes)
     if not (isinstance(q, int) and isinstance(k, int) and isinstance(v, int)):
         # Dynamic head counts are checked by the ONNX runtime, not Python comparisons.
         return
@@ -154,6 +154,17 @@ def aten_scaled_dot_product_attention_23(
     """
     if is_causal and attn_mask is not None:
         raise AssertionError("is_causal and attn_mask cannot be set at the same time")
+    if any(
+        len(common.require_shape(op, tensor)) != 4 for tensor in (query, key, value)
+    ):
+        # ONNX Attention has a different 3D layout (packed multi-head features).
+        # Use PyTorch's rank-polymorphic math semantics for other input ranks.
+        # Import locally because neural also uses the shared attention helpers.
+        from torch_onnx._torchlib.ops import neural
+
+        return neural.aten_scaled_dot_product_attention(
+            op, query, key, value, attn_mask, dropout_p, is_causal, scale, enable_gqa
+        )
     _validate_attention_heads(op, query, key, value, enable_gqa=enable_gqa)
 
     # Attention onnx op can only handle non-training scenarios where dropout is disabled.
@@ -204,62 +215,35 @@ def _attention_repeat_kv_for_group_query(
     repeat_interleave is applied on key and value to match the number of heads in query.
 
     Args:
-        query: Tensor of shape [B, q_num_heads, q_S, E]
-        key: Tensor of shape [B, k_num_heads, kv_S, E]
-        value: Tensor of shape [B, v_num_heads, kv_S, E]
+        query: Tensor of shape [..., q_num_heads, q_S, E]
+        key: Tensor of shape [..., k_num_heads, kv_S, E]
+        value: Tensor of shape [..., v_num_heads, kv_S, Ev]
 
     Returns:
         Tuple of (expanded_key, expanded_value) where:
-            - expanded_key: Tensor of shape [B, q_num_heads, kv_S, E]
-            - expanded_value: Tensor of shape [B, q_num_heads, kv_S, E]
+            - expanded_key: Tensor of shape [..., q_num_heads, kv_S, E]
+            - expanded_value: Tensor of shape [..., q_num_heads, kv_S, Ev]
     """
 
     _validate_attention_heads(op, query, key, value, enable_gqa=True)
 
-    # NOTE: QKV are expected to be 4D tensors
+    q_num_heads = op.Shape(query, start=-3, end=-2)
 
-    batch_size = op.Shape(query, start=0, end=1)  # [B]
-    q_num_heads = op.Shape(query, start=1, end=2)  # [Hq]
-    kv_num_heads = op.Shape(key, start=1, end=2)  # [Hk]
-    qk_head_size = op.Shape(key, start=3, end=4)  # [Dk]
-    v_head_size = op.Shape(value, start=3, end=4)  # [Dv]
-    new_kv_seq_len = op.Shape(key, start=2, end=3)  # [T]
+    def repeat(tensor: ir.Value) -> ir.Value:
+        # Retain each tensor's batch prefix so MatMul can broadcast it later.
+        prefix = op.Shape(tensor, end=-3)
+        heads = op.Shape(tensor, start=-3, end=-2)
+        tail = op.Shape(tensor, start=-2)
+        repeats = op.Div(q_num_heads, heads)
+        expanded = op.Expand(
+            op.Unsqueeze(tensor, [-3]),
+            op.Concat(prefix, heads, repeats, tail, axis=0),
+        )
+        return op.Reshape(
+            expanded, op.Concat(prefix, q_num_heads, tail, axis=0), allowzero=1
+        )
 
-    interleave_dim = op.Div(q_num_heads, kv_num_heads)  # Hq / Hk
-    two = op.Constant(value_int=2)
-    k_unsqueezed = op.Unsqueeze(key, two)  # [B, Hk, 1, T, Dk]
-    v_unsqueezed = op.Unsqueeze(value, two)  # [B, Hv, 1, T, Dv]
-
-    k_expand_shape = op.Concat(
-        batch_size,
-        kv_num_heads,
-        interleave_dim,
-        new_kv_seq_len,
-        qk_head_size,
-        axis=0,
-    )
-    k_expand = op.Expand(k_unsqueezed, k_expand_shape)
-    v_expand_shape = op.Concat(
-        batch_size,
-        kv_num_heads,
-        interleave_dim,
-        new_kv_seq_len,
-        v_head_size,
-        axis=0,
-    )
-    v_expand = op.Expand(v_unsqueezed, v_expand_shape)
-
-    k_attention_shape = op.Concat(
-        batch_size, q_num_heads, new_kv_seq_len, qk_head_size, axis=0
-    )
-    v_attention_shape = op.Concat(
-        batch_size, q_num_heads, new_kv_seq_len, v_head_size, axis=0
-    )
-
-    expanded_key = op.Reshape(k_expand, k_attention_shape)
-    expanded_value = op.Reshape(v_expand, v_attention_shape)
-
-    return expanded_key, expanded_value
+    return repeat(key), repeat(value)
 
 
 def _attention_scale(op: TranslationContext, query: ir.Value) -> ir.Value:

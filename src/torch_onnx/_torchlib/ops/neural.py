@@ -1445,15 +1445,13 @@ def aten_scaled_dot_product_attention(
             "Set is_causal=False or omit attn_mask."
         )
 
-    if not (
-        len(common_ops.require_shape(op, query)) == 4
-        and len(common_ops.require_shape(op, key)) == 4
-        and len(common_ops.require_shape(op, value)) == 4
-    ):
+    ranks = [
+        len(common_ops.require_shape(op, tensor)) for tensor in (query, key, value)
+    ]
+    if any(rank < 2 for rank in ranks):
         raise ValueError(
-            "Native opset18 attention requires 4D query, key, and value. "
-            f"Got shapes {query.shape}, {key.shape}, and {value.shape}. "
-            "Reshape inputs to [batch, heads, sequence, channels]."
+            "SDPA requires query, key and value with at least 2 dimensions "
+            f"[..., sequence, channels]; got {query.shape}, {key.shape}, {value.shape}."
         )
 
     # Reference: https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
@@ -1464,12 +1462,16 @@ def aten_scaled_dot_product_attention(
         attn_mask = _causal_attention_mask(op, query, key)
 
     if enable_gqa:
-        query_heads = common_ops.require_shape(op, query)[1]
-        key_heads = common_ops.require_shape(op, key)[1]
+        if any(rank < 3 for rank in ranks):
+            raise ValueError(
+                "Grouped-query attention requires a head dimension at axis -3."
+            )
+        query_heads = common_ops.require_shape(op, query)[-3]
+        key_heads = common_ops.require_shape(op, key)[-3]
         if not isinstance(query_heads, int) or not isinstance(key_heads, int):
             raise ValueError(
                 "Grouped-query attention needs known query and key head counts. "
-                "Keep dimension 1 static when exporting with enable_gqa=True."
+                "Keep dimension -3 static when exporting with enable_gqa=True."
             )
         if query_heads != key_heads:
             key, value = _attention_repeat_kv_for_group_query(op, query, key, value)
@@ -1523,20 +1525,10 @@ def aten__scaled_dot_product_flash_attention_for_cpu(
 
 
 def _attention(op: TranslationContext, query, key, value, attn_mask, scale, dropout_p):
-    # Swap the last two axes of key.
-    key_shape = op.Shape(key)
-    key_last_dim = op.Slice(key_shape, [-1], [_INT64_MAX])
-    key_second_last_dim = op.Slice(key_shape, [-2], [-1])
-    key_first_dims = op.Slice(key_shape, [_INT64_MIN], [-2])
-    # Contract the dimensions that are not the last two so we can transpose
-    # with a static permutation.
-    key_squeezed_shape = op.Concat([-1], key_second_last_dim, key_last_dim, axis=0)
-    key_squeezed = op.Reshape(key, key_squeezed_shape)
-    key_squeezed_transposed = op.Transpose(key_squeezed, perm=[0, 2, 1])
-    key_transposed_shape = op.Concat(
-        key_first_dims, key_last_dim, key_second_last_dim, axis=0
-    )
-    key_transposed = op.Reshape(key_squeezed_transposed, key_transposed_shape)
+    # Rank is known at export time even when dimension sizes are symbolic.
+    # Transpose directly to preserve empty axes (flattening through -1 does not).
+    rank = len(common_ops.require_shape(op, key))
+    key_transposed = op.Transpose(key, perm=[*range(rank - 2), rank - 1, rank - 2])
     # https://github.com/pytorch/pytorch/blob/12da0c70378b5be9135c6fda62a9863bce4a4818/aten/src/ATen/native/transformers/attention.cpp#L653
     # Scale q, k before matmul for stability see https://tinyurl.com/sudb9s96 for math.
     query_scaled = op.Mul(query, op.Sqrt(scale))

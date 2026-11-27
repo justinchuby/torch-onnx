@@ -226,5 +226,7 @@ built-in translations. PyTorch's `torch.onnx.ops.symbolic` and
   opsets 18–29, custom domains, and unbounded opset targets.
 - [Recovered regression inventory](docs/recovered-tests.md) — migrated PyTorch
   ONNX regression suites.
+- [Project coverage](docs/testing-coverage.md) — full-source measurement and
+  aggregation across default, optional and integration test suites.
 - [Upstream synchronization and migration inventory](docs/upstream-sync.md) —
   pinned PyTorch commits, operator coverage, and architecture details.

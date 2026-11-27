@@ -63,6 +63,14 @@ markers = [
   "opset29: requires the pinned ONNX main build; separate development-schema CI job",
 ]
 
+[tool.coverage.run]
+source = ["torch_onnx"]
+branch = true
+
+[tool.coverage.report]
+include_namespace_packages = true
+show_missing = true
+
 [tool.pyrefly]
 project-includes = ["src/torch_onnx"]
 # The legacy ONNX Script DSL overrides Value operators and Evaluator returns;

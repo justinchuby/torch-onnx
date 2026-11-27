@@ -412,6 +412,7 @@ def _handle_call_function_node(
     """
     if node.target is operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
+        return
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)
@@ -435,7 +436,7 @@ def _handle_call_function_node(
     if len(outputs) > 1:
         _set_shape_types(outputs, node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs
-    else:
+    elif outputs:
         _set_shape_type(outputs[0], node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs[0]
     ir_node = ir.Node(

@@ -168,7 +168,7 @@ def _get_allowed_types_from_type_annotation(
         return allowed_types
 
     origin_type = typing.get_origin(type_)
-    if origin_type is Union:
+    if origin_type in (Union, types.UnionType):
         allowed_types = set()
         subtypes = typing.get_args(type_)
         for subtype in subtypes:

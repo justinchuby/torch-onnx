@@ -50,7 +50,7 @@ jobs:
           TORCH_VERSION: ${{ matrix.torch }}
         run: |
           python -m pip install "torch==$TORCH_VERSION" --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -e . pytest onnxruntime
+          python -m pip install -e . pytest pytest-cov onnxruntime
           python -m pip check
           python - <<'PY'
           import os, torch
@@ -68,7 +68,23 @@ jobs:
             tests/exporter/test_embedding_bag_tensor_scan.py \
             tests/exporter/test_rotary_fusion_broadcast.py \
             tests/exporter/test_strided_scatter.py \
-            --junitxml=compatibility.xml
+            --junitxml=compatibility.xml \
+            --cov=torch_onnx --cov-branch --cov-report=xml:coverage.xml \
+            --cov-report=json:coverage.json
+      - name: Upload version compatibility coverage
+        if: always()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          flags: compatibility
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage-compatibility-${{ matrix.torch }}
+          path: |
+            coverage.xml
+            coverage.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

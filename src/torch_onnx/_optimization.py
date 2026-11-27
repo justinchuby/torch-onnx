@@ -9,6 +9,8 @@ from typing import Any
 
 import onnx_ir as ir
 
+from torch_onnx import _exporter_compat, _onnx_fusions
+
 
 def _scalar(value: ir.Value, expected: int) -> bool:
     tensor = value.const_value
@@ -93,13 +95,16 @@ def _rules() -> Any:
 def optimize(model: ir.Model) -> ir.Model:
     """Use upstream constant/structural optimization with safe no-op rewrites."""
     from onnxscript import optimizer, rewriter
-    from onnxscript.rewriter import onnx_fusions
 
     common = ir.passes.common
     common.InlinePass()(model)
     rules = _rules()
     for _ in range(2):
-        optimizer.fold_constants_ir(model, onnx_shape_inference=True)
+        optimizer.fold_constants_ir(
+            model,
+            onnx_shape_inference=True,
+            should_fold=_exporter_compat.constant_fold_policy(),
+        )
         rewriter.rewrite(model, rules)
     ir.passes.Sequential(
         common.RemoveUnusedNodesPass(),
@@ -112,5 +117,9 @@ def optimize(model: ir.Model) -> ir.Model:
         common.OutputFixPass(),
         common.NameFixPass(),
     )(model)
-    onnx_fusions.fuse(model)
+    _onnx_fusions.fuse(model)
+    # Fusion rules can keep shared pattern nodes until every match is processed.
+    common.RemoveUnusedNodesPass()(model)
+    common.CommonSubexpressionEliminationPass()(model)
+    common.NameFixPass()(model)
     return model

@@ -18,6 +18,7 @@ from torch_onnx import (
     _custom_translation,
     _dynamic_shapes,
     _exportable_module,
+    _exporter_compat,
     _onnx_program,
     _registration,
 )
@@ -173,23 +174,24 @@ def export_compat(
                 )
             registry.register_op(torch_op, onnx_op, is_complex=False)
 
-    onnx_program = _core.export(
-        model,
-        args,
-        kwargs,
-        registry=registry,
-        dynamic_shapes=dynamic_shapes_with_export_dim,
-        input_names=input_names,
-        output_names=output_names,
-        profile=profile,
-        report=report,
-        verify=verify,
-        dump_exported_program=dump_exported_program,
-        artifacts_dir=artifacts_dir,
-        verbose=verbose,
-        optimize=optimize,
-        opset_version=opset_version,
-    )
+    with _exporter_compat.downstream_export(custom_translation_table):
+        onnx_program = _core.export(
+            model,
+            args,
+            kwargs,
+            registry=registry,
+            dynamic_shapes=dynamic_shapes_with_export_dim,
+            input_names=input_names,
+            output_names=output_names,
+            profile=profile,
+            report=report,
+            verify=verify,
+            dump_exported_program=dump_exported_program,
+            artifacts_dir=artifacts_dir,
+            verbose=verbose,
+            optimize=optimize,
+            opset_version=opset_version,
+        )
 
     if need_axis_mapping and dynamic_shapes is not None:
         onnx_program._rename_dynamic_axes(dynamic_shapes)

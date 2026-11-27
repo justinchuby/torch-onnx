@@ -30,6 +30,7 @@ from torch_onnx import (
     _custom_translation,
     _dispatching,
     _errors,
+    _exporter_compat,
     _flags,
     _fx_passes,
     _ir_builder,
@@ -1279,6 +1280,7 @@ def _prepare_exported_program_for_export(
 
         graph_module = exported_program.graph_module
         graph_module = _fx_passes.remove_assertion_nodes(graph_module)
+        _exporter_compat.postprocess_decomposed_graph(graph_module)
         # Reassign the graph module to save some runtime.
         exported_program._graph_module = graph_module
         return exported_program
@@ -1452,10 +1454,7 @@ def _exported_program_to_onnx_program(
 
     for spec in itertools.chain(user_inputs, non_user_inputs):
         # Put the user inputs first and then the parameters/buffers
-        if (
-            isinstance(spec.arg, graph_signature.ConstantArgument)
-            and spec.arg.value is None
-        ):
+        if isinstance(spec.arg, graph_signature.ConstantArgument):
             logger.debug("Skipping constant argument %s", spec.arg)
             continue
         value_name = spec.arg.name

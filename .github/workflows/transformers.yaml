@@ -1,0 +1,60 @@
+name: Transformers exporter integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transformers-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  transformers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        transformers-ref: ['8e094f8970a60ca83052e2c199783b247b8fc13e', main]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: huggingface/transformers
+          ref: ${{ matrix.transformers-ref }}
+          path: .upstream/transformers
+          sparse-checkout: src
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Install the real upstream exporter
+        run: |
+          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e . -e .upstream/transformers pytest onnxruntime Pillow
+          python -m pip check
+          git -C .upstream/transformers rev-parse HEAD
+          python - <<'PY'
+          import pathlib, transformers
+          print(transformers.__version__, transformers.__file__)
+          assert pathlib.Path(transformers.__file__).resolve().is_relative_to(pathlib.Path('.upstream/transformers').resolve())
+          PY
+      - name: Export and execute tiny models without checkpoint downloads
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          python -m pytest tests/integration/test_transformers_exporter.py \
+            -m integration --junitxml=transformers.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: transformers-${{ matrix.transformers-ref }}
+          path: transformers.xml

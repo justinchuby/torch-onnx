@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_utils import HardwareClassification
@@ -184,6 +185,72 @@ class ONNXProgramRenameAxesTest(common_utils.TestCase):
             onnx_program.model.graph.inputs[0].shape,
             ir.Shape(["batch_size", 10, "hidden_size"]),
         )
+
+
+@pytest.mark.parametrize("backend", ["onnxruntime", "reference"])
+@pytest.mark.parametrize(
+    "arguments", ["missing", "extra", "bool_as_int", "int_as_float"]
+)
+def test_specialized_input_structure_and_types_are_validated(backend, arguments):
+    class Model(torch.nn.Module):
+        def forward(self, x, *, enabled=True, scale=2):
+            return x * scale if enabled else x
+
+    x = torch.ones(2)
+    program = torch_onnx.export(
+        Model().eval(), (x,), kwargs={"enabled": True, "scale": 2}, verbose=False
+    )
+    kwargs = {
+        "missing": {"enabled": True},
+        "extra": {"enabled": True, "scale": 2, "unexpected": 3},
+        "bool_as_int": {"enabled": 1, "scale": 2},
+        "int_as_float": {"enabled": True, "scale": 2.0},
+    }[arguments]
+    run = program if backend == "onnxruntime" else program.call_reference
+    try:
+        match = (
+            "input structure"
+            if arguments in ("missing", "extra")
+            else "Specialized argument"
+        )
+        with pytest.raises(ValueError, match=match):
+            run(x, **kwargs)
+        torch.testing.assert_close(run(x, scale=2, enabled=True)[0], x * 2)
+    finally:
+        program.release()
+
+
+def test_saved_program_runs_without_an_exported_program(tmp_path):
+    x = torch.tensor([-2.0, 3.0])
+    original = torch_onnx.export(torch.nn.ReLU().eval(), (x,), verbose=False)
+    loaded = None
+    try:
+        path = tmp_path / "model.onnx"
+        original.save(path)
+        loaded = torch_onnx.ONNXProgram(ir.load(path), exported_program=None)
+        torch.testing.assert_close(loaded(x)[0], x.relu())
+        torch.testing.assert_close(loaded.call_reference(x)[0], x.relu())
+    finally:
+        original.release()
+        if loaded is not None:
+            loaded.release()
+
+
+def test_optimize_invalidates_an_initialized_runtime_session():
+    x = torch.tensor([-2.0, 3.0])
+    program = torch_onnx.export(
+        torch.nn.ReLU().eval(), (x,), optimize=False, verbose=False
+    )
+    try:
+        torch.testing.assert_close(program(x)[0], x.relu())
+        session = program._inference_session
+        assert session is not None
+        program.optimize()
+        assert program._inference_session is None
+        torch.testing.assert_close(program(-x)[0], (-x).relu())
+        assert program._inference_session is not session
+    finally:
+        program.release()
 
 
 if __name__ == "__main__":

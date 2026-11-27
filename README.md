@@ -135,6 +135,10 @@ onnx_program.release()
 Pass `profile=True` (requires `pyinstrument`) to capture an HTML timing profile
 alongside the export report.
 
+Exceptions in `torch_onnx.errors` alias the corresponding PyTorch ONNX classes.
+Existing `except torch.onnx.OnnxExporterError` handlers also catch standalone
+capture and conversion failures, with their original exception causes retained.
+
 ### Fake tensors and deferred weights for large models
 
 Export without materializing full weights in memory by disabling eager

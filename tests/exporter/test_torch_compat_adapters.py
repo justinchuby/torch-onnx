@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import sys
+import types
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -166,3 +168,50 @@ def test_exported_program_preparation_passes_graph_to_rnn_capability_adapter():
             program, registry=mock.sentinel.registry
         )
     adapter.assert_called_once_with(program.range_constraints, program.graph_module)
+
+
+@pytest.mark.parametrize(
+    "version,validated",
+    [
+        ("2.15.99+cpu", True),
+        ("2.10.7", True),
+        ("2.9.0", False),
+        ("2.16.0.dev20261126", False),
+        ("unknown", False),
+    ],
+)
+def test_release_diagnostics_are_actionable_and_warn_once(
+    monkeypatch, version, validated
+):
+    monkeypatch.setattr(torch, "__version__", version)
+    monkeypatch.setattr(_torch_compat, "_warned", False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _torch_compat.warn_if_unvalidated()
+        _torch_compat.warn_if_unvalidated()
+    assert len(caught) == (0 if validated else 1)
+    if caught:
+        assert caught[0].category is _torch_compat.TorchCompatibilityWarning
+        message = str(caught[0].message)
+        assert version in message
+        assert all(
+            tested in message for tested in _torch_compat.SUPPORTED_TORCH_VERSIONS
+        )
+        assert "Upgrade PyTorch" in message
+
+
+def test_missing_rnn_helper_attribute_is_a_capability_check(monkeypatch):
+    monkeypatch.setattr(
+        _torch_compat.importlib, "import_module", lambda name: types.SimpleNamespace()
+    )
+    assert _torch_compat._dynamic_rnn_helpers() is None
+
+
+def test_missing_rnn_helpers_do_not_warn_for_non_module_objects(monkeypatch):
+    monkeypatch.setattr(_torch_compat, "_dynamic_rnn_helpers", lambda: None)
+    with (
+        mock.patch.object(_torch_compat, "warn_once") as warn,
+        _torch_compat.dynamic_rnn_decompositions(object()),
+    ):
+        pass
+    warn.assert_not_called()

@@ -38,6 +38,40 @@ def native_sub(op, self: ir.Value, other: ir.Value, alpha: float = 1) -> ir.Valu
     return op.Sub(self, other)
 
 
+def native_signature(parameters=("self", "other"), *, homogeneous=True, alpha=False):
+    constraint = ir.schemas.TypeConstraintParam(
+        "T", {ir.TensorType(ir.DataType.FLOAT), ir.TensorType(ir.DataType.DOUBLE)}
+    )
+    params = [
+        ir.schemas.Parameter(
+            name, constraint, required=True, variadic=False, homogeneous=homogeneous
+        )
+        for name in parameters
+    ]
+    if alpha:
+        params.append(
+            ir.schemas.AttributeParameter(
+                "alpha", ir.AttributeType.FLOAT, required=False
+            )
+        )
+    return ir.schemas.OpSignature(
+        "",
+        "custom_add",
+        overload="",
+        since_version=18,
+        params=params,
+        outputs=[
+            ir.schemas.Parameter(
+                "result",
+                constraint,
+                required=True,
+                variadic=False,
+                homogeneous=homogeneous,
+            )
+        ],
+    )
+
+
 class AddModel(torch.nn.Module):
     def forward(self, x, y):
         return torch.add(x, y, alpha=2).sin()
@@ -544,6 +578,91 @@ if any(n == 'onnxscript' or n.startswith('onnxscript.') or 'torch_lib' in n for 
         )
         self.assertIn("LeakyRelu", [n.op_type for n in program.model.graph])
         onnx.checker.check_model(program.model_proto, full_check=True)
+
+    def test_unhashable_callable_is_rejected_before_registration(self):
+        class Callable:
+            __hash__ = None
+
+            def __call__(self, x):
+                return x
+
+        with self.assertRaisesRegex(TypeError, "hashable"):
+            torch_onnx.register_custom_translation(Callable(), native_add)
+        self.assertEqual(_custom_translation.snapshot(), ())
+
+    def test_signature_names_must_match_the_python_callable(self):
+        with self.assertRaisesRegex(ValueError, "absent.*absent from"):
+            torch_onnx.register_custom_translation(
+                self.target, native_add, signature=native_signature(("self", "absent"))
+            )
+        self.assertEqual(_custom_translation.snapshot(), ())
+
+    def test_signature_accepts_scalar_operands_and_python_attributes(self):
+        torch_onnx.register_custom_translation(
+            self.target, native_add, signature=native_signature(alpha=True)
+        )
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.add(x, 0.5, alpha=2.0)
+
+        program = torch_onnx.export(Model().eval(), (torch.ones(2),), verbose=False)
+        try:
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            torch_onnx.testing.assert_onnx_program(program)
+        finally:
+            program.release()
+
+    def test_heterogeneous_signature_allows_explicit_tensor_casts(self):
+        def cast_add(op, self, other, alpha=1):
+            return native_add(op, op.CastLike(self, other), other, alpha)
+
+        torch_onnx.register_custom_translation(
+            self.target, cast_add, signature=native_signature(homogeneous=False)
+        )
+        args = (torch.randn(2), torch.randn(2, dtype=torch.float64))
+        program = torch_onnx.export(AddModel().eval(), args, verbose=False)
+        try:
+            self.assertEqual(program.model.graph.outputs[0].dtype, ir.DataType.DOUBLE)
+            torch_onnx.testing.assert_onnx_program(program)
+        finally:
+            program.release()
+
+    def test_uninferred_custom_outputs_receive_captured_metadata(self):
+        def opaque(op, self, other, alpha=1):
+            return op.builder.node(
+                "OpaqueAdd",
+                [self, other],
+                domain="test.signature",
+                version=1,
+                output_types=[None],
+            )[0]
+
+        torch_onnx.register_custom_translation(
+            self.target, opaque, signature=native_signature()
+        )
+        program = self.export()
+        try:
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            node = next(
+                node for node in program.model.graph if node.op_type == "OpaqueAdd"
+            )
+            self.assertEqual(node.outputs[0].dtype, ir.DataType.FLOAT)
+            self.assertEqual(node.outputs[0].shape, ir.Shape([2]))
+        finally:
+            program.release()
+
+    def test_signature_rejects_an_incorrect_output_dtype(self):
+        def wrong_output(op, self, other, alpha=1):
+            return op.Cast(self, to=ir.DataType.INT64)
+
+        torch_onnx.register_custom_translation(
+            self.target, wrong_output, signature=native_signature()
+        )
+        with self.assertRaisesRegex(
+            torch_onnx.errors.ConversionError, "result.*outside constraint"
+        ):
+            self.export()
 
 
 if __name__ == "__main__":

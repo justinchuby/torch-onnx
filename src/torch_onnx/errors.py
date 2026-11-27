@@ -1,35 +1,29 @@
-"""Public exceptions and warnings for the standalone exporter."""
+"""Aliases of PyTorch ONNX exceptions and warnings.
 
+Both exporters share exception identities, so existing torch.onnx handlers also
+catch failures raised by the standalone exporter.
+"""
 
-class OnnxExporterWarning(UserWarning):
-    """Warning during ONNX export."""
+from torch.onnx._internal.exporter._errors import (
+    ConversionError,
+    DispatchError,
+    GraphConstructionError,
+    TorchExportError,
+)
+from torch.onnx.errors import (
+    OnnxExporterError,
+    OnnxExporterWarning,
+    SymbolicValueError,
+    UnsupportedOperatorError,
+)
 
-
-class OnnxExporterError(RuntimeError):
-    """Error during export."""
-
-    pass
-
-
-class TorchExportError(OnnxExporterError):
-    """Error during torch.export.export."""
-
-    pass
-
-
-class ConversionError(OnnxExporterError):
-    """Error during ONNX conversion."""
-
-    pass
-
-
-class DispatchError(ConversionError):
-    """Error during ONNX Function dispatching."""
-
-    pass
-
-
-class GraphConstructionError(ConversionError):
-    """Error during graph construction."""
-
-    pass
+__all__ = [
+    "ConversionError",
+    "DispatchError",
+    "GraphConstructionError",
+    "OnnxExporterError",
+    "OnnxExporterWarning",
+    "SymbolicValueError",
+    "TorchExportError",
+    "UnsupportedOperatorError",
+]

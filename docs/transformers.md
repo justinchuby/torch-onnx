@@ -43,7 +43,10 @@ specialized arguments. Symbolic runtime inputs remain graph inputs.
 The standalone opset-23 RoPE fusion broadcasts singleton cosine/sine cache axes
 explicitly, because ONNX `RotaryEmbedding` requires exact cache batch and sequence
 sizes. Unsupported dtypes and unproven broadcast relationships retain the original
-tensor operations. Other fusion passes remain enabled. An isolated float32 CPU
+tensor operations. Other fusion passes remain enabled. The fusion uses only
+the public `onnxscript.rewriter.onnx_fusions.fuse` entry
+point, followed by local repairs of newly generated RoPE nodes using public IR
+APIs. Pre-existing explicit RotaryEmbedding nodes are preserved. An isolated float32 CPU
 benchmark with one thread, ten warmups, and 100 alternating measurements compared
 the valid unfused graph with the fixed fusion:
 

@@ -436,7 +436,7 @@ def _handle_call_function_node(
     if len(outputs) > 1:
         _set_shape_types(outputs, node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs
-    else:
+    elif outputs:
         _set_shape_type(outputs[0], node.meta["val"], complex_to_float=False)
         node_name_to_values[node.name] = outputs[0]
     ir_node = ir.Node(

@@ -152,3 +152,67 @@ def test_incorrect_custom_lowering_is_reported_as_an_accuracy_failure(tmp_path):
         if program is not None:
             program.release()
         torch_onnx.unregister_custom_translation(target)
+
+
+@pytest.mark.parametrize("stage", ["checker", "runtime"])
+def test_optional_verification_failure_keeps_the_export_and_error_report(
+    tmp_path, stage
+):
+    # Verification is diagnostic: an unavailable checker/runtime must not discard
+    # the exported artifact. Inject a failure without depending on host kernels.
+    from torch_onnx import _core
+
+    target = _core.onnxscript_apis if stage == "checker" else _core._verification
+    method = "check_model" if stage == "checker" else "verify_onnx_program"
+    with mock.patch.object(
+        target, method, side_effect=RuntimeError(f"deliberate {stage} failure")
+    ):
+        program = torch_onnx.export(
+            torch.nn.ReLU().eval(),
+            (torch.randn(2),),
+            verify=True,
+            report=True,
+            artifacts_dir=tmp_path,
+            verbose=False,
+        )
+    try:
+        reports = list(tmp_path.glob("*.md"))
+        assert len(reports) == 1
+        assert f"deliberate {stage} failure" in reports[0].read_text()
+        x = torch.tensor([-1.0, 2.0])
+        torch.testing.assert_close(program(x)[0], torch.relu(x))
+    finally:
+        program.release()
+
+
+def test_report_write_failure_does_not_hide_the_original_lowering_error(
+    tmp_path, caplog
+):
+    from torch_onnx import _reporting
+
+    def fail(op, self):
+        raise ValueError("original lowering error")
+
+    target = torch.ops.aten.relu.default
+    torch_onnx.register_custom_translation(target, fail)
+    try:
+        with (
+            mock.patch.object(
+                _reporting,
+                "create_onnx_export_report",
+                side_effect=PermissionError("report destination is read-only"),
+            ),
+            pytest.raises(
+                torch_onnx.errors.ConversionError, match="original lowering error"
+            ),
+        ):
+            torch_onnx.export(
+                torch.nn.ReLU().eval(),
+                (torch.ones(2),),
+                report=True,
+                artifacts_dir=tmp_path,
+                verbose=False,
+            )
+        assert "report destination is read-only" in caplog.text
+    finally:
+        torch_onnx.unregister_custom_translation(target)

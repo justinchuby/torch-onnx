@@ -102,3 +102,65 @@ def test_legacy_dynamic_axes_warns_about_unknown_input_names():
         )
     assert shapes == [None]
     assert args == (x,) and kwargs == {}
+
+
+def test_raw_ir_preserves_tensor_list_inputs_and_factory_attributes():
+    class Model(torch.nn.Module):
+        def forward(self, x):
+            y = x.to(dtype=torch.float64, copy=True)
+            z = torch.zeros((2, 3), dtype=torch.float64, device="cpu")
+            return torch.cat((y, z), dim=0)
+
+    ep = torch.export.export(Model(), (torch.randn(2, 3),))
+    model = torch_onnx.exported_program_to_ir(ep, lower="none")
+    zeros = next(node for node in model.graph if node.op_type == "aten.zeros.default")
+    assert zeros.attributes["dtype"].value == int(ir.DataType.DOUBLE)
+    assert zeros.attributes["device"].value == "cpu"
+    cat = next(node for node in model.graph if node.op_type == "aten.cat.default")
+    assert len(cat.inputs) == 2
+    assert cat.inputs[1] is zeros.outputs[0]
+    assert model.graph.outputs[0].shape == ir.Shape([4, 3])
+    assert model.graph.outputs[0].dtype == ir.DataType.DOUBLE
+    onnx.checker.check_model(ir.to_proto(model), check_custom_domain=False)
+
+
+def test_shared_dynamic_dimensions_warn_and_keep_one_consistent_name():
+    class Model(torch.nn.Module):
+        def forward(self, x, y):
+            return x + y
+
+    model = Model().eval()
+    with pytest.warns(UserWarning, match="shares the same shape constraints"):
+        program = torch_onnx.export(
+            model,
+            (torch.randn(2, 3), torch.randn(2, 3)),
+            dynamic_shapes=(["left_batch", None], ["right_batch", None]),
+            verbose=False,
+        )
+    try:
+        assert all(
+            value.shape[0].value == "left_batch" for value in program.model.graph.inputs
+        )
+        x, y = torch.randn(5, 3), torch.randn(5, 3)
+        torch.testing.assert_close(program(x, y)[0], model(x, y))
+    finally:
+        program.release()
+
+
+@pytest.mark.parametrize(
+    "axes", [{0: "batch", 1: None}, ["batch", None], ("batch", None)]
+)
+def test_dynamic_shapes_back_conversion_keeps_only_dynamic_axes(axes):
+    result = _dynamic_shapes.from_dynamic_shapes_to_dynamic_axes(
+        (axes, None), ["x", "y"], RuntimeError("original capture failure")
+    )
+    assert result == {"x": [0]}
+
+
+def test_dynamic_shapes_back_conversion_preserves_original_failure_as_cause():
+    original = RuntimeError("original capture failure")
+    with pytest.raises(ValueError, match="number of input names") as error:
+        _dynamic_shapes.from_dynamic_shapes_to_dynamic_axes(
+            ({0: "batch"}, {0: "batch"}), ["x"], original
+        )
+    assert error.value.__cause__ is original

@@ -52,7 +52,8 @@ cov.json_report(morfs=sources, outfile='coverage-combined.json')
 CI uploads the main, optional operator, development-opset, Transformers and
 PyTorch-version compatibility results to Codecov. Each job retains XML and JSON
 artifacts so partial jobs and their source revision can be inspected separately.
-The main job appends the Linux FBGEMM reference cohort when the default tests pass.
+The main job appends the Linux FBGEMM reference cohort even if the default tests
+fail, while preserving the failing job status.
 
 A coverage report is not a passing test result. Inspect pytest's exit status and
 failure list alongside coverage. Some platform-specific quantized models require

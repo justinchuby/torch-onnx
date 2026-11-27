@@ -109,3 +109,31 @@ def test_trilinear_explicit_output_size_matches_pytorch(align_corners):
         x, size=(3, 4, 5), mode="trilinear", align_corners=align_corners
     )
     torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("reduction", ["all", "any"])
+@pytest.mark.parametrize("shape", [(), (2, 3)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.uint8])
+@pytest.mark.parametrize("keepdim", [False, True])
+def test_boolean_reduction_without_axes_preserves_scalar_and_uint8_contracts(
+    reduction, shape, dtype, keepdim
+):
+    x = (
+        torch.tensor(1, dtype=dtype)
+        if not shape
+        else torch.tensor([[0, 1, 2], [1, 0, 1]], dtype=dtype)
+    )
+    native = core.aten_all_dims if reduction == "all" else core.aten_any_dims
+    (actual,) = evaluate(native, x, dim=None, keepdim=keepdim)
+    expected = getattr(torch, reduction)(x, dim=None, keepdim=keepdim)
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("dtype", [None, int(ir.DataType.INT32)])
+def test_randint_single_possible_value_preserves_shape_and_dtype(dtype):
+    def translate(op, high, size):
+        return factories.aten_randint(op, high, size, dtype=dtype)
+
+    (actual,) = evaluate(translate, torch.tensor(1), torch.tensor([2, 3]))
+    expected_dtype = torch.int64 if dtype is None else torch.int32
+    torch.testing.assert_close(actual, torch.zeros((2, 3), dtype=expected_dtype))

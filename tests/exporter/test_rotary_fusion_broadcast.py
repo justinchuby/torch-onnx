@@ -75,3 +75,57 @@ def test_rotary_fusion_rejects_unsupported_types_and_input_expansion(
         torch.testing.assert_close(program(*args)[0], model(*args))
     finally:
         program.release()
+
+
+@pytest.mark.parametrize("depth", [0, 1])
+def test_public_fusion_restores_primitive_formula_for_degenerate_head_width(depth):
+    model = _Rotary().eval()
+    x = torch.randn(2, 3, 4, depth)
+    frequencies = torch.randn(1, 4, depth if depth == 1 else 0)
+    program = torch_onnx.export(
+        model, (x, frequencies), opset_version=23, verbose=False
+    )
+    try:
+        assert not any(
+            node.op_type == "RotaryEmbedding" for node in program.model.graph
+        )
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        torch.testing.assert_close(program(x, frequencies)[0], model(x, frequencies))
+    finally:
+        program.release()
+
+
+def test_public_fusion_repairs_rotary_inside_if_subgraphs():
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.rotary = _Rotary()
+
+        def forward(self, predicate, x, frequencies):
+            return torch.cond(
+                predicate,
+                lambda a, b: self.rotary(a, b),
+                lambda a, b: -self.rotary(a, b),
+                (x, frequencies),
+            )
+
+    model = Model().eval()
+    x, frequencies = torch.randn(2, 3, 4, 8), torch.randn(1, 4, 4)
+    program = torch_onnx.export(
+        model, (torch.tensor(True), x, frequencies), opset_version=23, verbose=False
+    )
+    try:
+        assert (
+            sum(
+                node.op_type == "RotaryEmbedding"
+                for node in program.model.graph.all_nodes()
+            )
+            == 2
+        )
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        for predicate in (True, False):
+            actual = program(torch.tensor(predicate), x, frequencies)[0]
+            expected = model.rotary(x, frequencies) * (1 if predicate else -1)
+            torch.testing.assert_close(actual, expected)
+    finally:
+        program.release()

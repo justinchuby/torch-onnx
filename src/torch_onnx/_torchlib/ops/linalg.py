@@ -103,9 +103,6 @@ def aten_addmm(
 ) -> ir.Value:
     """addmm(Tensor self, Tensor mat1, Tensor mat2, *, Scalar beta=1, Scalar alpha=1) -> Tensor"""
 
-    # NOTE: ONNX Runtime does not support int inputs to Gemm as of 1.16.
-    # To support int inputs, consider an overriding implementation that casts to float and back.
-
     alpha = float(alpha)
     beta = float(beta)
 
@@ -404,3 +401,11 @@ def aten_linalg_vector_norm(
             self = op.Abs(self)
         self_pow = op.Pow(self, ord_val)
         return op.Pow(op.ReduceSum(self_pow, dim, keepdims=keepdim), exp)
+
+
+@onnx_impl("aten::mm.dtype")
+def aten_mm_dtype(
+    op: TranslationContext, self: ir.Value, mat2: ir.Value, out_dtype: int
+) -> ir.Value:
+    """Cast operands before MatMul so accumulation uses the requested dtype."""
+    return op.MatMul(op.Cast(self, to=out_dtype), op.Cast(mat2, to=out_dtype))

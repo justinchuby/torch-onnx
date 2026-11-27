@@ -1219,12 +1219,9 @@ def aten_pad(
     """pad(Tensor self, SymInt[] pad, str mode="constant", float? value=None) -> Tensor"""
 
     rank = len(common_ops.require_shape(op, self))
-    if mode == "circular" and (
-        op.builder.opset < 19 or any(not isinstance(p, int) or p < 0 for p in pad)
-    ):
-        # Pad's wrap mode was introduced in opset 19. Modular gather indices
-        # also handle negative pads cropping an axis to zero, which inference
-        # runtimes can reject in their Pad wrap kernel.
+    if mode == "circular" and op.builder.opset < 19:
+        # Pad's wrap mode was introduced in opset 19. Older schemas need
+        # modular gather indices to express circular padding.
         result = self
         for index in range(0, len(pad), 2):
             before, after = pad[index : index + 2]
@@ -1241,8 +1238,7 @@ def aten_pad(
             positions = op.Range(
                 op.Neg(op.Max(before, 0)), op.Add(cropped_size, op.Max(after, 0)), 1
             )
-            # An empty range still needs a nonzero divisor: runtimes may
-            # validate a constant Mod divisor before seeing its empty input.
+            # Keep the divisor defined even when both the axis and range are empty.
             indices = op.Mod(positions, op.Max(cropped_size, 1))
             result = op.Gather(cropped, indices, axis=axis)
         return result

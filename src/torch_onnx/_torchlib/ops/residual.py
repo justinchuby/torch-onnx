@@ -505,7 +505,7 @@ def aten_grid_sampler_2d(
     )
 
 
-@onnx_impl(aten._grouped_mm.default)
+@onnx_impl((aten._grouped_mm.default, "transformers::grouped_mm_fallback"))
 def aten_grouped_mm(
     op: TranslationContext,
     self: ir.Value,
@@ -515,6 +515,11 @@ def aten_grouped_mm(
     out_dtype: int = -1,
 ) -> ir.Value:
     """_grouped_mm(Tensor self, Tensor mat2, *, Tensor? offs=None, Tensor? bias=None, int? out_dtype=None) -> Tensor"""
+
+    if out_dtype not in (None, -1) and out_dtype != self.dtype:
+        self, mat2 = op.Cast(self, to=out_dtype), op.Cast(mat2, to=out_dtype)
+        if bias is not None:
+            bias = op.Cast(bias, to=out_dtype)
 
     if offs is not None:
         if self.shape is None or mat2.shape is None:
@@ -536,9 +541,9 @@ def aten_grouped_mm(
                 raise ValueError(
                     "Grouped matmul offsets and operand group counts must match."
                 )
-        if bias is not None:
+        if bias is not None and not (a_rank == 2 and b_rank == 3):
             raise NotImplementedError(
-                "Grouped matmul with offsets does not support bias."
+                "Grouped matmul offset bias requires 2D @ grouped 3D operands."
             )
         if out_dtype is not None and out_dtype != -1 and out_dtype != self.dtype:
             raise NotImplementedError(
@@ -577,6 +582,13 @@ def aten_grouped_mm(
                 else op.Gather(mat2, i, axis=0)
             )
             result = op.MatMul(a, b)
+            if bias is not None:
+                group_bias = (
+                    op.Gather(bias, i, axis=0)
+                    if bias.shape is not None and len(bias.shape) > 1
+                    else bias
+                )
+                result = op.Add(result, group_bias)
             if a_is_2d and b_is_2d:
                 result = op.Unsqueeze(result, [0])
             outputs.append(result)

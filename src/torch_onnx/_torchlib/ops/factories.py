@@ -1206,3 +1206,32 @@ def aten_multinomial(
     if len(common_ops.require_shape(op, self)) == 1:
         result = op.Squeeze(result, [0])
     return result
+
+
+@onnx_impl((aten.randperm.default, aten.randperm.generator))
+def aten_randperm(
+    op: TranslationContext,
+    n: ir.Value,
+    generator=None,
+    dtype: int = ir.DataType.INT64,
+    layout: str = "",
+    device: str = "",
+    pin_memory: bool = False,
+) -> ir.Value:
+    """A permutation from sorted random keys, without promising Torch RNG identity."""
+    if generator is not None:
+        raise NotImplementedError(
+            "Exporting randperm with an explicit Generator is unsupported."
+        )
+    n = op.Cast(n, to=ir.DataType.INT64)
+    shaper = op.Expand(op.constant(0.0, dtype=ir.DataType.DOUBLE), op.Reshape(n, [1]))
+    # Double precision keys make accidental ties much less likely than float32.
+    keys = op.RandomUniformLike(
+        shaper,
+        dtype=ir.DataType.DOUBLE,
+        output_types=[ir.TensorType(ir.DataType.DOUBLE)],
+    )
+    _, indices = op.TopK(
+        keys, op.Reshape(n, [1]), axis=0, largest=0, sorted=1, outputs=2
+    )
+    return op.Cast(indices, to=ir.DataType.INT64 if dtype in (None, -1) else dtype)

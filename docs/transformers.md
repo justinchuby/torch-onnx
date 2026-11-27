@@ -45,8 +45,8 @@ explicitly, because ONNX `RotaryEmbedding` requires exact cache batch and sequen
 sizes. Unsupported dtypes and unproven broadcast relationships retain the original
 tensor operations. Other fusion passes remain enabled. The fusion uses only
 the public `onnxscript.rewriter.onnx_fusions.fuse` entry
-point, followed by local repairs of newly generated RoPE nodes using public IR
-APIs. Pre-existing explicit RotaryEmbedding nodes are preserved. An isolated float32 CPU
+point, followed by public `rewriter.RewriteRule` repairs of newly generated
+RoPE nodes. Pre-existing explicit RotaryEmbedding nodes are preserved. An isolated float32 CPU
 benchmark with one thread, ten warmups, and 100 alternating measurements compared
 the valid unfused graph with the fixed fusion:
 
@@ -94,3 +94,11 @@ Transformers installed:
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=1 \
   python -m pytest tests/integration/test_transformers_exporter.py -m integration
 ```
+
+## Native operator implementations
+
+Useful operator patches and custom lowerings are implemented in torchlib; see the
+[implementation audit and measurements](transformers-native.md). Five additional
+integration cases disable Transformers operator patches and custom translations
+while retaining its FX repairs. Pure FX graph fixes and the inverse-DFT workaround
+for ONNX Runtime remain with Transformers.

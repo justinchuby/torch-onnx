@@ -484,16 +484,6 @@ def aten_bitwise_right_shift(
     # Choose the shifted value based on the sign bit
     negative_result = op.Cast(negative_shifted, to=signed_dtype)
     positive_result = op.Cast(shifted, to=signed_dtype)
-    if signed_dtype == ir.DataType.INT16:
-        # Sign-extend before selection: ORT has no int16 Where kernel.
-        return op.Cast(
-            op.Where(
-                negative,
-                op.Cast(negative_result, to=ir.DataType.INT32),
-                op.Cast(positive_result, to=ir.DataType.INT32),
-            ),
-            to=signed_dtype,
-        )
     return op.Where(negative, negative_result, positive_result)
 
 
@@ -979,9 +969,7 @@ def aten_floor_divide(
 def operator_floordiv(
     op: TranslationContext, self: ir.Value, other: ir.Value
 ) -> ir.Value:
-    # We implement floor_divide only for positive inputs (using integer division)
-    # because that is the usual intended case and is the most efficient.
-    return op.Div(self, other)
+    return aten_floor_divide(op, self, other)
 
 
 @onnx_impl((aten.fmod.Tensor, aten.fmod.Scalar))
@@ -2599,6 +2587,16 @@ def aten_masked_fill(
     """masked_fill.Tensor(Tensor self, Tensor mask, Tensor value) -> Tensor"""
     # NOTE: Do not attempt to cast `mask` to BOOL because mask should not take any other types.
     # `mask` coming in as other types is often an error and should fail the model.
+    if self.dtype == ir.DataType.BOOL:
+        if isinstance(value, bool | int | float):
+            return op.Or(self, mask) if bool(value) else op.And(self, op.Not(mask))
+        if value.const_value is not None and value.const_value.size == 1:
+            return (
+                op.Or(self, mask)
+                if bool(value.const_value.numpy().item())
+                else op.And(self, op.Not(mask))
+            )
+        return op.Or(op.And(self, op.Not(mask)), op.And(mask, op.CastLike(value, self)))
     value_cast = op.CastLike(value, self)
     return op.Where(mask, value_cast, self)
 
@@ -2615,22 +2613,20 @@ def aten_masked_scatter(
     # subset of masked positions were scattered (pytorch/pytorch#186146).
     self = op.Expand(self, op.Shape(mask))
     mask = op.Expand(mask, op.Shape(self))
-    index = op.Transpose(op.NonZero(mask), perm=[1, 0])
-
-    # NOTE: source can have more elements than needed.
-    # It could also have arbitrary shape.
-    # This is not supported by ONNX::ScatterND, so we need to flatten and slice source tensor.
-    source = op.Reshape(source, op.constant([-1], dtype=ir.DataType.INT64))
-    axes = op.constant([0], dtype=ir.DataType.INT64)
-    starts = op.constant([0], dtype=ir.DataType.INT64)
-    ends = op.Gather(
-        op.Shape(index),
-        op.constant([0], dtype=ir.DataType.INT64),
-        axis=0,
-    )
-    source = op.Slice(source, starts, ends, axes)
-
-    return op.ScatterND(self, index, source)
+    flat_mask = op.Reshape(mask, [-1])
+    positions = op.CumSum(op.Cast(flat_mask, to=ir.DataType.INT64), 0)
+    positions = op.Where(flat_mask, positions, op.constant(0, dtype=ir.DataType.INT64))
+    # Prefix the sentinel and use one-based selected indices. False positions
+    # safely gather zero even for an empty source; an insufficient source still
+    # produces out-of-bounds indices rather than silently selecting the sentinel.
+    # Only a prefix of at most self.numel() is read/copied, even for a huge source.
+    flat_source = op.Reshape(source, [-1])
+    prefix_end = op.Min(op.Shape(flat_source), op.Shape(flat_mask))
+    prefix = op.Slice(flat_source, [0], prefix_end, [0])
+    padded = op.Concat(op.Reshape(op.CastLike(0, source), [1]), prefix, axis=0)
+    gathered = op.Gather(padded, positions)
+    result = op.Where(flat_mask, gathered, op.Reshape(self, [-1]))
+    return op.Reshape(result, op.Shape(self), allowzero=1)
 
 
 @onnx_impl(aten.max.default)
@@ -3253,7 +3249,7 @@ def aten_slice_scatter(
     return output
 
 
-@onnx_impl(aten.sort.default)
+@onnx_impl((aten.sort.default, aten.sort.stable))
 def aten_sort(
     op: TranslationContext,
     self: ir.Value,
@@ -4155,6 +4151,22 @@ def _aten_index_put_bool(
     for _ in range(self_rank - mask_rank):
         expanded_mask = op.Unsqueeze(expanded_mask, neg_1)
     expanded_mask = op.Expand(expanded_mask, op.Shape(self))
+    # Scalar replacement needs no NonZero coordinates or ScatterND updates.
+    # Keep the general selection-shape path below for non-scalar values.
+    if (
+        not accumulate
+        and values.shape is not None
+        and all(isinstance(dim, int) for dim in values.shape)
+        and math.prod(values.shape) == 1
+    ):
+        return aten_masked_fill(op, self, expanded_mask, op.Reshape(values, []))
+    if (
+        not accumulate
+        and 0 < mask_rank < self_rank
+        and values.shape is not None
+        and len(values.shape) <= self_rank - mask_rank + 1
+    ):
+        return _aten_index_put_bool_rows(op, self, bool_mask, expanded_mask, values)
     selected_indices = op.Transpose(op.NonZero(expanded_mask), perm=[1, 0])
 
     # Broadcast ``values`` to the selection shape ``[num_true, *self.shape[mask_rank:]]``
@@ -4174,6 +4186,47 @@ def _aten_index_put_bool(
         flat_values,
         reduction="add" if accumulate else None,
     )
+
+
+def _aten_index_put_bool_rows(
+    op: TranslationContext,
+    self: ir.Value,
+    mask: ir.Value,
+    expanded_mask: ir.Value,
+    values: ir.Value,
+) -> ir.Value:
+    """Gather selected rows without NonZero coordinates or data-sized buffers."""
+    self_rank = len(common_ops.require_shape(op, self))
+    mask_rank = len(common_ops.require_shape(op, mask))
+    value_rank = len(common_ops.require_shape(op, values))
+    row_rank = self_rank - mask_rank + 1
+    rows = values
+    if value_rank < row_rank:
+        shape = op.Concat(
+            op.constant([1] * (row_rank - value_rank), dtype=ir.DataType.INT64),
+            op.Shape(values),
+            axis=0,
+        )
+        rows = op.Reshape(values, shape, allowzero=1)
+    flat_mask = op.Reshape(mask, [-1])
+    mask_size = op.Shape(flat_mask)
+    row_count = op.Shape(rows, start=0, end=1)
+    positions = op.CumSum(op.Cast(flat_mask, to=ir.DataType.INT64), 0)
+    positions = op.Where(
+        op.Equal(row_count, 1), op.constant(1, dtype=ir.DataType.INT64), positions
+    )
+    positions = op.Where(flat_mask, positions, op.constant(0, dtype=ir.DataType.INT64))
+    prefix_end = op.Min(row_count, mask_size)
+    prefix = op.Slice(rows, [0], prefix_end, [0])
+    # No dummy payload is allocated when the mask itself is empty. Otherwise
+    # false entries select row zero, even when there are zero update rows.
+    sentinel_rows = op.Cast(op.Greater(mask_size, 0), to=ir.DataType.INT64)
+    sentinel_shape = op.Concat(sentinel_rows, op.Shape(rows, start=1), axis=0)
+    sentinel = op.Expand(op.CastLike(0, values), sentinel_shape)
+    gathered = op.Gather(op.Concat(sentinel, prefix, axis=0), positions, axis=0)
+    target = op.Concat(mask_size, op.Shape(self, start=mask_rank), axis=0)
+    updates = op.Reshape(op.Expand(gathered, target), op.Shape(self), allowzero=1)
+    return aten_masked_fill(op, self, expanded_mask, updates)
 
 
 def aten_std(op: TranslationContext, self: ir.Value, unbiased: bool = True) -> ir.Value:
@@ -4470,3 +4523,13 @@ def _aten_var_mean_dim_onnx(
         var = op.Div(mul, sub)
 
     return var, mean
+
+
+@onnx_impl(aten.exp.default, complex=True)
+def aten_exp_complex(op: TranslationContext, self: ir.Value) -> ir.Value:
+    """Complex exp via Euler's formula over packed real/imaginary values."""
+    real, imag = op.Gather(self, 0, axis=-1), op.Gather(self, 1, axis=-1)
+    magnitude = op.Exp(real)
+    real = op.Unsqueeze(op.Mul(magnitude, op.Cos(imag)), [-1])
+    imag = op.Unsqueeze(op.Mul(magnitude, op.Sin(imag)), [-1])
+    return op.Concat(real, imag, axis=-1)

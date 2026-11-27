@@ -57,13 +57,6 @@ def higher_order_cond(
         false_func.domain, false_func.name, inputs, num_outputs=len(false_func.outputs)
     )
 
-    # ONNX Runtime complains about duplicate output names if we don't rename them.
-    # But there doesn't seem to be an actual violation of SSA form without renaming.
-    for func_out, out in zip(true_func.outputs, then_node.outputs, strict=False):
-        out.name = f"{func_out.name}_{true_func.name}"
-    for func_out, out in zip(false_func.outputs, else_node.outputs, strict=False):
-        out.name = f"{func_out.name}_{false_func.name}"
-
     return call_op(
         op,
         "If",
@@ -118,11 +111,6 @@ def higher_order_scan(
         ],
         num_outputs=len(body_func.outputs),
     )
-
-    # ONNX Runtime complains about duplicate output names if we don't rename them.
-    # But there doesn't seem to be an actual violation of SSA form without renaming.
-    for func_out, out in zip(body_func.outputs, body_node.outputs, strict=False):
-        out.name = f"{func_out.name}_{body_func.name}"
 
     n_outputs = len(body_func.outputs) - len(scan_inits)
     return call_op(
@@ -251,12 +239,6 @@ def higher_order_while_loop(
 
     if len(cond_func.outputs) != 1:
         raise AssertionError("Condition function must return a single boolean value.")
-
-    # ONNX Runtime complains about duplicate output names if we don't rename them
-    for func_out, out in zip(body_func.outputs, body_node.outputs, strict=False):
-        out.name = f"{func_out.name}_{body_func.name}"
-    for func_out, out in zip(cond_func.outputs, cond_node.outputs, strict=False):
-        out.name = f"{func_out.name}_{cond_func.name}"
 
     # The Loop body must return: (cond_out, loop_carried_deps...)
     # We use the condition output and the body outputs

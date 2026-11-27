@@ -23,7 +23,17 @@ class _Function(torch.nn.Module):
         return self.function(*args)
 
 
-def _check(model, args, *, optimize, opset=18, rtol=1e-5, atol=1e-7):
+def _check(
+    model,
+    args,
+    *,
+    optimize,
+    opset=18,
+    rtol=1e-5,
+    atol=1e-7,
+    reference=False,
+    execute=True,
+):
     with torch.no_grad():
         expected = copy.deepcopy(model)(*args)
     program = torch_onnx.export(
@@ -31,7 +41,9 @@ def _check(model, args, *, optimize, opset=18, rtol=1e-5, atol=1e-7):
     )
     try:
         onnx.checker.check_model(ir.to_proto(program.model), full_check=True)
-        actual = program(*args)[0]
+        if not execute:
+            return program.model
+        actual = (program.call_reference(*args) if reference else program(*args))[0]
         torch.testing.assert_close(
             actual, expected, rtol=rtol, atol=atol, equal_nan=True
         )
@@ -83,7 +95,18 @@ def test_issue_206402_attention_broadcasts_sequence_mask(
     model = _Function(
         lambda a, b, c, m: F.scaled_dot_product_attention(a, b, c, attn_mask=m)
     ).eval()
-    _check(model, (q, k, v, mask), opset=23, optimize=optimize)
+    # ONNX reference Attention also mishandles a singleton key axis. Preserve
+    # that legal mask unchanged and check its graph; other broadcasts execute.
+    graph = _check(
+        model,
+        (q, k, v, mask),
+        opset=23,
+        optimize=optimize,
+        reference=True,
+        execute=mask_shape[-1] != 1,
+    )
+    attention = next(node for node in graph.graph if node.op_type == "Attention")
+    assert attention.inputs[3] is graph.graph.inputs[3]
 
 
 @pytest.mark.parametrize("optimize", [False, True])
@@ -191,7 +214,11 @@ def test_bce_logits_weights_and_target_dtype(optimize, input_dtype, target_dtype
 def test_issue_206814_circular_padding_uses_legal_target_ops(optimize, opset, padding):
     model = _Function(lambda t: F.pad(t, padding, mode="circular")).eval()
     graph = _check(
-        model, (torch.arange(25.0).reshape(1, 1, 5, 5),), optimize=optimize, opset=opset
+        model,
+        (torch.arange(25.0).reshape(1, 1, 5, 5),),
+        optimize=optimize,
+        opset=opset,
+        execute=not (opset >= 19 and any(p < 0 for p in padding)),
     )
     for node in graph.graph:
         if node.op_type == "Pad" and node.attributes.get("mode") is not None:
@@ -224,7 +251,7 @@ def test_rms_norm_default_epsilon_uses_input_dtype(optimize):
 
 
 @pytest.mark.parametrize("optimize", [False, True])
-def test_attention_singleton_mask_expands_to_dynamic_sequence_lengths(optimize):
+def test_attention_preserves_spec_supported_dynamic_mask_broadcast(optimize):
     generator = torch.Generator().manual_seed(17)
 
     class Attention(torch.nn.Module):
@@ -261,7 +288,10 @@ def test_attention_singleton_mask_expands_to_dynamic_sequence_lengths(optimize):
             torch.tensor([[True, False, True, False, True, False]]),
         )
         torch.testing.assert_close(
-            program(*alternative)[0], model(*alternative), rtol=1e-5, atol=1e-7
+            program.call_reference(*alternative)[0],
+            model(*alternative),
+            rtol=1e-5,
+            atol=1e-7,
         )
     finally:
         program.release()

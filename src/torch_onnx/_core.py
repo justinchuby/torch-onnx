@@ -412,6 +412,7 @@ def _handle_call_function_node(
     """
     if node.target is operator.getitem:
         _handle_getitem_node(node, node_name_to_values)
+        return
     # Add op to the graph
     op = str(node.target)
     fx_inputs, attributes, input_names, output_names = _get_inputs_and_attributes(node)

@@ -4,6 +4,14 @@
 import argparse
 
 
+def _parse_bool(value: str) -> bool:
+    if value.lower() in ("true", "1", "yes"):
+        return True
+    if value.lower() in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
+
+
 def _parse_args():
     parser = argparse.ArgumentParser(
         description="Convert a pt2 PyTorch model to ONNX format."
@@ -11,11 +19,11 @@ def _parse_args():
     parser.add_argument("model_path", type=str, help="Path to the pt2 PyTorch model.")
     parser.add_argument("output_path", type=str, help="Path to save the ONNX model.")
     parser.add_argument(
-        "--external_data", type=bool, help="Save the weights in a separate file."
+        "--external_data", type=_parse_bool, help="Save the weights in a separate file."
     )
     parser.add_argument(
         "--report",
-        type=bool,
+        type=_parse_bool,
         help="Produce a conversion report.",
     )
     args = parser.parse_args()
@@ -35,7 +43,7 @@ def main():
     exported_program = torch.export.load(args.model_path)
     onnx_program = export(exported_program, (), {}, report=args.report)
     del exported_program
-    onnx_program.save(args.output_path)
+    onnx_program.save(args.output_path, external_data=args.external_data)
 
 
 if __name__ == "__main__":

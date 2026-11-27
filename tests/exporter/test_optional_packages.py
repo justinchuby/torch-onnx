@@ -161,9 +161,10 @@ def test_torchao_float8(scale_shape, dtype, opset, tmp_path):
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("opset", [20, None])
 @pytest.mark.parametrize("sampling_ratio", [0, 2])
 @pytest.mark.parametrize("geometry", ["ordinary", "small", "outside", "empty"])
-def test_torchvision_ps_roi_align(sampling_ratio, geometry, tmp_path):
+def test_torchvision_ps_roi_align(opset, sampling_ratio, geometry, tmp_path):
     import torchvision
 
     class Model(torch.nn.Module):
@@ -183,15 +184,23 @@ def test_torchvision_ps_roi_align(sampling_ratio, geometry, tmp_path):
         "empty": [],
     }
     args = (torch.randn(2, 12, 8, 8), torch.tensor(boxes[geometry]).reshape(-1, 5))
-    program = torch_onnx.export(Model().eval(), args, verbose=False)
+    program = torch_onnx.export(
+        Model().eval(), args, opset_version=opset, verbose=False
+    )
+    assert program.model.opset_imports[""] == (28 if opset is None else opset)
     assert any(n.op_type == "RoiAlign" for n in program.model.graph)
     onnx.checker.check_model(program.model_proto, full_check=True)
-    torch_onnx.testing.assert_onnx_program(program)
+    # ORT 1.32 lacks RoiAlign-22; retain default-opset coverage with reference
+    # execution and exercise ORT explicitly with the opset-20 schema.
+    torch_onnx.testing.assert_onnx_program(
+        program, backend="reference" if opset is None else "onnxruntime"
+    )
     program.save(tmp_path / "ps_roi_align.onnx")
 
 
 @pytest.mark.integration
-def test_torchvision_ps_roi_align_channel_mapping():
+@pytest.mark.parametrize("opset", [20, None])
+def test_torchvision_ps_roi_align_channel_mapping(opset):
     import torchvision  # noqa: F401
 
     class Model(torch.nn.Module):
@@ -201,10 +210,14 @@ def test_torchvision_ps_roi_align_channel_mapping():
     program = torch_onnx.export(
         Model().eval(),
         (torch.randn(1, 8, 8, 8), torch.tensor([[0, 0.0, 1.0, 6.0, 7.0]])),
+        opset_version=opset,
         verbose=False,
     )
     onnx.checker.check_model(program.model_proto, full_check=True)
-    torch_onnx.testing.assert_onnx_program(program)
+    assert program.model.opset_imports[""] == (28 if opset is None else opset)
+    torch_onnx.testing.assert_onnx_program(
+        program, backend="reference" if opset is None else "onnxruntime"
+    )
 
 
 @pytest.mark.integration
@@ -227,7 +240,8 @@ def test_torchao_real_int8_weight_only_linear(tmp_path):
 
 
 @pytest.mark.integration
-def test_torchao_dequantize_without_zero_point():
+@pytest.mark.parametrize("opset", [20, None])
+def test_torchao_dequantize_without_zero_point(opset):
     import torchao  # noqa: F401
 
     class Model(torch.nn.Module):
@@ -243,10 +257,15 @@ def test_torchao_dequantize_without_zero_point():
     program = torch_onnx.export(
         Model().eval(),
         (torch.randint(-8, 8, (2, 8), dtype=torch.int8), torch.rand(2, 4)),
+        opset_version=opset,
         verbose=False,
     )
     onnx.checker.check_model(program.model_proto, full_check=True)
-    torch_onnx.testing.assert_onnx_program(program)
+    assert program.model.opset_imports[""] == (28 if opset is None else opset)
+    # ORT 1.32 lacks DequantizeLinear-28.
+    torch_onnx.testing.assert_onnx_program(
+        program, backend="reference" if opset is None else "onnxruntime"
+    )
 
 
 @pytest.mark.integration

@@ -3731,12 +3731,21 @@ def aten_as_strided(
     # and gather it with a tensor of those flat indices shaped like the output, we
     # reproduce the view as a single Gather. This avoids the hard-to-fold loop of
     # the previous implementation.
-    rank = len(size)
-    # ONNX exposes logical values, not backing storage. Flattening is correct only
-    # when logical row-major order matches storage order; non-contiguous views remain
-    # unsupported, as they were in the previous lowering.
-    self_flatten = op.Reshape(self, op.constant([-1], dtype=ir.DataType.INT64))
+    # This read lowering assumes logical row-major order matches storage.
+    self_flatten = op.Reshape(self, [-1])
+    return op.Gather(
+        self_flatten, _as_strided_indices(op, size, stride, storage_offset)
+    )
 
+
+def _as_strided_indices(
+    op: TranslationContext,
+    size: Sequence[int | ir.Value],
+    stride: Sequence[int | ir.Value],
+    storage_offset: ir.Value | int | None,
+) -> ir.Value:
+    """Storage indices shared by strided reads and functional writes."""
+    rank = len(size)
     # A missing storage_offset means "start at the beginning of the storage".
     if storage_offset is None:
         storage_offset = 0
@@ -3799,8 +3808,70 @@ def aten_as_strided(
                 )
             indices = op.Add(indices, add_value)
 
-    # `indices` now has shape `size`; gathering yields the strided view.
-    return op.Gather(self_flatten, indices)
+    return indices
+
+
+@onnx_impl((aten.as_strided_scatter.default, prims.as_strided_scatter.default))
+def aten_as_strided_scatter(
+    op: TranslationContext,
+    self: ir.Value,
+    src: ir.Value,
+    size: Sequence[int | ir.Value],
+    stride: Sequence[int | ir.Value],
+    storage_offset: ir.Value | int | None = None,
+) -> ir.Value:
+    """Functional strided writes into a dense base, without materializing storage holes."""
+    producer = self.producer()
+    node = self.meta.get("node")
+    if node is None and producer is not None:
+        node = producer.meta.get("node")
+    tensor = node.meta.get("val") if node is not None else None
+    permutation = None
+    base_offset = 0
+    if isinstance(tensor, torch.Tensor):
+        base_offset = tensor.storage_offset()
+        if not isinstance(base_offset, int):
+            raise NotImplementedError(
+                "as_strided_scatter requires a static base storage offset"
+            )
+        if not tensor.is_contiguous():
+            strides = tensor.stride()
+            if not all(isinstance(step, int) for step in strides):
+                raise NotImplementedError(
+                    "as_strided_scatter requires a known dense storage order"
+                )
+            permutation = sorted(
+                range(tensor.ndim), key=lambda axis: strides[axis], reverse=True
+            )
+            if not tensor.permute(permutation).is_contiguous():
+                raise NotImplementedError(
+                    "as_strided_scatter does not support base tensors with storage holes"
+                )
+    # ONNX tensors store logical values. A dense permutation makes flattening
+    # follow storage order; subtract the base offset because storage preceding
+    # the visible input is not part of its ONNX value.
+    storage = op.Transpose(self, perm=permutation) if permutation is not None else self
+    offset = base_offset if storage_offset is None else storage_offset
+    indices = _as_strided_indices(op, size, stride, offset)
+    if base_offset:
+        indices = op.Sub(indices, base_offset)
+    indices = op.Reshape(indices, [-1])
+    # A dense input may expose only a slice of its backing storage. Writes
+    # outside that visible interval do not affect the returned logical tensor;
+    # in particular, negative relative indices must not wrap as ONNX indices do.
+    visible = op.And(op.GreaterOrEqual(indices, 0), op.Less(indices, op.Size(storage)))
+    result = op.ScatterElements(
+        op.Reshape(storage, [-1]),
+        op.Compress(indices, visible, axis=0),
+        op.Compress(op.Reshape(src, [-1]), visible, axis=0),
+        axis=0,
+    )
+    result = op.Reshape(result, op.Shape(storage), allowzero=1)
+    if permutation is not None:
+        result = op.Transpose(
+            result, perm=[permutation.index(axis) for axis in range(len(permutation))]
+        )
+    return result
 
 
 @onnx_impl((aten.diagonal.default, aten.diagonal_copy.default))

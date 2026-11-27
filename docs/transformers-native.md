@@ -22,6 +22,7 @@ opset-28 Conv graph keeps bf16 input and weight without Cast nodes.
 | randperm | Add a native random-key sort, including empty results. Float64 keys reduce accidental ties. Explicit Generators are rejected; the Torch RNG sequence is not reproduced. |
 | complex unsqueeze | Retain the existing packed-complex implementation. |
 | complex exp | Add Euler-form native lowering. |
+| fill_diagonal_ | Lower its functionalized aten/prims as_strided_scatter through shared strided indices and ScatterElements. Dense transposes, static base offsets, empty updates and dynamic sizes/strides are supported; gapped storage is explicitly unsupported. No FX patch is applied. |
 | irfft | Retain the standard ONNX inverse/onesided DFT lowering. The ORT workaround stays in Transformers; do not rewrite a spec-valid graph for this runtime limitation. |
 | integer `full` default dtype | Retain the existing dtype-aware factory implementation, including bool and the current default floating dtype. |
 | masked mean/var | Retain Torch decomposition and native reductions/promotion. Masked NaNs and all-false masks are tested; do not adopt multiplication by zero or clamping that changes NaN/empty-mask semantics. |

@@ -175,7 +175,9 @@ class TestExportAPIDynamo(common_utils.TestCase):
             dynamo=True,
         )
 
-        self.assertEqual(len(onnx_program.model.graph.inputs), 2)
+        # The scalar is specialized by torch.export; the original Python call
+        # still binds it without exposing a redundant ONNX runtime input.
+        self.assertEqual(len(onnx_program.model.graph.inputs), 1)
         torch_onnx.testing.assert_onnx_program(onnx_program)
         torch_onnx.testing.assert_onnx_program(
             onnx_program, args=(1, torch.ones(4)), kwargs={}

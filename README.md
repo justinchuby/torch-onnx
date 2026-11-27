@@ -43,6 +43,12 @@ torch_onnx.testing.assert_onnx_program(onnx_program)
 onnx_program.release()
 ```
 
+## Hugging Face Transformers
+
+`torch_onnx.patch_torch()` supports Transformers’ `OnnxExporter`, including its
+custom translations and export patches. See [integration and CI coverage](docs/transformers.md)
+for forward and generation exports, dynamic shapes, and saving/reloading.
+
 ## Dynamic shapes
 
 ### Explicit constraints with `torch.export.Dim`

@@ -79,10 +79,12 @@ Default exports target opset 28. Omitting `opset_version` or passing `None`
 selects 28 through both `torch_onnx.export` and patched `torch.onnx.export`.
 Pass an explicit `opset_version` when targeting an older runtime.
 
-ORT 1.32 also lacks kernels for QuantizeLinear-28, RoiAlign-22 and
-RandomNormalLike-22. Quantization tests validate the default graph with ONNX
-reference execution and retain ORT coverage at opset 20. The ROI/RNG runtime
-regressions explicitly select 20. Selecting a newer export schema does not
+ORT 1.32 also lacks kernels for QuantizeLinear-28, DequantizeLinear-28,
+RoiAlign-22 and RandomNormalLike-22. Optional-package ROI and zero-point-free
+dequantization tests check default-opset-28 graphs with ONNX reference execution
+and explicitly export opset 20 for ORT execution. Quantization tests likewise
+retain both default-graph and older-runtime coverage. RNG runtime regressions
+explicitly select 20. Selecting a newer export schema does not
 imply that every installed execution provider implements it.
 
 Construct local function bodies using the active `op.builder.opset`. Fixtures

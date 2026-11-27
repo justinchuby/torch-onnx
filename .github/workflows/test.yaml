@@ -35,7 +35,7 @@ jobs:
           pip install --no-deps onnx-weekly==1.24.0.dev20261123
           python -c "import onnx; print(onnx.__file__, onnx.__version__, onnx.defs.onnx_opset_version()); assert all(onnx.defs.has(name, 29) for name in ('Log1p', 'Expm1', 'DequantizePacked'))"
       - name: Export, check, execute, and serialize optional operators
-        run: pytest tests/exporter/test_optional_packages.py -m "integration or not integration"
+        run: python -m pytest tests/exporter/test_optional_packages.py -m "integration or not integration"
   opset29:
     runs-on: ubuntu-latest
     steps:

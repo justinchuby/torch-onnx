@@ -19,6 +19,7 @@ half-precision tolerance that still detects the original incorrect class count.
 
 | PyTorch issue | Standalone result |
 | --- | --- |
+| [206882](https://github.com/pytorch/pytorch/issues/206882), non-4D SDPA | Native math lowering accepts rank-2 and higher inputs, including 3D self/cross-attention, broadcast masks, dynamic shapes, and GQA on axis -3. Rank-4 inputs retain the fused Attention path at opset 23+. Regressions are in `tests/exporter/test_sdpa_input_ranks.py`, also run by the PyTorch compatibility matrix. |
 | [206285](https://github.com/pytorch/pytorch/issues/206285), integer division | Integer `div` with floor/trunc rounding now uses integer arithmetic, including values beyond floating-point exact-integer ranges. |
 | [206286](https://github.com/pytorch/pytorch/issues/206286), CE smoothing | Implemented label smoothing, weighted/ignored targets, reductions and probability targets. Keep class counts as integers until converting directly to the computation dtype. |
 | [206288](https://github.com/pytorch/pytorch/issues/206288), old Softmax | Original opset 11/12 report is outside the native exporter's opset 18+ domain; no old-opset fix claimed. |

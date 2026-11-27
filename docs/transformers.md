@@ -73,6 +73,12 @@ shape and values, and saved/reloaded execution. Dynamic forward cases execute a
 second batch and sequence/image size. Float32 comparisons use `rtol=1e-4` and
 `atol=1e-5`; this does not establish reduced-precision or GPU coverage.
 
+The exporter defaults to opset 28. The default-configuration Qwen3 graph uses
+ONNX reference execution because ORT 1.32 cannot expand Swish at opset 25–28.
+The explicit-opset-23 Qwen3/MoE/hybrid and generation cases continue to exercise
+the Transformers ORT runner and save/reload. Use `opset_version=23` for those
+models when running with that ORT release.
+
 For ViT interpolation, capture an image size different from the configured
 training resolution. Capturing exactly the training resolution can specialize
 Transformers' interpolation shortcut before ONNX translation; `Dim.AUTO` alone

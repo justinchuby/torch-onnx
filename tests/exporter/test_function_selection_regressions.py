@@ -223,6 +223,7 @@ def test_local_function(selection):
             program = torch_onnx.export(
                 native,
                 args,
+                opset_version=20,  # Preserve the declared function/attribute semantics.
                 optimize=False,
                 verbose=False,
                 dynamic_shapes=({0: rows}, {0: rows}, {0: rows}),

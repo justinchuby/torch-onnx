@@ -284,3 +284,96 @@ finally:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("patched", [False, True])
+@pytest.mark.parametrize("opset", ["omitted", None, 18, 23, 28])
+def test_default_opset_28_and_explicit_overrides(patched, opset):
+    class Model(torch.nn.Module):
+        def forward(self, x):
+            return x.relu() + 1
+
+    model = Model().eval()
+    x = torch.tensor([-2.0, 0.0, 3.0])
+    original_export = torch.onnx.export
+    if patched:
+        torch_onnx.patch_torch(verbose=False)
+    try:
+        export = torch.onnx.export if patched else torch_onnx.export
+        kwargs = {} if opset == "omitted" else {"opset_version": opset}
+        program = export(model, (x,), verbose=False, **kwargs)
+        try:
+            expected_opset = 28 if opset in ("omitted", None) else opset
+            assert program.model.opset_imports[""] == expected_opset
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            torch.testing.assert_close(program(x)[0], model(x))
+        finally:
+            program.release()
+    finally:
+        if patched:
+            torch_onnx.unpatch_torch()
+    assert torch.onnx.export is original_export
+
+
+def test_default_opset_selects_native_swish_translation():
+    class Model(torch.nn.Module):
+        def forward(self, x):
+            return F.silu(x)
+
+    program = torch_onnx.export(Model().eval(), (torch.randn(2, 3),), verbose=False)
+    try:
+        assert program.model.opset_imports[""] == 28
+        assert [node.op_type for node in program.model.graph] == ["Swish"]
+        onnx.checker.check_model(program.model_proto, full_check=True)
+        # ORT 1.32's Swish function expansion fails above opset 24.
+        torch_onnx.testing.assert_onnx_program(program, backend="reference")
+    finally:
+        program.release()
+
+
+@pytest.mark.parametrize("optimize", [False, True])
+def test_default_opset_native_function_uses_active_opset(optimize):
+    class Model(torch.nn.Module):
+        def forward(self, x):
+            return -x
+
+    def translate(op, x):
+        formal = ir.Value(name="x", type=x.type, shape=x.shape)
+        body = ir.Graph(
+            [formal],
+            [],
+            nodes=[],
+            name="negate",
+            opset_imports={"": op.builder.opset},
+        )
+        builder = torch_onnx.GraphBuilder(body, opset=op.builder.opset)
+        body.outputs.append(builder.call("Neg", formal)[0])
+        function = ir.Function("test.default", "Negate", "", graph=body, attributes=[])
+        return op.builder.call_function(function, x, version=1)[0]
+
+    target = torch.ops.aten.neg.default
+    torch_onnx.register_custom_translation(target, translate)
+    try:
+        from unittest import mock
+
+        with mock.patch(
+            "onnxscript.version_converter.convert_version",
+            side_effect=AssertionError(
+                "Native opset-28 export must not convert versions"
+            ),
+        ):
+            x = torch.randn(2, 3)
+            program = torch_onnx.export(
+                Model().eval(), (x,), optimize=optimize, verbose=False
+            )
+        try:
+            assert program.model.opset_imports[""] == 28
+            assert all(
+                fn.opset_imports[""] == 28 for fn in program.model.functions.values()
+            )
+            onnx.checker.check_model(program.model_proto, full_check=True)
+            torch.testing.assert_close(program(x)[0], -x)
+        finally:
+            program.release()
+    finally:
+        torch_onnx.unregister_custom_translation(target)

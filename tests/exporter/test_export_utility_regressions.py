@@ -304,7 +304,11 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                     )
                     targets.append(target)
                 program = torch_onnx.export(
-                    model.eval(), (x, y, z), optimize=False, verbose=False
+                    model.eval(),
+                    (x, y, z),
+                    opset_version=20,
+                    optimize=False,
+                    verbose=False,
                 )
                 torch_onnx.testing.assert_onnx_program(program, strategy=None)
                 self.assertCountEqual(
@@ -378,6 +382,7 @@ class TestRecoveredExportUtilities(RecoveredRuntimeHarness):
                     inputs,
                     dynamic_shapes=(dimensions, dimensions),
                     input_names=["x", "y"],
+                    opset_version=20,  # Match the fixture's fixed function opset.
                     optimize=False,
                     verbose=False,
                 )

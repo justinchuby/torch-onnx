@@ -400,7 +400,7 @@ if any(n == 'onnxscript' or n.startswith('onnxscript.') or 'torch_lib' in n for 
         self.assertIn(function.identifier(), program.model.functions)
         self.assertEqual(program.model.graph.opset_imports["native.test"], 1)
         onnx.checker.check_model(program.model_proto, full_check=True)
-        converted = self.export(optimize=True)
+        converted = self.export(optimize=True, opset_version=18)
         self.assertIn("Neg", [n.op_type for n in converted.model.graph])
         onnx.checker.check_model(converted.model_proto, full_check=True)
 

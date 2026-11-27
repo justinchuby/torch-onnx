@@ -80,6 +80,7 @@ def test_local_function_infer_scopes():
             program = torch_onnx.export(
                 NativeM().eval(),
                 (x,),
+                opset_version=20,  # This fixture declares an opset-20 function.
                 verbose=False,
                 optimize=False,
                 dynamic_shapes=(

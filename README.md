@@ -13,6 +13,9 @@ This project is experimental.
 Exporter releases use the current development PyTorch major/minor version and
 increment their own patch number for each release; see [AGENTS.md](AGENTS.md).
 
+[Release notes for 2.15.0](docs/releases/2.15.0.md) describe the version transition
+and runtime boundaries.
+
 ## Installation
 
 ```bash

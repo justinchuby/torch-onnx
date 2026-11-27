@@ -35,7 +35,7 @@ jobs:
       - name: Install the real upstream exporter
         run: |
           python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -e . -e .upstream/transformers pytest onnxruntime Pillow
+          python -m pip install -e . -e .upstream/transformers pytest pytest-cov onnxruntime Pillow
           python -m pip check
           git -C .upstream/transformers rev-parse HEAD
           python - <<'PY'
@@ -52,9 +52,25 @@ jobs:
           OPENBLAS_NUM_THREADS: '1'
         run: |
           python -m pytest tests/integration/test_transformers_exporter.py \
-            -m integration --junitxml=transformers.xml
+            -m integration --junitxml=transformers.xml \
+            --cov=torch_onnx --cov-branch --cov-report=xml:coverage.xml \
+            --cov-report=json:coverage.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: transformers-${{ matrix.transformers-ref }}
           path: transformers.xml
+      - name: Upload Transformers coverage
+        if: always()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          flags: transformers
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage-transformers-${{ matrix.transformers-ref }}
+          path: |
+            coverage.xml
+            coverage.json

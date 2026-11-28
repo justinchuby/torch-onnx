@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import functools
+import math
 from typing import TYPE_CHECKING
 
 import onnx_ir as ir
@@ -800,92 +801,178 @@ def aten_tensor_int(op: TranslationContext, self: int, dtype: int) -> ir.Value:
     return op.Cast(tensor, to=dtype)
 
 
-@onnx_impl(aten.blackman_window.default)
+def _window_dtype(dtype: int | None) -> ir.DataType:
+    if dtype is None or dtype == -1:
+        dtype = _promotion._ONNX_DTYPES[torch.get_default_dtype()]
+    dtype = ir.DataType(dtype)
+    if dtype not in (
+        ir.DataType.FLOAT16,
+        ir.DataType.BFLOAT16,
+        ir.DataType.FLOAT,
+        ir.DataType.DOUBLE,
+    ):
+        raise TypeError("Window functions require a floating-point dtype")
+    return dtype
+
+
+@onnx_impl((aten.blackman_window.default, aten.blackman_window.periodic))
 def aten_blackman_window(
     op: TranslationContext,
     window_length: int,
-    dtype: int = 1,
+    periodic: bool = True,
+    dtype: int | None = None,
     layout: str = "",
     device: str = "",
     pin_memory: bool = False,
 ) -> ir.Value:
-    """blackman_window(int window_length, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    if dtype is None:
-        dtype = -1
+    dtype = _window_dtype(dtype)
+    if dtype != ir.DataType.BFLOAT16:
+        return _window(op, "BlackmanWindow", window_length, dtype, periodic)
+    phase = _window_phase(op, window_length, periodic, ir.DataType.FLOAT)
+    result = op.Add(
+        op.Sub(op.CastLike(0.42, phase), op.Mul(op.Cos(phase), 0.5)),
+        op.Mul(op.Cos(op.Mul(phase, 2)), 0.08),
+    )
+    return _finish_window(op, result, window_length, dtype)
 
-    if dtype is None or dtype == -1:
-        dtype = 1
-    return _window(op, "BlackmanWindow", window_length, dtype)
 
-
-@onnx_impl(aten.hamming_window.default)
+@onnx_impl(
+    (
+        aten.hamming_window.default,
+        aten.hamming_window.periodic,
+        aten.hamming_window.periodic_alpha,
+        aten.hamming_window.periodic_alpha_beta,
+    )
+)
 def aten_hamming_window(
     op: TranslationContext,
     window_length: int,
-    dtype: int = 1,
+    periodic: bool = True,
+    alpha: float = 0.54,
+    beta: float = 0.46,
+    dtype: int | None = None,
     layout: str = "",
     device: str = "",
     pin_memory: bool = False,
 ) -> ir.Value:
-    """hamming_window(int window_length, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    if dtype is None:
-        dtype = -1
-
-    if dtype is None or dtype == -1:
-        dtype = 1
-    # ONNX uses different alpha/beta values for the Hamming window
-    # Whereas PyTorch uses alpha=0.54, beta=0.46, ONNX uses
-    # alpha=0.543478, beta=0.456522. This causes a slight difference
-    # in the output values, but we still uses the HammingWindow op for performance.
-    return _window(op, "HammingWindow", window_length, dtype)
+    dtype = _window_dtype(dtype)
+    work_dtype = (
+        ir.DataType.DOUBLE if dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
+    )
+    phase = _window_phase(op, window_length, periodic, work_dtype)
+    result = op.Sub(op.constant(alpha, dtype=phase.dtype), op.Mul(op.Cos(phase), beta))
+    return _finish_window(op, result, window_length, dtype)
 
 
-@onnx_impl(aten.hann_window.default)
+@onnx_impl((aten.hann_window.default, aten.hann_window.periodic))
 def aten_hann_window(
     op: TranslationContext,
     window_length: int,
-    dtype: int = 1,
+    periodic: bool = True,
+    dtype: int | None = None,
     layout: str = "",
     device: str = "",
     pin_memory: bool = False,
 ) -> ir.Value:
-    """hann_window(int window_length, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor"""
-    if dtype is None:
-        dtype = -1
+    dtype = _window_dtype(dtype)
+    if dtype != ir.DataType.BFLOAT16:
+        return _window(op, "HannWindow", window_length, dtype, periodic)
+    return aten_hamming_window(op, window_length, periodic, 0.5, 0.5, dtype)
 
-    if dtype is None or dtype == -1:
-        dtype = 1
-    return _window(op, "HannWindow", window_length, dtype)
+
+@onnx_impl((aten.bartlett_window.default, aten.bartlett_window.periodic))
+def aten_bartlett_window(
+    op: TranslationContext,
+    window_length: int,
+    periodic: bool = True,
+    dtype: int | None = None,
+    layout: str = "",
+    device: str = "",
+    pin_memory: bool = False,
+) -> ir.Value:
+    dtype = _window_dtype(dtype)
+    work_dtype = (
+        ir.DataType.DOUBLE if dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
+    )
+    fraction = _window_fraction(op, window_length, periodic, work_dtype)
+    result = op.Sub(op.CastLike(1, fraction), op.Abs(op.Sub(fraction, 1)))
+    return _finish_window(op, result, window_length, dtype)
+
+
+@onnx_impl(
+    (aten.kaiser_window.default, aten.kaiser_window.periodic, aten.kaiser_window.beta)
+)
+def aten_kaiser_window(
+    op: TranslationContext,
+    window_length: int,
+    periodic: bool = True,
+    beta: float = 12.0,
+    dtype: int | None = None,
+    layout: str = "",
+    device: str = "",
+    pin_memory: bool = False,
+) -> ir.Value:
+    from torch_onnx._torchlib.ops import _special_math
+
+    dtype = _window_dtype(dtype)
+    work_dtype = (
+        ir.DataType.DOUBLE if dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
+    )
+    fraction = op.Sub(_window_fraction(op, window_length, periodic, work_dtype), 1)
+    beta_value = op.constant(abs(beta), dtype=work_dtype)
+    argument = op.Mul(
+        op.Sqrt(
+            op.Max(op.Sub(op.CastLike(1, fraction), op.Mul(fraction, fraction)), 0)
+        ),
+        beta_value,
+    )
+    result = op.Div(
+        _special_math.bessel_i(op, argument), _special_math.bessel_i(op, beta_value)
+    )
+    return _finish_window(op, result, window_length, dtype)
+
+
+def _window_fraction(op, length, periodic, dtype):
+    if isinstance(length, int) and length < 0:
+        raise ValueError("Window length must be nonnegative")
+    positions = op.Cast(op.Range(0, length, 1), to=dtype)
+    denominator = length if periodic else op.Sub(length, 1)
+    denominator = op.Cast(op.Max(denominator, 1), to=dtype)
+    return op.Div(op.Mul(positions, 2), denominator)
+
+
+def _window_phase(op, length, periodic, dtype):
+    return op.Mul(_window_fraction(op, length, periodic, dtype), math.pi)
+
+
+def _finish_window(op, result, length, dtype):
+    result = op.Where(op.Equal(length, 1), op.CastLike(1, result), result)
+    return result if result.dtype == dtype else op.Cast(result, to=dtype)
 
 
 def _window(
-    op: TranslationContext, op_type: str, length: int | ir.Value, dtype: int
+    op: TranslationContext,
+    op_type: str,
+    length: int | ir.Value,
+    dtype: int,
+    periodic: bool = True,
 ) -> ir.Value:
-    builder = op.builder
     if isinstance(length, int) and length <= 1:
         if length < 0:
-            raise ValueError(
-                f"{op_type} requires a nonnegative length, got {length}; pass length >= 0."
-            )
+            raise ValueError(f"{op_type} requires a nonnegative length, got {length}")
         return op.constant([1] * length, dtype=ir.DataType(dtype))
-    if isinstance(length, int):
-        return builder.call(
-            op_type,
-            length,
-            output_datatype=dtype,
-            _output_types=[ir.TensorType(ir.DataType(dtype))],
-        )[0]
-    # ONNX window schemas reject zero; slice a valid window for empty outputs.
-    safe_length = op.Max(length, 2)
-    window = builder.call(
+    safe_length = length if isinstance(length, int) else op.Max(length, 2)
+    window = op.builder.call(
         op_type,
         safe_length,
         output_datatype=dtype,
+        periodic=periodic,
         _output_types=[ir.TensorType(ir.DataType(dtype))],
     )[0]
+    if isinstance(length, int):
+        return window
     result = op.Slice(window, [0], op.Reshape(length, [1]))
-    one = op.constant(1, dtype=ir.DataType(dtype))
-    return op.Where(op.Equal(length, 1), one, result)
+    return _finish_window(op, result, length, dtype)
 
 
 @onnx_impl(aten.bernoulli.default)

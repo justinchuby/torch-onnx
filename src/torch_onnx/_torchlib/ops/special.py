@@ -11,7 +11,7 @@ import onnx_ir as ir
 import torch
 
 from torch_onnx._torchlib._torchlib_registry import onnx_impl
-from torch_onnx._torchlib.ops import _promotion
+from torch_onnx._torchlib.ops import _promotion, _special_math
 from torch_onnx._torchlib.ops import common as common_ops
 
 if TYPE_CHECKING:
@@ -117,3 +117,112 @@ def aten_special_xlogy(
     xlogy = op.Mul(self, op.Log(other))
     xlogy_with_nans = op.Where(nans, other, xlogy)
     return op.Where(zeros, self, xlogy_with_nans)
+
+
+# Shared numerical algorithms keep ATen calls from decomposing into unsupported
+# prims; register the prims spellings too for already-decomposed programs.
+prims = torch.ops.prims
+
+
+def _unary_math(op, self, function, *args):
+    (self,), dtype = _special_math.prepare(op, self)
+    return _special_math.finish(op, function(op, self, *args), dtype)
+
+
+@onnx_impl((aten.hypot.default, prims.hypot.default))
+def aten_hypot(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
+    (self, other), dtype = _special_math.prepare(op, self, other, kind="DEFAULT")
+    if not dtype.is_floating_point():
+        raise TypeError("torch.hypot requires floating-point inputs")
+    return _special_math.finish(op, _special_math.hypot(op, self, other), dtype)
+
+
+@onnx_impl((aten.erfinv.default, aten.special_erfinv.default, prims.erf_inv.default))
+def aten_erfinv(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.erfinv)
+
+
+@onnx_impl((aten.i0.default, aten.special_i0.default, prims.bessel_i0.default))
+def aten_i0(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.bessel_i)
+
+
+@onnx_impl((aten.special_i1.default, prims.bessel_i1.default))
+def aten_i1(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.bessel_i, 1)
+
+
+@onnx_impl((aten.lgamma.default, aten.special_gammaln.default, prims.lgamma.default))
+def aten_lgamma(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.lgamma)
+
+
+@onnx_impl((aten.digamma.default, aten.special_digamma.default, prims.digamma.default))
+def aten_digamma(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.digamma)
+
+
+@onnx_impl(
+    (aten.special_spherical_bessel_j0.default, prims.spherical_bessel_j0.default)
+)
+def aten_spherical_bessel_j0(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.spherical_j0)
+
+
+@onnx_impl((aten.special_ndtri.default, prims.ndtri.default))
+def aten_ndtri(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.ndtri)
+
+
+@onnx_impl((aten.special_bessel_j0.default, prims.bessel_j0.default))
+def aten_bessel_j0(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.bessel_j)
+
+
+@onnx_impl((aten.special_bessel_j1.default, prims.bessel_j1.default))
+def aten_bessel_j1(op: TranslationContext, self: ir.Value) -> ir.Value:
+    return _unary_math(op, self, _special_math.bessel_j, 1)
+
+
+@onnx_impl((aten.nextafter.default, prims.nextafter.default))
+def aten_nextafter(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
+    (self, other), dtype = _special_math.prepare(op, self, other, kind="DEFAULT")
+    if not dtype.is_floating_point():
+        raise TypeError("torch.nextafter requires floating-point inputs")
+    return _special_math.finish(
+        op, _special_math.nextafter(op, self, other, dtype), dtype
+    )
+
+
+@onnx_impl((aten.special_zeta.default, prims.zeta.default))
+def aten_zeta(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
+    (self, other), dtype = _special_math.prepare(op, self, other)
+    # PyTorch's CPU Cephes implementation accumulates zeta in double. This also
+    # keeps the Euler-Maclaurin terms representable when the result fits FP32
+    # but the individual inverse powers do not.
+    if self.dtype != ir.DataType.DOUBLE:
+        self, other = (
+            op.Cast(self, to=ir.DataType.DOUBLE),
+            op.Cast(other, to=ir.DataType.DOUBLE),
+        )
+    return _special_math.finish(op, _special_math.zeta(op, self, other), dtype)
+
+
+@onnx_impl((aten.igamma.default, aten.special_gammainc.default, prims.igamma.default))
+def aten_igamma(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
+    (self, other), dtype = _special_math.prepare(op, self, other, kind="DEFAULT")
+    if not dtype.is_floating_point():
+        raise TypeError("torch.special.gammainc requires floating-point inputs")
+    return _special_math.finish(op, _special_math.igamma(op, self, other), dtype)
+
+
+@onnx_impl(
+    (aten.igammac.default, aten.special_gammaincc.default, prims.igammac.default)
+)
+def aten_igammac(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
+    (self, other), dtype = _special_math.prepare(op, self, other, kind="DEFAULT")
+    if not dtype.is_floating_point():
+        raise TypeError("torch.special.gammaincc requires floating-point inputs")
+    return _special_math.finish(
+        op, _special_math.igamma(op, self, other, complement=True), dtype
+    )

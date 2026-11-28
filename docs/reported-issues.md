@@ -19,6 +19,9 @@ half-precision tolerance that still detects the original incorrect class count.
 
 | PyTorch issue | Standalone result |
 | --- | --- |
+| [206938](https://github.com/pytorch/pytorch/issues/206938), window factories | Register default/periodic overloads for Hann, Hamming, Blackman, Bartlett and Kaiser, including custom Hamming coefficients and Kaiser beta. Hamming uses PyTorch's 0.54/0.46 defaults. Cover zero/singleton lengths and dynamic native IR lengths. |
+| [206939](https://github.com/pytorch/pytorch/issues/206939), special functions | Native arithmetic lowerings cover all 14 reported ATen/prims functions at opset 18+, including incomplete gamma and Hurwitz zeta with tensor Loop state. Directed tests cover poles, tails, broadcasting and empty inputs. DOUBLE gamma/digamma use reference execution where ORT lacks Erf/Tan kernels; nextafter zero signs are checked against reference because ORT can fold signed zero away. |
+| [206940](https://github.com/pytorch/pytorch/issues/206940), Boolean operations | Boolean sort/argsort cast to INT64 for TopK and restore Boolean values. Stable ordering and non-stable permutations are covered. Boolean pow already promotes correctly; unsupported Boolean operators fail schema validation before writing a model. |
 | [206882](https://github.com/pytorch/pytorch/issues/206882), non-4D SDPA | Native math lowering accepts rank-2 and higher inputs, including 3D self/cross-attention, broadcast masks, dynamic shapes, and GQA on axis -3. Rank-4 inputs retain the fused Attention path at opset 23+. Regressions are in `tests/exporter/test_sdpa_input_ranks.py`, also run by the PyTorch compatibility matrix. |
 | [206285](https://github.com/pytorch/pytorch/issues/206285), integer division | Integer `div` with floor/trunc rounding now uses integer arithmetic, including values beyond floating-point exact-integer ranges. |
 | [206286](https://github.com/pytorch/pytorch/issues/206286), CE smoothing | Implemented label smoothing, weighted/ignored targets, reductions and probability targets. Keep class counts as integers until converting directly to the computation dtype. |
@@ -79,3 +82,19 @@ negative-NaN sign limitations, recorded as strict expected failures. Integer
 `trunc` still uses Identity to preserve integer precision and avoid unnecessary
 work. Special-value fixes must account for execution cost before expanding the
 default floating-point graph.
+
+## Special-function numerical scope
+
+The new lowerings use PyTorch/Cephes/Boost-derived approximations, with source
+attribution and distributed license notices. They introduce no SciPy dependency.
+Incomplete gamma uses series/continued fractions capped at 2000 iterations and
+an asymptotic expansion for large shape parameters near the transition. Hurwitz
+zeta sums to convergence before its Euler–Maclaurin tail. These algorithms have
+input-dependent execution cost; they are newly supported operators, not a claim
+of faster execution than eager PyTorch. Large gamma tail fixtures use independent
+80-digit quadrature because the eager implementation loses accuracy there.
+
+Window length capture remains subject to PyTorch's integer factory schemas;
+dynamic native-IR tests do not imply that capture preserves arbitrary symbolic
+window lengths. Existing standard Hann/Blackman nodes remain in use when their
+schemas support the dtype. No runtime-only semantic workaround is added.

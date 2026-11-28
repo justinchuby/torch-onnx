@@ -3265,7 +3265,15 @@ def aten_sort(
     shape = op.Shape(self)
     dim_size = op.Gather(shape, dim, axis=0)
     dim_size = op.Reshape(dim_size, op.constant([1], dtype=ir.DataType.INT64))
-    values, indices = op.TopK(self, dim_size, axis=dim, largest=descending, sorted=True)
+    # TopK excludes BOOL in every supported ONNX schema. Sorting 0/1 integers
+    # preserves Boolean order; indices remain INT64 and values regain BOOL.
+    boolean = common_ops.require_dtype(op, self) == ir.DataType.BOOL
+    sortable = op.Cast(self, to=ir.DataType.INT64) if boolean else self
+    values, indices = op.TopK(
+        sortable, dim_size, axis=dim, largest=descending, sorted=True
+    )
+    if boolean:
+        values = op.Cast(values, to=ir.DataType.BOOL)
     return values, indices
 
 

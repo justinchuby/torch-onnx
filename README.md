@@ -15,6 +15,8 @@ increment their own patch number for each release; see [AGENTS.md](AGENTS.md).
 
 [2.15.0](docs/releases/2.15.0.md) describes the native exporter architecture and
 migration; [2.15.1](docs/releases/2.15.1.md) adds the diagonal-fill export fix.
+[2.15.2](docs/releases/2.15.2.md) adds non-4D attention, special functions, window
+functions, Boolean sorting, and more precise constant construction.
 
 ## Installation
 

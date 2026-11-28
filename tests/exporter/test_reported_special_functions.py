@@ -6,6 +6,8 @@ import torch
 
 import torch_onnx
 
+pytestmark = pytest.mark.compatibility
+
 UNARY = [
     "erfinv",
     "lgamma",

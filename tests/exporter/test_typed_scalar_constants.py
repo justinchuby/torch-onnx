@@ -11,6 +11,8 @@ import torch
 import torch_onnx
 from torch_onnx._ir_builder import GraphBuilder, TranslationContext
 
+pytestmark = pytest.mark.compatibility
+
 
 @pytest.mark.parametrize(
     "dtype,value",

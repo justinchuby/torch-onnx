@@ -9,6 +9,8 @@ import torch
 
 from torch_onnx import _torch_compat
 
+pytestmark = pytest.mark.compatibility
+
 
 def test_unvalidated_version_warns_once_and_suggests_upgrade(monkeypatch):
     monkeypatch.setattr(torch, "__version__", "2.0.0")

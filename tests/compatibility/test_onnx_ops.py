@@ -9,6 +9,8 @@ from onnx.reference.op_run import OpRun
 
 import torch_onnx
 
+pytestmark = pytest.mark.compatibility
+
 
 class CustomAffine(OpRun):
     op_domain = "test.torch_onnx"

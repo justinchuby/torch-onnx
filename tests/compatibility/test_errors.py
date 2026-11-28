@@ -11,6 +11,8 @@ from torch.onnx._internal.exporter import _errors as torch_errors
 import torch_onnx
 from torch_onnx import _errors, errors
 
+pytestmark = pytest.mark.compatibility
+
 
 @pytest.mark.parametrize(
     "name",

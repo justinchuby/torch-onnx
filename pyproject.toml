@@ -9,7 +9,7 @@ description = "Convert PyTorch models to ONNX"
 authors = [{ name = "Justin Chu", email = "justinchu@microsoft.com" }]
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT AND BSD-3-Clause"}
+license = {text = "MIT AND BSD-3-Clause AND BSL-1.0"}
 keywords = ["onnx", "pytorch", "converter", "convertion", "exporter"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -37,7 +37,7 @@ Repository = "https://github.com/justinchuby/torch-onnx"
 torch-onnx = "torch_onnx.bin.convert:main"
 
 [tool.setuptools]
-license-files = ["LICENSE", "LICENSE-PYTORCH"]
+license-files = ["LICENSE", "LICENSE-PYTORCH", "LICENSE-CEPHES", "LICENSE-SPECIAL"]
 
 [tool.pytest.ini_options]
 pythonpath = ["tests", "tests/torchlib", "tests/models/regressions"]

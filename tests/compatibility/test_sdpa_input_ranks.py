@@ -8,8 +8,6 @@ import torch.nn.functional as F
 
 import torch_onnx
 
-pytestmark = pytest.mark.compatibility
-
 
 class Attention(torch.nn.Module):
     def __init__(self, *, causal=False, scale=None, gqa=False, dropout=0.0):

@@ -50,15 +50,14 @@ number does not constrain which PyTorch versions can use the exporter.
 
 ## Selecting compatibility tests
 
-Run `python -m pytest -m compatibility` to discover the cross-version suite.
-Add `pytestmark = pytest.mark.compatibility` to a public-API test module to
-include all its tests; function and class decorators work too. Use the explicit
-`pytest.mark.compatibility` spelling so the pre-import collector can recognize
-it. New marked modules are discovered without editing the workflow's file list.
+Run `python -m pytest tests/compatibility` to discover the cross-version suite.
+Place new public-API compatibility test modules in `tests/compatibility/`; pytest
+finds them automatically without updating a workflow file list or adding markers.
+Keep these modules and their imports independent of baseline-only private PyTorch
+test utilities and optional dependencies.
 
-Pytest normally imports every test module before applying `-m`. For the exact
-`-m compatibility` selection, the root `conftest.py` scans syntax for this marker
-before importing modules. This keeps baseline-only private PyTorch test APIs and
-optional dependencies out of older environments. Marked modules still fail
-normally on import errors, and syntax errors remain visible. Other marker
-expressions use normal pytest collection.
+Passing the directory explicitly limits collection before any test modules are
+imported. Tests elsewhere in the repository are not imported in the older-release
+jobs. This uses pytest's standard directory discovery without custom collection
+hooks. The full development suite still includes this directory through the
+shared `testpaths` configuration.

@@ -6,8 +6,6 @@ import torch
 
 import torch_onnx
 
-pytestmark = pytest.mark.compatibility
-
 
 @pytest.mark.parametrize("name", ["hann", "hamming", "blackman", "bartlett", "kaiser"])
 @pytest.mark.parametrize("periodic", [None, False, True])

@@ -7,8 +7,6 @@ import torch
 
 import torch_onnx
 
-pytestmark = pytest.mark.compatibility
-
 
 def check(
     model, args, *, opset=23, dynamic_shapes=None, extra=(), backend="onnxruntime"

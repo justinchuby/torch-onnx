@@ -63,7 +63,7 @@ jobs:
           MKL_NUM_THREADS: '1'
           OPENBLAS_NUM_THREADS: '1'
         run: |
-          python -m pytest -m compatibility --strict-markers \
+          python -m pytest tests/compatibility --strict-markers \
             --junitxml=compatibility.xml \
             --cov=torch_onnx --cov-branch --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json

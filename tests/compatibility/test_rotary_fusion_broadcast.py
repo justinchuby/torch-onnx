@@ -8,8 +8,6 @@ import torch
 
 import torch_onnx
 
-pytestmark = pytest.mark.compatibility
-
 
 class _Rotary(torch.nn.Module):
     def forward(self, x, frequencies):

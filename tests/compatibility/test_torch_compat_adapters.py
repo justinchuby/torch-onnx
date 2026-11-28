@@ -15,8 +15,6 @@ import torch
 
 from torch_onnx import _torch_compat
 
-pytestmark = pytest.mark.compatibility
-
 
 def test_ci_can_read_version_matrix_without_importing_torch_or_warning():
     path = Path(_torch_compat.__file__).resolve()

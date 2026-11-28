@@ -12,8 +12,6 @@ import torch
 from torch_onnx._ir_builder import GraphBuilder, TranslationContext
 from torch_onnx._torchlib.ops import embedding
 
-pytestmark = pytest.mark.compatibility
-
 
 def build_model(
     function,

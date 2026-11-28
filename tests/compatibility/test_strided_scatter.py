@@ -6,8 +6,6 @@ import pytest
 import torch
 from _common.assertions import export_and_assert
 
-pytestmark = pytest.mark.compatibility
-
 
 @pytest.mark.parametrize("shape", [(4, 4), (3, 5), (7, 3), (2, 2, 2), (0, 3), (3, 0)])
 @pytest.mark.parametrize("wrap", [False, True])

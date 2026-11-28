@@ -17,8 +17,6 @@ import torch.nn.functional as F
 
 import torch_onnx
 
-pytestmark = pytest.mark.compatibility
-
 
 class _Affine(torch.nn.Module):
     def __init__(self):

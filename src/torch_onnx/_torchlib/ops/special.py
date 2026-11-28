@@ -87,7 +87,7 @@ def aten_special_sinc(op: TranslationContext, self: ir.Value) -> ir.Value:
     pi_self = op.Mul(self, _MATH_PI)
 
     return op.Where(
-        op.Equal(self, 0.0), op.CastLike(1, self), op.Div(op.Sin(pi_self), pi_self)
+        op.Equal(self, 0.0), op.cast_like(1, self), op.Div(op.Sin(pi_self), pi_self)
     )
 
 
@@ -100,10 +100,6 @@ def aten_special_xlogy(
 ) -> ir.Value:
     """special_xlogy(Tensor self, Tensor other) -> Tensor"""
     self, other = _promotion.promote(op, self, other, kind="INT_TO_FLOAT")
-    if not isinstance(self, ir.Value):
-        self = op.CastLike(self, other)
-    if not isinstance(other, ir.Value):
-        other = op.CastLike(other, self)
 
     # https://pytorch.org/docs/stable/special.html#torch.special.xlogy
     # out := {

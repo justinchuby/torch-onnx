@@ -196,7 +196,11 @@ torch_onnx.unregister_custom_translation(torch.ops.aten.add.Tensor)
 ```
 
 Use `op.constant(value, dtype=...)` to create explicitly typed constants. It
-shares the builder's graph-local constant cache. Native nodes receive incremental
+shares the builder's graph-local constant cache. Use `op.cast_like(value, other)`
+when a literal should have another value's dtype: a known dtype creates the
+constant directly, preserving DOUBLE precision without a CastLike node. Existing
+IR values and unknown target dtypes retain ONNX CastLike semantics.
+Native nodes receive incremental
 dtype and symbolic shape inference through `onnx-shape-inference`, including
 shape-tensor propagation between operations. Missing rules or incomplete metadata
 leave values partially inferred. Failed inference attempts roll back metadata and

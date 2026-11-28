@@ -369,10 +369,10 @@ def prims_var(
     if correction != 0:
         inp_shape = op.Shape(inp)
         dim_size = inp_shape if dims is None else op.Gather(inp_shape, dims, axis=0)
-        numel_float = op.CastLike(op.ReduceProd(dim_size, keepdims=False), inp)
+        numel_float = op.cast_like(op.ReduceProd(dim_size, keepdims=False), inp)
         mul = op.Mul(var, numel_float)
         # Subtract the correction value
-        sub = op.Sub(numel_float, op.CastLike(correction, inp))
+        sub = op.Sub(numel_float, op.cast_like(correction, inp))
         var = op.Div(mul, sub)
 
     if output_dtype is not None and output_dtype != -1:

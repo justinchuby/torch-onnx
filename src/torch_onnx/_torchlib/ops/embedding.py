@@ -55,18 +55,18 @@ def aten_embedding_renorm(
             op.constant(norm_type, dtype=ir.DataType.FLOAT),
         )
         partial_weight_norm = op.ReduceSum(partial_weight_pow, [1], keepdims=True)
-        pow_value = op.CastLike(1.0 / norm_type, weight)
+        pow_value = op.cast_like(1.0 / norm_type, weight)
         partial_weight_norm = op.Pow(partial_weight_norm, pow_value)
 
-    max_norm = op.CastLike(op.constant(max_norm, dtype=ir.DataType.FLOAT), weight)
+    max_norm_value = op.cast_like(max_norm, weight)
     # This is to avoid weight is zero
-    err = op.CastLike(op.constant(1e-7, dtype=ir.DataType.FLOAT), weight)
+    err = op.cast_like(1e-7, weight)
     partial_weight_norm_ = op.Add(partial_weight_norm, err)
-    scales = op.Div(max_norm, partial_weight_norm_)
+    scales = op.Div(max_norm_value, partial_weight_norm_)
     partial_weight_renorm = op.Mul(partial_weight, scales)
     # Set values to renormed values where weight_norm > max_norm, but keep the original values where weight_norm <= max_norm
     partial_weight_renorm = op.Where(
-        op.Greater(partial_weight_norm, max_norm),
+        op.Greater(partial_weight_norm, max_norm_value),
         partial_weight_renorm,
         partial_weight,
     )
@@ -150,7 +150,7 @@ def aten_embedding_bag_padding_idx(
         # Size of persample_weights is the same as indices, and should be 1d tensor
         per_sample_weights = op.Expand(1, indices_size)
         # Dtype of per_sample_weights is the same as weight
-        per_sample_weights = op.CastLike(per_sample_weights, weight)
+        per_sample_weights = op.cast_like(per_sample_weights, weight)
     else:
         per_sample_weights = op.Reshape(per_sample_weights, neg_1)
     # Get weight out according to indices_1d,
@@ -250,7 +250,7 @@ def aten_embedding_bag_padding_idx(
                 start_pos,
             )
             denominator = sub_op.Where(last_bag, denominator, count)
-            denominator = sub_op.CastLike(sub_op.Max(denominator, 1), row_weight)
+            denominator = sub_op.cast_like(sub_op.Max(denominator, 1), row_weight)
             row_result = sub_op.Div(row_result, denominator)
         else:
             row_result = sub_op.ReduceMean(row_weight, [0])
@@ -302,7 +302,7 @@ def aten_embedding_bag_padding_idx(
     # Explicit target shapes also cover zero bags and zero embedding width.
     result_shape = op.Concat(op.Reshape(num_bag, [1]), weight_dim_1, axis=0)
     result = op.Reshape(result, result_shape, allowzero=1)
-    result = op.CastLike(result, weight)
+    result = op.cast_like(result, weight)
     bag_size = op.Reshape(bag_size, op.Reshape(num_bag, [1]), allowzero=1)
     max_indices = op.Reshape(max_indices, result_shape, allowzero=1)
     # Preserve the auxiliary outputs for consumers that use them.

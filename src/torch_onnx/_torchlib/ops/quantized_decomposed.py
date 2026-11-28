@@ -46,8 +46,8 @@ _FLOAT8_DTYPES = frozenset(
 def _clip(op: TranslationContext, quantized, quant_min, quant_max):
     return op.Clip(
         quantized,
-        op.CastLike(quant_min, quantized),
-        op.CastLike(quant_max, quantized),
+        op.cast_like(quant_min, quantized),
+        op.cast_like(quant_max, quantized),
     )
 
 
@@ -90,12 +90,12 @@ def quantized_decomposed_quantize_per_tensor(
             )
         input = op.Mul(
             input,
-            op.CastLike(inv_scale, input),
+            op.cast_like(inv_scale, input),
         )
         if dtype == ir.DataType.INT32:
             quantized = op.Add(
                 op.Round(input),
-                op.CastLike(zero_point, input),
+                op.cast_like(zero_point, input),
             )
             # Cast float-to-int is undefined out of range, so clamping is required
             # even at the full int32 range.
@@ -104,7 +104,7 @@ def quantized_decomposed_quantize_per_tensor(
 
     quantized = op.QuantizeLinear(
         input,
-        op.CastLike(scale, input),
+        op.cast_like(scale, input),
         op.Cast(zero_point, to=dtype),
     )
     if (
@@ -175,8 +175,8 @@ def quantized_decomposed_quantize_per_channel(
             input = op.Cast(input, to=compute_dtype)
         # Broadcast the 1-D values along 'axis'.
         axes = [i for i in range(rank) if i != axis]
-        inv_scales = op.Unsqueeze(op.CastLike(reciprocal, input), axes)
-        zero_points = op.Unsqueeze(op.CastLike(zero_points, input), axes)
+        inv_scales = op.Unsqueeze(op.cast_like(reciprocal, input), axes)
+        zero_points = op.Unsqueeze(op.cast_like(zero_points, input), axes)
         quantized = op.Add(
             op.Round(op.Mul(input, inv_scales)),
             zero_points,
@@ -190,7 +190,7 @@ def quantized_decomposed_quantize_per_channel(
     # float64 and zero_points as int64, so cast both to the expected ONNX types.
     quantized = op.QuantizeLinear(
         input,
-        op.CastLike(scales, input),
+        op.cast_like(scales, input),
         op.Cast(zero_points, to=dtype),
         axis=axis,
     )

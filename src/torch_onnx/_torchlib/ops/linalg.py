@@ -152,13 +152,13 @@ def aten_baddbmm(
     if alpha is None or (not isinstance(alpha, ir.Value) and alpha == 1):
         mul_a = batch_mul
     else:
-        mul_a = op.Mul(batch_mul, op.CastLike(alpha, self))
+        mul_a = op.Mul(batch_mul, op.cast_like(alpha, self))
     if not isinstance(beta, ir.Value) and beta == 0:
         return mul_a
     if beta is None or (not isinstance(beta, ir.Value) and beta == 1):
         mul_b = self
     else:
-        mul_b = op.Mul(self, op.CastLike(beta, self))
+        mul_b = op.Mul(self, op.cast_like(beta, self))
         if isinstance(beta, ir.Value):
             zero = op.constant(0, dtype=common_ops.require_dtype(op, self))
             mul_b = op.Where(op.Equal(beta, 0), zero, mul_b)
@@ -205,14 +205,14 @@ def aten_addr(
     # https://github.com/pytorch/pytorch/blob/51664489ba6f6b2343bbec9af9ca99185e2a5dbc/aten/src/ATen/native/cpu/LinearAlgebraKernel.cpp#L53-L54
     # When beta == 0, values in self should be ignored,
     # nans and infs in self should not propagate.
-    alpha = op.CastLike(alpha, outer)
+    alpha_value = op.cast_like(alpha, outer)
     if beta == 0.0:
-        result = op.Mul(alpha, outer)
+        result = op.Mul(alpha_value, outer)
     else:
-        beta = op.CastLike(beta, outer)
+        beta_value = op.cast_like(beta, outer)
         result = op.Add(
-            op.Mul(beta, self),
-            op.Mul(alpha, outer),
+            op.Mul(beta_value, self),
+            op.Mul(alpha_value, outer),
         )
 
     return result
@@ -314,7 +314,7 @@ def aten_copy(
 ) -> ir.Value:
     """copy(Tensor self, Tensor src, bool non_blocking=False) -> Tensor"""
 
-    return op.Expand(op.CastLike(src, self), op.Shape(self))
+    return op.Expand(op.cast_like(src, self), op.Shape(self))
 
 
 @onnx_impl(aten.detach.default)

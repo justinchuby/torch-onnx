@@ -72,6 +72,7 @@ jobs:
             tests/exporter/test_reported_special_functions.py \
             tests/exporter/test_reported_windows.py \
             tests/exporter/test_reported_bool_sort.py \
+            tests/exporter/test_typed_scalar_constants.py \
             --junitxml=compatibility.xml \
             --cov=torch_onnx --cov-branch --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json

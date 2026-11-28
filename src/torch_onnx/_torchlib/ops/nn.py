@@ -187,7 +187,7 @@ def aten_scaled_dot_product_attention_23(
         )
         return Y
 
-    scale_value = op.CastLike(
+    scale_value = op.cast_like(
         _attention_scale(op, query) if scale is None else scale, query
     )
 
@@ -257,9 +257,8 @@ def _attention_scale(op: TranslationContext, query: ir.Value) -> ir.Value:
     """
     q_shape = op.Shape(query)
     q_last_dim = op.Gather(q_shape, op.Constant(value_ints=[-1]))
-    embedding_size = op.CastLike(q_last_dim, query)
-    one = op.Constant(value_float=1.0)
-    cast_one = op.CastLike(one, query)
+    embedding_size = op.cast_like(q_last_dim, query)
+    cast_one = op.cast_like(1.0, query)
     scale = op.Div(cast_one, op.Sqrt(embedding_size))
     return scale
 
@@ -305,7 +304,7 @@ def _causal_attention_mask(
         op.Constant(value_float=-float("inf")),
         op.Constant(value_float=0.0),
     )
-    attn_mask = op.CastLike(attn_mask, query)
+    attn_mask = op.cast_like(attn_mask, query)
     return attn_mask
 
 
@@ -341,7 +340,7 @@ def _aten_scaled_dot_product_attention_no_mask_onnx(
     query_scaled = op.Mul(query, op.Sqrt(scale))
     key_transposed_scaled = op.Mul(
         key_transposed,
-        op.CastLike(op.Sqrt(scale), key_transposed),
+        op.cast_like(op.Sqrt(scale), key_transposed),
     )
     attn_weight = op.Softmax(
         op.MatMul(query_scaled, key_transposed_scaled),

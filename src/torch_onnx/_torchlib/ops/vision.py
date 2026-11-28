@@ -167,8 +167,8 @@ def torchvision_roi_pool(
         end = op.Gather(coordinates, end_index, axis=1)
         extent = op.Max(op.Add(op.Sub(end, start), 1), 1)
         count_float = op.constant(float(count), dtype=boxes_dtype)
-        size = op.Div(op.CastLike(extent, boxes), count_float)
-        positions = op.CastLike(op.Range(0, count, 1), boxes)
+        size = op.Div(op.cast_like(extent, boxes), count_float)
+        positions = op.cast_like(op.Range(0, count, 1), boxes)
         size = op.Unsqueeze(size, [1])
         start = op.Unsqueeze(start, [1])
         first = op.Add(

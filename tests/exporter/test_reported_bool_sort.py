@@ -6,6 +6,8 @@ import torch
 
 import torch_onnx
 
+pytestmark = pytest.mark.compatibility
+
 
 @pytest.mark.parametrize("opset", [18, 23, 28])
 @pytest.mark.parametrize("descending", [False, True])

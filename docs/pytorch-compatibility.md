@@ -47,3 +47,18 @@ monkeypatched to emulate newer releases.
 Exporter version numbers follow the current development PyTorch major/minor,
 with an independent patch increment for each exporter release. This release
 number does not constrain which PyTorch versions can use the exporter.
+
+## Selecting compatibility tests
+
+Run `python -m pytest -m compatibility` to discover the cross-version suite.
+Add `pytestmark = pytest.mark.compatibility` to a public-API test module to
+include all its tests; function and class decorators work too. Use the explicit
+`pytest.mark.compatibility` spelling so the pre-import collector can recognize
+it. New marked modules are discovered without editing the workflow's file list.
+
+Pytest normally imports every test module before applying `-m`. For the exact
+`-m compatibility` selection, the root `conftest.py` scans syntax for this marker
+before importing modules. This keeps baseline-only private PyTorch test APIs and
+optional dependencies out of older environments. Marked modules still fail
+normally on import errors, and syntax errors remain visible. Other marker
+expressions use normal pytest collection.

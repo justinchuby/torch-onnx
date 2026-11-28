@@ -476,7 +476,7 @@ def aten_empty_like(
         dtype = -1
 
     if dtype == -1 or dtype is None:
-        zero = op.CastLike(0, self)
+        zero = op.cast_like(0, self)
     else:
         zero = op.Cast(0, to=dtype)
 
@@ -513,7 +513,7 @@ def aten_fill(op: TranslationContext, self: ir.Value, value: ir.Value) -> ir.Val
     value = (
         op.constant(value, dtype=common_ops.require_dtype(op, self))
         if isinstance(value, bool | int | float)
-        else op.CastLike(value, self)
+        else op.cast_like(value, self)
     )
     shape = op.Shape(self)
     return op.Expand(value, shape)
@@ -594,7 +594,7 @@ def aten_new_empty(
     # using zero to simulate empty array
     result = op.ConstantOfShape(size)
     if dtype == -1:
-        return op.CastLike(result, self)
+        return op.cast_like(result, self)
     return op.Cast(result, to=dtype)
 
 
@@ -617,7 +617,7 @@ def aten_new_empty_strided(
     # using zero to simulate empty array
     zero = op.ConstantOfShape(target_size)
     if dtype == -1:
-        return op.CastLike(zero, self)
+        return op.cast_like(zero, self)
     return op.Cast(zero, to=dtype)
 
 
@@ -638,7 +638,7 @@ def aten_new_full(
         dtype = -1
     size = common_ops.merge_dims(op, size)
     if dtype == -1:
-        fill_value = op.CastLike(fill_value, self)
+        fill_value = op.cast_like(fill_value, self)
     else:
         fill_value = op.Cast(fill_value, to=dtype)
     return op.Expand(fill_value, size)
@@ -662,7 +662,7 @@ def aten_new_ones(
     one = op.constant(1.0, dtype=ir.DataType.FLOAT)
     result = op.Expand(one, size)
     if dtype == -1:
-        return op.CastLike(result, self)
+        return op.cast_like(result, self)
     return op.Cast(result, to=dtype)
 
 
@@ -683,7 +683,7 @@ def aten_new_zeros(
 
     result = op.ConstantOfShape(size)
     if dtype == -1:
-        return op.CastLike(result, self)
+        return op.cast_like(result, self)
     return op.Cast(result, to=dtype)
 
 
@@ -728,7 +728,7 @@ def aten_ones_like(
     if dtype is None:
         dtype = -1
 
-    one = op.CastLike(1, self) if dtype == -1 else op.Cast(1, to=dtype)
+    one = op.cast_like(1, self) if dtype == -1 else op.Cast(1, to=dtype)
     shape = op.Shape(self)
     return op.Expand(one, shape)
 
@@ -771,7 +771,7 @@ def aten_zeros_like(
     if dtype is None:
         dtype = -1
 
-    zero = op.CastLike(0, self) if dtype == -1 else op.Cast(0, to=dtype)
+    zero = op.cast_like(0, self) if dtype == -1 else op.Cast(0, to=dtype)
 
     shape = op.Shape(self)
     return op.Expand(zero, shape)
@@ -830,7 +830,7 @@ def aten_blackman_window(
         return _window(op, "BlackmanWindow", window_length, dtype, periodic)
     phase = _window_phase(op, window_length, periodic, ir.DataType.FLOAT)
     result = op.Add(
-        op.Sub(op.CastLike(0.42, phase), op.Mul(op.Cos(phase), 0.5)),
+        op.Sub(op.cast_like(0.42, phase), op.Mul(op.Cos(phase), 0.5)),
         op.Mul(op.Cos(op.Mul(phase, 2)), 0.08),
     )
     return _finish_window(op, result, window_length, dtype)
@@ -895,7 +895,7 @@ def aten_bartlett_window(
         ir.DataType.DOUBLE if dtype == ir.DataType.DOUBLE else ir.DataType.FLOAT
     )
     fraction = _window_fraction(op, window_length, periodic, work_dtype)
-    result = op.Sub(op.CastLike(1, fraction), op.Abs(op.Sub(fraction, 1)))
+    result = op.Sub(op.cast_like(1, fraction), op.Abs(op.Sub(fraction, 1)))
     return _finish_window(op, result, window_length, dtype)
 
 
@@ -922,7 +922,7 @@ def aten_kaiser_window(
     beta_value = op.constant(abs(beta), dtype=work_dtype)
     argument = op.Mul(
         op.Sqrt(
-            op.Max(op.Sub(op.CastLike(1, fraction), op.Mul(fraction, fraction)), 0)
+            op.Max(op.Sub(op.cast_like(1, fraction), op.Mul(fraction, fraction)), 0)
         ),
         beta_value,
     )
@@ -946,7 +946,7 @@ def _window_phase(op, length, periodic, dtype):
 
 
 def _finish_window(op, result, length, dtype):
-    result = op.Where(op.Equal(length, 1), op.CastLike(1, result), result)
+    result = op.Where(op.Equal(length, 1), op.cast_like(1, result), result)
     return result if result.dtype == dtype else op.Cast(result, to=dtype)
 
 
@@ -997,7 +997,7 @@ def aten_bernoulli_p(op: TranslationContext, self: ir.Value, p: float) -> ir.Val
         self_float, high=1.0, low=0.0, output_types=[self_float.type]
     )
     sampled = op.Less(rands, p)
-    return op.CastLike(sampled, self)
+    return op.cast_like(sampled, self)
 
 
 @onnx_impl(aten.normal_functional.default)
@@ -1045,7 +1045,7 @@ def aten_normal_float_tensor(
 ) -> ir.Value:
     """normal.float_Tensor(float mean, Tensor std, *, Generator? generator=None) -> Tensor"""
 
-    mean_casted = op.CastLike(mean, std)
+    mean_casted = op.cast_like(mean, std)
     sampled = op.RandomNormalLike(std, mean=0.0, scale=1.0, output_types=[std.type])
     # Transform the distribution to the mean and std
     return op.Add(op.Mul(std, sampled), mean_casted)
@@ -1060,7 +1060,7 @@ def aten_normal_tensor_float(
     sampled = op.RandomNormalLike(mean, mean=0.0, scale=1.0, output_types=[mean.type])
     # Transform the distribution to the mean and std
     return op.Add(
-        op.Mul(op.CastLike(std, sampled), sampled),
+        op.Mul(op.cast_like(std, sampled), sampled),
         mean,
     )
 
@@ -1137,7 +1137,7 @@ def aten_randint(
     shaper = op.ConstantOfShape(size)
     rand = op.RandomUniformLike(shaper, output_types=[shaper.type])
     # Scale to [0, high] first
-    rand_scaled = op.Mul(rand, op.CastLike(high, rand))
+    rand_scaled = op.Mul(rand, op.cast_like(high, rand))
     # Round to ints
     rand_int = op.Floor(rand_scaled)
     return op.Cast(rand_int, to=dtype)
@@ -1188,11 +1188,11 @@ def aten_randint_like(
     self_float = op.Cast(self, to=ir.DataType.FLOAT)
     rand = op.RandomUniformLike(self_float, output_types=[self_float.type])
     # Scale to [0, high] first
-    rand_scaled = op.Mul(rand, op.CastLike(high, rand))
+    rand_scaled = op.Mul(rand, op.cast_like(high, rand))
     # Round to ints
     rand_int = op.Floor(rand_scaled)
     if dtype == -1:
-        return op.CastLike(rand_int, self)
+        return op.cast_like(rand_int, self)
     return op.Cast(rand_int, to=dtype)
 
 
@@ -1224,7 +1224,7 @@ def aten_randint_like_low_dtype(
     # Round to ints
     rand_int = op.Floor(rand_translated)
     if dtype == -1:
-        return op.CastLike(rand_int, self)
+        return op.cast_like(rand_int, self)
     return op.Cast(rand_int, to=dtype)
 
 

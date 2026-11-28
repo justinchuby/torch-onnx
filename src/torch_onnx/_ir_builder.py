@@ -102,6 +102,17 @@ class TranslationContext:
         """Create a typed constant using the builder's graph-local cache."""
         return self.builder.constant(value, dtype=dtype)
 
+    def cast_like(self, value: Any, other: ir.Value) -> ir.Value:
+        """Create literals directly in other's dtype, or cast an existing value.
+
+        Unlike Constant followed by CastLike, direct construction preserves
+        DOUBLE scalar precision and uses the graph-local constant cache. When
+        other's dtype is unknown, retain CastLike to resolve it at runtime.
+        """
+        if not isinstance(value, ir.Value) and other.dtype is not None:
+            return self.constant(value, dtype=other.dtype)
+        return self.CastLike(value, other)
+
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)

@@ -106,7 +106,7 @@ def quantize_affine(
     flattened.shape = ir.Shape([None])
     if output_dtype != ir.DataType.INT32:
         flattened = op.Mul(flattened, op.Reciprocal(scale))
-        scale = op.Expand(op.CastLike(1.0, scale), op.Shape(scale))
+        scale = op.Expand(op.cast_like(1.0, scale), op.Shape(scale))
     result = qdq.quantized_decomposed_quantize_per_channel(
         op,
         flattened,

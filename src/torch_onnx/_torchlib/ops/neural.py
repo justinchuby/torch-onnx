@@ -283,7 +283,7 @@ def aten_cross_entropy_loss(
             probabilities = op.Add(
                 op.Mul(target, 1.0 - label_smoothing),
                 op.Div(
-                    op.CastLike(label_smoothing, target), op.CastLike(classes, target)
+                    op.cast_like(label_smoothing, target), op.cast_like(classes, target)
                 ),
             )
         probabilities, log_probs = _promotion.promote(op, probabilities, log_probs)
@@ -316,7 +316,7 @@ def aten_cross_entropy_loss(
                 smooth = op.ReduceSum(smooth, keepdims=False)
                 if reduction == 1:
                     if weight is None:
-                        normalizer = op.CastLike(valid, self)
+                        normalizer = op.cast_like(valid, self)
                     else:
                         safe_target = op.Where(valid, target, 0)
                         normalizer = op.Where(
@@ -328,7 +328,7 @@ def aten_cross_entropy_loss(
                 op.Mul(
                     smooth,
                     op.Div(
-                        op.CastLike(label_smoothing, self), op.CastLike(classes, self)
+                        op.cast_like(label_smoothing, self), op.cast_like(classes, self)
                     ),
                 ),
             )
@@ -360,16 +360,16 @@ def aten_binary_cross_entropy_with_logits(
         log_weight = op.Add(op.Mul(pos_delta, promoted_target), 1.0)
         log_weight, log_term = _promotion.promote(op, log_weight, log_term)
         # ATen multiplies log_sigmoid_input in place, retaining input dtype.
-        log_term = op.CastLike(op.Mul(log_weight, log_term), self)
+        log_term = op.cast_like(op.Mul(log_weight, log_term), self)
     negative_weight, promoted_self = _promotion.promote(op, op.Sub(1.0, target), self)
     # Match ATen's (1-target).mul_(input).sub_(log_sigmoid_input) stages.
     # Delaying these casts changes cancellation for mixed input/target dtypes.
-    linear_term = op.CastLike(op.Mul(negative_weight, promoted_self), target)
+    linear_term = op.cast_like(op.Mul(negative_weight, promoted_self), target)
     linear_term, log_term = _promotion.promote(op, linear_term, log_term)
-    loss = op.CastLike(op.Add(linear_term, log_term), target)
+    loss = op.cast_like(op.Add(linear_term, log_term), target)
     if weight is not None:
         loss, weight = _promotion.promote(op, loss, weight)
-        loss = op.CastLike(op.Mul(loss, weight), target)
+        loss = op.cast_like(op.Mul(loss, weight), target)
     if reduction == 1:
         loss = op.ReduceMean(loss, keepdims=False)
     elif reduction == 2:
@@ -387,10 +387,10 @@ def aten_elu(
 ) -> ir.Value:
     """elu(Tensor self, Scalar alpha=1, Scalar scale=1, Scalar input_scale=1) -> Tensor"""
 
-    input_scale = op.CastLike(input_scale, self)
-    scale = op.CastLike(scale, self)
-    self = op.Mul(self, input_scale)
-    return op.Mul(op.Elu(self, alpha=alpha), scale)
+    input_scale_value = op.cast_like(input_scale, self)
+    scale_value = op.cast_like(scale, self)
+    self = op.Mul(self, input_scale_value)
+    return op.Mul(op.Elu(self, alpha=alpha), scale_value)
 
 
 @onnx_impl(aten.gelu.default, opset_introduced=18)
@@ -1170,9 +1170,9 @@ def aten_nll_loss_forward(
     output = aten_nll_loss(op, self, target, weight, reduction, ignore_index)
     # FIXME: Fake a total_weight tensor for now. It should be different based on weight, reduction and ignore_index
     if weight is None:
-        total_weight = op.CastLike(op.Size(output), self)
+        total_weight = op.cast_like(op.Size(output), self)
     else:
-        total_weight = op.CastLike(op.Size(output), weight)
+        total_weight = op.cast_like(op.Size(output), weight)
     return output, total_weight
 
 
@@ -1226,8 +1226,8 @@ def aten_pad(
         for index in range(0, len(pad), 2):
             before, after = pad[index : index + 2]
             axis = rank - index // 2 - 1
-            before = op.CastLike(before, op.constant(0, dtype=ir.DataType.INT64))
-            after = op.CastLike(after, before)
+            before = op.cast_like(before, op.constant(0, dtype=ir.DataType.INT64))
+            after = op.cast_like(after, before)
             size = op.Gather(op.Shape(result), axis)
             start = op.Max(op.Neg(before), 0)
             end = op.Sub(size, op.Max(op.Neg(after), 0))
@@ -1309,8 +1309,8 @@ def aten_relu(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_relu6(op: TranslationContext, self: ir.Value) -> ir.Value:
     """relu6(Tensor self) -> Tensor"""
 
-    zero = op.CastLike(op.constant(0, dtype=ir.DataType.INT64), self)
-    six = op.CastLike(op.constant(6, dtype=ir.DataType.INT64), self)
+    zero = op.cast_like(0, self)
+    six = op.cast_like(6, self)
     return op.Clip(self, zero, six)
 
 
@@ -1456,7 +1456,7 @@ def aten_scaled_dot_product_attention(
 
     # Reference: https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
     scale_tensor = _attention_scale(op, query) if scale is None else scale
-    scale_tensor = op.CastLike(scale_tensor, query)
+    scale_tensor = op.cast_like(scale_tensor, query)
 
     if is_causal:
         attn_mask = _causal_attention_mask(op, query, key)
@@ -1534,7 +1534,7 @@ def _attention(op: TranslationContext, query, key, value, attn_mask, scale, drop
     query_scaled = op.Mul(query, op.Sqrt(scale))
     key_scaled = op.Mul(
         key_transposed,
-        op.CastLike(op.Sqrt(scale), key_transposed),
+        op.cast_like(op.Sqrt(scale), key_transposed),
     )
     logits = op.MatMul(query_scaled, key_scaled)
     boolean_mask = attn_mask is not None and attn_mask.dtype == ir.DataType.BOOL

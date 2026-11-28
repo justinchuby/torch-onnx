@@ -42,7 +42,7 @@ def _fftn_onnx_normalization(
     # 0: no normalization (backward)
     # 1: "ortho" - divide by 1/sqrt(signal_size) (ortho)
     # 2: divide by signal_size (forward)
-    signal_size = op.CastLike(signal_size, self)
+    signal_size = op.cast_like(signal_size, self)
     if not inverse:
         # Forward normalization
         if normalization == 1:

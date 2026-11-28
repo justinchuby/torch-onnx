@@ -93,8 +93,7 @@ def aten_add(
         return op.Or(self, other)
 
     if alpha != 1.0:
-        alpha = op.CastLike(alpha, other)
-        other = op.Mul(other, alpha)
+        other = op.Mul(other, op.cast_like(alpha, other))
     return op.Add(self, other)
 
 
@@ -582,10 +581,10 @@ def aten_clamp(
         return op.Identity(self)
 
     if min_tensor is not None:
-        min_tensor = op.CastLike(min_tensor, self)
+        min_tensor = op.cast_like(min_tensor, self)
 
     if max_tensor is not None:
-        max_tensor = op.CastLike(max_tensor, self)
+        max_tensor = op.cast_like(max_tensor, self)
 
     return op.Clip(self, min_tensor, max_tensor)
 
@@ -614,11 +613,11 @@ def aten_clamp_tensor(
     # sets all elements in input to the value of max.
     # So this order is important.
     if min is not None:
-        min_clamp = op.CastLike(min, self)
+        min_clamp = op.cast_like(min, self)
         clamped = op.Max(clamped, min_clamp)
 
     if max is not None:
-        max_clamp = op.CastLike(max, self)
+        max_clamp = op.cast_like(max, self)
         clamped = op.Min(clamped, max_clamp)
 
     return clamped
@@ -630,7 +629,7 @@ def aten_clamp_max(op: TranslationContext, self: ir.Value, max_: float) -> ir.Va
     self, max__tensor = _promotion.promote(op, self, max_)
 
     # This implementation does not intend to handle when self is an empty tensor
-    max__tensor = op.CastLike(max__tensor, self)
+    max__tensor = op.cast_like(max__tensor, self)
     return op.Clip(self, None, max__tensor)
 
 
@@ -644,7 +643,7 @@ def aten_clamp_max_tensor(
     # This implementation does not intend to handle when self is an empty tensor
     max_rank = len(common_ops.require_shape(op, max_))
     if max_rank == 0:
-        max_ = op.CastLike(max_, self)
+        max_ = op.cast_like(max_, self)
         result = op.Clip(self, None, max_)
     else:
         result = op.Min(self, max_)
@@ -658,7 +657,7 @@ def aten_clamp_min(op: TranslationContext, self: ir.Value, min_: float) -> ir.Va
     self, min__tensor = _promotion.promote(op, self, min_)
 
     # This implementation does not intend to handle when self is an empty tensor
-    min__tensor = op.CastLike(min__tensor, self)
+    min__tensor = op.cast_like(min__tensor, self)
     return op.Clip(self, min__tensor, None)
 
 
@@ -672,7 +671,7 @@ def aten_clamp_min_tensor(
     # This implementation does not intend to handle when self is an empty tensor
     min_rank = len(common_ops.require_shape(op, min_))
     if min_rank == 0:
-        min_ = op.CastLike(min_, self)
+        min_ = op.cast_like(min_, self)
         result = op.Clip(self, min_, None)
     else:
         result = op.Max(self, min_)
@@ -768,7 +767,7 @@ def aten_deg2rad(op: TranslationContext, self: ir.Value) -> ir.Value:
     """deg2rad(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Mul(self, op.CastLike(math.pi / 180.0, self))
+    return op.Mul(self, op.cast_like(math.pi / 180.0, self))
 
 
 @onnx_impl(
@@ -907,8 +906,7 @@ def aten_exp2(op: TranslationContext, self: ir.Value) -> ir.Value:
     """exp2(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    two = op.constant(2, dtype=ir.DataType.INT64)
-    two = op.CastLike(two, self)
+    two = op.cast_like(2, self)
     return op.Pow(two, self)
 
 
@@ -1061,9 +1059,9 @@ def aten_isclose(
     # |self - other| <= atol + rtol x |other|
     actual_error = op.Abs(op.Sub(self, other))
     allowed_error = op.Add(
-        op.CastLike(atol, other),
+        op.cast_like(atol, other),
         op.Mul(
-            op.CastLike(rtol, other),
+            op.cast_like(rtol, other),
             op.Abs(other),
         ),
     )
@@ -1171,7 +1169,7 @@ def aten_lerp(
     """lerp.Tensor(Tensor self, Tensor end, Tensor weight) -> Tensor"""
     self, end, weight = _promotion.promote(op, self, end, weight)
 
-    weight = op.CastLike(weight, self)
+    weight = op.cast_like(weight, self)
     diff = op.Sub(end, self)
     return op.Where(
         op.Less(weight, 0.5),
@@ -1237,7 +1235,7 @@ def aten_logaddexp2(
 ) -> ir.Value:
     """logaddexp2(Tensor self, Tensor other) -> Tensor"""
     self, other = _promotion.promote(op, self, other)
-    two = op.CastLike(2.0, self)
+    two = op.cast_like(2.0, self)
     summation = op.Add(op.Pow(two, self), op.Pow(two, other))
 
     return op.Div(op.Log(summation), op.Log(two))
@@ -1506,7 +1504,7 @@ def aten_rad2deg(op: TranslationContext, self: ir.Value) -> ir.Value:
     """rad2deg(Tensor self) -> Tensor"""
     (self,) = _promotion.promote(op, self, kind="INT_TO_FLOAT")
 
-    return op.Mul(self, op.CastLike(180.0 / math.pi, self))
+    return op.Mul(self, op.cast_like(180.0 / math.pi, self))
 
 
 @onnx_impl(aten.reciprocal.default)
@@ -1607,8 +1605,8 @@ def aten_round_decimals(
     """round.decimals(Tensor self, *, int decimals) -> Tensor"""
 
     # Scale the input by 10^decimals, round it, and scale it back.
-    ten = op.CastLike(10.0, self)
-    scale = op.Pow(ten, op.CastLike(decimals, self))
+    ten = op.cast_like(10.0, self)
+    scale = op.Pow(ten, op.cast_like(decimals, self))
     self_scaled = op.Mul(self, scale)
     rounded = op.Round(self_scaled)
     return op.Div(rounded, scale)
@@ -1718,8 +1716,7 @@ def aten_sub(
     """sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor"""
     self, other = _promotion.promote(op, self, other)
     if alpha != 1.0:
-        alpha = op.CastLike(alpha, other)
-        other = op.Mul(other, alpha)
+        other = op.Mul(other, op.cast_like(alpha, other))
     return op.Sub(self, other)
 
 
@@ -1785,7 +1782,7 @@ def python_math_trunc(op: TranslationContext, self: ir.Value) -> ir.Value:
 def aten_type_as(op: TranslationContext, self: ir.Value, other: ir.Value) -> ir.Value:
     """type_as(Tensor self, Tensor other) -> Tensor"""
 
-    return op.CastLike(self, other)
+    return op.cast_like(self, other)
 
 
 _INT64_MAX = 9223372036854775807
@@ -2596,8 +2593,10 @@ def aten_masked_fill(
                 if bool(value.const_value.numpy().item())
                 else op.And(self, op.Not(mask))
             )
-        return op.Or(op.And(self, op.Not(mask)), op.And(mask, op.CastLike(value, self)))
-    value_cast = op.CastLike(value, self)
+        return op.Or(
+            op.And(self, op.Not(mask)), op.And(mask, op.cast_like(value, self))
+        )
+    value_cast = op.cast_like(value, self)
     return op.Where(mask, value_cast, self)
 
 
@@ -2623,7 +2622,7 @@ def aten_masked_scatter(
     flat_source = op.Reshape(source, [-1])
     prefix_end = op.Min(op.Shape(flat_source), op.Shape(flat_mask))
     prefix = op.Slice(flat_source, [0], prefix_end, [0])
-    padded = op.Concat(op.Reshape(op.CastLike(0, source), [1]), prefix, axis=0)
+    padded = op.Concat(op.Reshape(op.cast_like(0, source), [1]), prefix, axis=0)
     gathered = op.Gather(padded, positions)
     result = op.Where(flat_mask, gathered, op.Reshape(self, [-1]))
     return op.Reshape(result, op.Shape(self), allowzero=1)
@@ -3050,7 +3049,7 @@ def aten_scatter_reduce(
                 op.Less(total, zero),
                 op.Not(op.Equal(remainder, zero)),
             )
-            mean = op.Sub(mean, op.CastLike(round_down, mean))
+            mean = op.Sub(mean, op.cast_like(round_down, mean))
         result = op.Where(op.Equal(counts, zero), original, mean)
         return op.Squeeze(result) if self_is_scalar else result
 
@@ -3936,7 +3935,7 @@ def aten_diagonal(
         self_int_t = op.Transpose(self_int, perm=perm)
         result = op.Mul(self_int_t, mask_int)
     else:
-        mask = op.CastLike(mask, self)
+        mask = op.cast_like(mask, self)
         self_t = op.Transpose(self, perm=perm)
         result = op.Mul(self_t, mask)
     result = op.ReduceSum(result, axes, keepdims=False)
@@ -4301,7 +4300,7 @@ def _aten_index_put_bool_rows(
     # false entries select row zero, even when there are zero update rows.
     sentinel_rows = op.Cast(op.Greater(mask_size, 0), to=ir.DataType.INT64)
     sentinel_shape = op.Concat(sentinel_rows, op.Shape(rows, start=1), axis=0)
-    sentinel = op.Expand(op.CastLike(0, values), sentinel_shape)
+    sentinel = op.Expand(op.cast_like(0, values), sentinel_shape)
     gathered = op.Gather(op.Concat(sentinel, prefix, axis=0), positions, axis=0)
     target = op.Concat(mask_size, op.Shape(self, start=mask_rank), axis=0)
     updates = op.Reshape(op.Expand(gathered, target), op.Shape(self), allowzero=1)
@@ -4466,9 +4465,9 @@ def _aten_var_onnx(
     # Adjust var according to correction value
     if correction > 0.0:
         self_shape = op.Shape(self)
-        numel_float = op.CastLike(op.ReduceProd(self_shape, keepdims=False), self)
+        numel_float = op.cast_like(op.ReduceProd(self_shape, keepdims=False), self)
         mul = op.Mul(var, numel_float)
-        sub = op.Sub(numel_float, op.CastLike(correction, self))
+        sub = op.Sub(numel_float, op.cast_like(correction, self))
         var = op.Div(mul, sub)
 
     return var
@@ -4493,9 +4492,9 @@ def _aten_var_dim_onnx(
     if correction > 0.0:
         self_shape = op.Shape(self)
         dim_size = op.Gather(self_shape, dims, axis=0)
-        numel_float = op.CastLike(op.ReduceProd(dim_size, keepdims=False), self)
+        numel_float = op.cast_like(op.ReduceProd(dim_size, keepdims=False), self)
         mul = op.Mul(var, numel_float)
-        sub = op.Sub(numel_float, op.CastLike(correction, self))
+        sub = op.Sub(numel_float, op.cast_like(correction, self))
         var = op.Div(mul, sub)
 
     return var
@@ -4568,9 +4567,9 @@ def _aten_var_mean_onnx(
     # Adjust var according to correction value
     if correction > 0.0:
         self_shape = op.Shape(self)
-        numel_float = op.CastLike(op.ReduceProd(self_shape, keepdims=False), self)
+        numel_float = op.cast_like(op.ReduceProd(self_shape, keepdims=False), self)
         mul = op.Mul(var, numel_float)
-        sub = op.Sub(numel_float, op.CastLike(correction, self))
+        sub = op.Sub(numel_float, op.cast_like(correction, self))
         var = op.Div(mul, sub)
 
     return var, mean
@@ -4596,9 +4595,9 @@ def _aten_var_mean_dim_onnx(
     if correction > 0.0:
         self_shape = op.Shape(self)
         dim_size = op.Gather(self_shape, dims, axis=0)
-        numel_float = op.CastLike(op.ReduceProd(dim_size, keepdims=False), self)
+        numel_float = op.cast_like(op.ReduceProd(dim_size, keepdims=False), self)
         mul = op.Mul(var, numel_float)
-        sub = op.Sub(numel_float, op.CastLike(correction, self))
+        sub = op.Sub(numel_float, op.cast_like(correction, self))
         var = op.Div(mul, sub)
 
     return var, mean

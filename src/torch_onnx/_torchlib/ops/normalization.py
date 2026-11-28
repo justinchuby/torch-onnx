@@ -390,7 +390,7 @@ def _aten_convolution_complex_onnx(
     bias_real = op.Gather(bias, 0, axis=-1)
     bias_imag = op.Gather(bias, 1, axis=-1)
     bias_zero = op.Expand(
-        op.CastLike(0.0, weight),
+        op.cast_like(0.0, weight),
         op.Shape(bias_real),
     )
 
@@ -523,7 +523,7 @@ def aten_instance_norm(
     """instance_norm(Tensor input, Tensor? weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool use_input_stats, float momentum, float eps, bool cudnn_enabled) -> Tensor"""
     del cudnn_enabled  # unused
     if weight is None:  # Set to 1.0 as default
-        weight = op.CastLike(
+        weight = op.cast_like(
             op.Expand(
                 op.constant([1.0], dtype=common_ops.require_dtype(op, input)),
                 op.Shape(input, start=1, end=2),
@@ -532,7 +532,7 @@ def aten_instance_norm(
         )
 
     if bias is None:  # Set to 0.0 as default
-        bias = op.CastLike(
+        bias = op.cast_like(
             op.Expand(
                 op.constant([0.0], dtype=common_ops.require_dtype(op, input)),
                 op.Shape(input, start=1, end=2),
@@ -698,11 +698,11 @@ def _aten_native_batch_norm_training_onnx(
     # operator updates biased running variance, unlike PyTorch's update below,
     # and is unavailable in inference-only runtimes.
     mean = op.Reshape(mean, [-1])
-    norm = op.CastLike(
+    norm = op.cast_like(
         op.BatchNormalization(
             upcast_input,
-            op.CastLike(weight, upcast_input),
-            op.CastLike(bias, upcast_input),
+            op.cast_like(weight, upcast_input),
+            op.cast_like(bias, upcast_input),
             mean,
             var,
             epsilon=eps,
@@ -728,14 +728,14 @@ def _aten_native_batch_norm_training_onnx(
     # NOTE: momentum in ONNX is 1.0-momentum in PyTorch
     one_minus_momentum = op.constant(1.0 - momentum, dtype=upcast_dtype)
     new_running_var = op.Add(
-        op.CastLike(
+        op.cast_like(
             op.Mul(one_minus_momentum, unbiased_var),
             running_var,
         ),
         op.Mul(momentum, running_var),
     )
     new_running_mean = op.Add(
-        op.CastLike(op.Mul(one_minus_momentum, mean), running_mean),
+        op.cast_like(op.Mul(one_minus_momentum, mean), running_mean),
         op.Mul(momentum, running_mean),
     )
 
@@ -905,8 +905,8 @@ def aten_native_group_norm(
         axis=0,
     )
     input_reshaped = op.Reshape(input, shape_input)
-    weight_inst_norm = op.Expand(op.CastLike(1.0, input), group_tensor)
-    bias_inst_norm = op.Expand(op.CastLike(0.0, input), group_tensor)
+    weight_inst_norm = op.Expand(op.cast_like(1.0, input), group_tensor)
+    bias_inst_norm = op.Expand(op.cast_like(0.0, input), group_tensor)
     norm = op.InstanceNormalization(
         input_reshaped,
         weight_inst_norm,
@@ -921,9 +921,9 @@ def aten_native_group_norm(
     axes_unsqueeze = op.Range(1, input_rank - 1, 1)
     weight_full_shape = op.Unsqueeze(weight, axes_unsqueeze)
     bias_full_shape = op.Unsqueeze(bias, axes_unsqueeze)
-    weight_full_shape = op.CastLike(weight_full_shape, norm)
+    weight_full_shape = op.cast_like(weight_full_shape, norm)
     norm_mul_weight = op.Mul(norm, weight_full_shape)
-    bias_full_shape = op.CastLike(bias_full_shape, norm_mul_weight)
+    bias_full_shape = op.cast_like(bias_full_shape, norm_mul_weight)
     norm_result = op.Add(norm_mul_weight, bias_full_shape)
     # Compute mean and rstd, but using Torch algorithm
     # The returned shape for mean and vstd should be [N, group, -1]
@@ -969,7 +969,7 @@ def aten_native_layer_norm(
     if weight is None:
         one = op.constant([1.0], dtype=ir.DataType.FLOAT)
         weight = op.Expand(one, op.Shape(input, start=start_axis))
-        weight = op.CastLike(weight, input)
+        weight = op.cast_like(weight, input)
 
     result, mean, rdenominator = op.LayerNormalization(
         input,

@@ -292,7 +292,7 @@ def nextafter(op, x, y, source_dtype):
     boundary = op.And(
         op.And(toward_zero, op.Equal(absolute, power)), op.Greater(exponent, low)
     )
-    exponent = op.Sub(op.Sub(exponent, mantissa), op.CastLike(boundary, x))
+    exponent = op.Sub(op.Sub(exponent, mantissa), op.cast_like(boundary, x))
     step = op.Pow(constant(op, 2, x), exponent)
     result = op.Add(x, op.Where(upward, step, op.Neg(step)))
     result = op.Where(op.Equal(result, 0), op.Mul(x, constant(op, 0, x)), result)
@@ -369,7 +369,7 @@ def _iterate(op, states, step, *, limit=2000):
 
 def _broadcast(op, a, b):
     # Broadcast via a zero of b's shape; do not multiply possibly infinite b by 0.
-    a = op.Add(a, op.CastLike(op.ConstantOfShape(op.Shape(b)), a))
+    a = op.Add(a, op.cast_like(op.ConstantOfShape(op.Shape(b)), a))
     return a, op.Expand(b, op.Shape(a))
 
 
@@ -501,7 +501,7 @@ def igamma(op, a, x, *, complement=False):
     one = op.Expand(constant(op, 1, a), op.Shape(a))
 
     def series(body, i, term, total, running):
-        denominator = body.Add(safe_a, body.Add(body.CastLike(i, safe_a), 1))
+        denominator = body.Add(safe_a, body.Add(body.cast_like(i, safe_a), 1))
         next_term = body.Mul(term, body.Div(safe_x, denominator))
         next_total = body.Add(total, next_term)
         more = body.And(
@@ -524,7 +524,7 @@ def igamma(op, a, x, *, complement=False):
     d = op.Reciprocal(b)
 
     def fraction(body, i, b, c, d, h, running):
-        iteration = body.Add(body.CastLike(i, safe_a), 1)
+        iteration = body.Add(body.cast_like(i, safe_a), 1)
         coefficient = body.Neg(body.Mul(iteration, body.Sub(iteration, safe_a)))
         b_next = body.Add(b, 2)
         d_next = body.Add(body.Mul(coefficient, d), b_next)
@@ -560,7 +560,7 @@ def igamma(op, a, x, *, complement=False):
         zero = op.Expand(constant(op, 0, a), op.Shape(a))
 
         def complementary_series(body, i, fac, total, running):
-            n = body.Add(body.CastLike(i, safe_a), 1)
+            n = body.Add(body.cast_like(i, safe_a), 1)
             next_fac = body.Mul(fac, body.Div(body.Neg(safe_x), n))
             term = body.Div(next_fac, body.Add(safe_a, n))
             next_total = body.Add(total, term)

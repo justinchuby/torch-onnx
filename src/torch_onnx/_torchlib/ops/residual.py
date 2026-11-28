@@ -287,13 +287,13 @@ def aten_cdist_forward(
     if p == 0:
         zero = op.constant(0, dtype=dtype)
         return op.ReduceSum(
-            op.CastLike(op.Not(op.Equal(difference, zero)), difference),
+            op.cast_like(op.Not(op.Equal(difference, zero)), difference),
             [-1],
             keepdims=False,
         )
     if p == float("inf"):
         maxima = op.ReduceMax(difference, [-1], keepdims=False)
-        return op.Max(maxima, op.CastLike(0, maxima))
+        return op.Max(maxima, op.cast_like(0, maxima))
     p_val = op.constant(p, dtype=dtype)
     inv_p = op.constant(1.0 / p, dtype=dtype)
     return op.Pow(op.ReduceSum(op.Pow(difference, p_val), [-1], keepdims=False), inv_p)
@@ -323,7 +323,7 @@ def aten_dropout(
     """dropout(Tensor input, float p, bool train) -> Tensor"""
     # ONNX Dropout requires ratio < 1; PyTorch also supports dropping every element.
     if isinstance(p, int | float) and p == 1 and train is True:
-        return op.Mul(input, op.CastLike(0, input))
+        return op.Mul(input, op.cast_like(0, input))
 
     if input.shape is not None and len(input.shape) == 0:
         input = op.Reshape(input, op.constant([-1], dtype=ir.DataType.INT64))
@@ -393,8 +393,8 @@ def aten_fake_quantize_per_channel_affine(
     broadcast_shape = [1] * rank
     broadcast_shape[axis % rank] = -1
     inverse_scale = op.Reshape(op.Reciprocal(scale), broadcast_shape)
-    rounded = op.Round(op.Mul(op.CastLike(self, scale), inverse_scale))
-    unit_scale = op.Expand(op.CastLike(1.0, scale), op.Shape(scale))
+    rounded = op.Round(op.Mul(op.cast_like(self, scale), inverse_scale))
+    unit_scale = op.Expand(op.cast_like(1.0, scale), op.Shape(scale))
     quantized = op.QuantizeLinear(rounded, unit_scale, zero_point, axis=axis)
 
     # See comment about, PyTorch-specific (0, 127) handling
@@ -563,7 +563,7 @@ def aten_grouped_mm(
                     output_shape,
                     axis=0,
                 )
-            return op.Expand(op.CastLike(0, self), output_shape)
+            return op.Expand(op.cast_like(0, self), output_shape)
 
         # Only the group count is static. Boundaries remain values in the graph.
         ends = op.Cast(offs, to=ir.DataType.INT64)
@@ -627,8 +627,8 @@ def aten_heaviside(
     """heaviside(Tensor self, Tensor values) -> Tensor"""
     self, values = _promotion.promote(op, self, values)
 
-    zero = op.CastLike(0, self)
-    one = op.CastLike(1, self)
+    zero = op.cast_like(0, self)
+    one = op.cast_like(1, self)
     intermediate = op.Where(op.Less(self, zero), zero, one)
 
     return op.Where(op.Equal(self, zero), values, intermediate)
@@ -657,8 +657,8 @@ def aten_histc(
     computation_type = common_ops.require_dtype(op, self)
 
     cond = op.And(
-        op.GreaterOrEqual(flat_self, op.CastLike([min], self)),
-        op.LessOrEqual(flat_self, op.CastLike([max], self)),
+        op.GreaterOrEqual(flat_self, op.cast_like([min], self)),
+        op.LessOrEqual(flat_self, op.cast_like([max], self)),
     )
 
     if computation_type in {ir.DataType.INT32, ir.DataType.INT64}:
@@ -674,7 +674,7 @@ def aten_histc(
     values[-1] = np.nextafter(values[-1], np.array(np.inf, dtype=dtype), dtype=dtype)
     typed_values = op.Constant(value=ir.tensor(values, dtype=computation_type))
 
-    clipped = op.Where(cond, flat_self, op.CastLike([min - 1], self))
+    clipped = op.Where(cond, flat_self, op.cast_like([min - 1], self))
     bins = op.Unsqueeze(typed_values, [1])
 
     less = op.Cast(
@@ -1094,8 +1094,8 @@ def aten_stft(
         right_win = then_op.Expand(
             then_op.constant([0], dtype=ir.DataType.INT64), right
         )
-        right_win = then_op.CastLike(right_win, window)
-        left_win = then_op.CastLike(left_win, window)
+        right_win = then_op.cast_like(right_win, window)
+        left_win = then_op.cast_like(left_win, window)
         padded_window = then_op.Concat(left_win, window, right_win, axis=0)
         padded_window.type = window.type
         common_ops.finish_subgraph(op, then_branch, [padded_window])
@@ -1119,7 +1119,7 @@ def aten_stft(
             window = _create_window_from_n_fft(op, n_fft)
 
     onesided_attr = int(onesided is None or onesided)
-    window = op.CastLike(window, self)
+    window = op.cast_like(window, self)
     result = op.STFT(self, hop_length, window, n_fft, onesided=onesided_attr)
     result = op.Transpose(result, perm=[0, 2, 1, 3])
     # Remove batch dimension, if needed
@@ -1368,11 +1368,11 @@ def _aten_fake_quantize_per_tensor_affine(
         self = op.Cast(self, to=ir.DataType.FLOAT)
 
     # TODO: When opset >= 19, relex the condition for this cast
-    if (
-        isinstance(scale, float)
-        or common_ops.require_dtype(op, scale) != ir.DataType.FLOAT
-    ):
-        scale = op.Cast(scale, to=ir.DataType.FLOAT)
+    scale_value: ir.Value
+    if isinstance(scale, ir.Value) and scale.dtype == ir.DataType.FLOAT:
+        scale_value = scale
+    else:
+        scale_value = op.Cast(scale, to=ir.DataType.FLOAT)
 
     if (
         isinstance(zero_point, int)
@@ -1382,8 +1382,10 @@ def _aten_fake_quantize_per_tensor_affine(
 
     # Torch rounds x * reciprocal(scale); direct QuantizeLinear division can
     # choose a different bin at half-way values, including constant-folded weights.
-    rounded = op.Round(op.Mul(op.CastLike(self, scale), op.Reciprocal(scale)))
-    unit_scale = op.Expand(op.CastLike(1.0, scale), op.Shape(scale))
+    rounded = op.Round(
+        op.Mul(op.cast_like(self, scale_value), op.Reciprocal(scale_value))
+    )
+    unit_scale = op.Expand(op.cast_like(1.0, scale_value), op.Shape(scale_value))
     quantized = op.QuantizeLinear(rounded, unit_scale, zero_point)
 
     # See comment about, PyTorch-specific (0, 127) handling
@@ -1391,7 +1393,7 @@ def _aten_fake_quantize_per_tensor_affine(
         const_127 = op.Cast(127, to=int_dtype)
         quantized = op.Clip(quantized, None, const_127)
 
-    output = op.DequantizeLinear(quantized, scale, zero_point)
+    output = op.DequantizeLinear(quantized, scale_value, zero_point)
 
     # TODO: When opset >= 23, remove this cast and set output_dtype on DequantizeLinear
     if orig_dtype != ir.DataType.FLOAT:
@@ -1501,6 +1503,6 @@ def _normalize_fft_result(
     op: TranslationContext, signal: ir.Value, result: ir.Value, n_fft: int
 ) -> ir.Value:
     n_fft_tensor = op.Reshape(n_fft, op.constant([1], dtype=ir.DataType.INT64))
-    sqrt_nfft = op.Sqrt(op.CastLike(n_fft_tensor, signal))
+    sqrt_nfft = op.Sqrt(op.cast_like(n_fft_tensor, signal))
     result = op.Div(result, sqrt_nfft)
     return result
